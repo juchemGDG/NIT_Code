@@ -422,12 +422,14 @@ class FirmwareDownloader(QThread):
 # Flash-Dialog
 # ──────────────────────────────────────────────────────────────────────────────
 class FlashDialog(QDialog):
-    def __init__(self, board: str, parent=None):
+    def __init__(self, board: str | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("MicroPython flashen")
-        self.setMinimumSize(520, 480)
+        self.setMinimumSize(520, 540)
         self.setStyleSheet(_dialog_style())
-        self._board = board
+        self._board = board or list(SUPPORTED_BOARDS.keys())[0]
+        self._flash_cmd = "esp32"
+        self._is_uf2 = False
         self._firmware_path: str | None = None
         self._worker: FlashWorker | None = None
         self._downloader: FirmwareDownloader | None = None
@@ -437,32 +439,33 @@ class FlashDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
-        # Board-Info
-        board_info = SUPPORTED_BOARDS.get(self._board, {})
-        info = QLabel(f"Board: <b>{board_info.get('label', self._board)}</b>")
-        info.setStyleSheet(f"color:{THEME['accent']}; font-size:13px;")
-        layout.addWidget(info)
+        # ── Board-Auswahl ──
+        board_row = QHBoxLayout()
+        board_lbl = QLabel("Board:")
+        board_lbl.setStyleSheet(f"color:{THEME['text_dim']}; min-width:50px;")
+        self._board_combo_dlg = QComboBox()
+        for bid, binfo in SUPPORTED_BOARDS.items():
+            self._board_combo_dlg.addItem(binfo["label"], bid)
+        idx = self._board_combo_dlg.findData(self._board)
+        if idx >= 0:
+            self._board_combo_dlg.setCurrentIndex(idx)
+        self._board_combo_dlg.currentIndexChanged.connect(self._on_board_changed)
+        board_row.addWidget(board_lbl)
+        board_row.addWidget(self._board_combo_dlg, 1)
+        layout.addLayout(board_row)
 
-        # Hinweis für Pico / micro:bit
-        self._is_uf2 = board_info.get("flash_cmd") in ("rp2", "microbit")
-        if self._is_uf2:
-            hint_text = (
-                "💡 <b>Pico/micro:bit:</b> Gerät im BOOTSEL-Modus anschließen – "
-                "das Programm kopiert die Firmware automatisch!"
-                if board_info.get("flash_cmd") == "rp2"
-                else "💡 <b>micro:bit:</b> Gerät anschließen – die HEX-Datei wird automatisch übertragen!"
-            )
-            hint = QLabel(hint_text)
-            hint.setWordWrap(True)
-            hint.setStyleSheet(
-                f"background:{THEME['bg_panel']}; color:{THEME['info']};"
-                f" border:1px solid {THEME['border']}; border-radius:5px; padding:8px;"
-            )
-            layout.addWidget(hint)
+        # ── Hinweis (dynamisch je nach Board) ──
+        self._hint_lbl = QLabel()
+        self._hint_lbl.setWordWrap(True)
+        self._hint_lbl.setStyleSheet(
+            f"background:{THEME['bg_panel']}; color:{THEME['info']};"
+            f" border:1px solid {THEME['border']}; border-radius:5px; padding:8px;"
+        )
+        layout.addWidget(self._hint_lbl)
 
-        # Serieller Port (nur für ESP32 relevant)
-        port_group = QGroupBox("Serieller Port (nur für ESP32)")
-        pg = QHBoxLayout(port_group)
+        # ── Serieller Port (nur für ESP32) ──
+        self._port_group = QGroupBox("Serieller Port (nur für ESP32)")
+        pg = QHBoxLayout(self._port_group)
         self._port_combo = QComboBox()
         self._refresh_ports()
         pg.addWidget(self._port_combo)
@@ -470,56 +473,43 @@ class FlashDialog(QDialog):
         btn_refresh.setFixedWidth(32)
         btn_refresh.clicked.connect(self._refresh_ports)
         pg.addWidget(btn_refresh)
-        port_group.setVisible(not self._is_uf2)
-        layout.addWidget(port_group)
+        layout.addWidget(self._port_group)
 
-        # Firmware-Quelle
+        # ── Firmware-Quelle ──
         fw_group = QGroupBox("Firmware-Quelle")
         fg = QVBoxLayout(fw_group)
-        self._rb_local = QRadioButton("Lokale .bin Datei")
+        self._rb_local = QRadioButton("Lokale Datei")
         self._rb_local.setChecked(True)
         self._rb_online = QRadioButton("Von micropython.org herunterladen")
         fg.addWidget(self._rb_local)
         fg.addWidget(self._rb_online)
 
-        # Lokale Datei
         local_row = QHBoxLayout()
         self._local_path = QLineEdit()
-        ext = ".uf2" if board_info.get("flash_cmd") == "rp2" else \
-              ".hex" if board_info.get("flash_cmd") == "microbit" else ".bin"
-        self._local_path.setPlaceholderText(f"Pfad zur {ext} Datei ...")
         local_row.addWidget(self._local_path)
         btn_browse = QPushButton("Durchsuchen")
         btn_browse.clicked.connect(self._browse_firmware)
         local_row.addWidget(btn_browse)
         fg.addLayout(local_row)
 
-        # Online-URL
+        self._url_lbl = QLabel()
+        fg.addWidget(self._url_lbl)
         self._online_url = QLineEdit()
-        board_page = board_info.get("download_page", "")
-        self._online_url.setPlaceholderText(
-            f"https://micropython.org/download/{board_page}/"
-        )
-        self._online_url.setText(
-            f"https://micropython.org/download/{board_page}/"
-        )
-        url_lbl = QLabel(f"Download-URL ({ext} direkt):")
-        fg.addWidget(url_lbl)
         fg.addWidget(self._online_url)
         layout.addWidget(fw_group)
 
-        # Log
+        # ── Log ──
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         self._log.setMaximumHeight(120)
         layout.addWidget(self._log)
 
-        # Fortschritt
+        # ── Fortschritt ──
         self._progress = QProgressBar()
         self._progress.setValue(0)
         layout.addWidget(self._progress)
 
-        # Buttons
+        # ── Buttons ──
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self._btn_flash = QPushButton("Jetzt flashen")
@@ -534,6 +524,43 @@ class FlashDialog(QDialog):
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
 
+        # Initiales UI-Update
+        self._update_board_ui()
+
+    def _on_board_changed(self, index: int):
+        self._board = self._board_combo_dlg.itemData(index)
+        self._update_board_ui()
+
+    def _update_board_ui(self):
+        """Aktualisiert alle board-abhängigen UI-Elemente dynamisch."""
+        board_info = SUPPORTED_BOARDS.get(self._board, {})
+        self._flash_cmd = board_info.get("flash_cmd", "esp32")
+        self._is_uf2 = self._flash_cmd in ("rp2", "microbit")
+
+        if self._flash_cmd == "rp2":
+            self._hint_lbl.setText(
+                "💡 <b>Pico:</b> BOOTSEL-Taste gedrückt halten, USB einstecken, "
+                "Taste loslassen – das Programm kopiert die Firmware automatisch!"
+            )
+            self._hint_lbl.setVisible(True)
+        elif self._flash_cmd == "microbit":
+            self._hint_lbl.setText(
+                "💡 <b>micro:bit:</b> Gerät anschließen – "
+                "die HEX-Datei wird automatisch übertragen!"
+            )
+            self._hint_lbl.setVisible(True)
+        else:
+            self._hint_lbl.setVisible(False)
+
+        self._port_group.setVisible(not self._is_uf2)
+
+        ext = ".uf2" if self._flash_cmd == "rp2" else ".hex" if self._flash_cmd == "microbit" else ".bin"
+        self._local_path.setPlaceholderText(f"Pfad zur {ext} Datei ...")
+        board_page = board_info.get("download_page", "")
+        url = f"https://micropython.org/download/{board_page}/"
+        self._online_url.setText(url)
+        self._url_lbl.setText(f"Download-URL ({ext} direkt):")
+
     def _refresh_ports(self):
         import serial.tools.list_ports
         self._port_combo.clear()
@@ -545,8 +572,7 @@ class FlashDialog(QDialog):
                 self._port_combo.addItem(p)
 
     def _browse_firmware(self):
-        board_info = SUPPORTED_BOARDS.get(self._board, {})
-        flash_cmd = board_info.get("flash_cmd", "esp32")
+        flash_cmd = getattr(self, "_flash_cmd", "esp32")
         if flash_cmd == "rp2":
             file_filter = "UF2-Firmware (*.uf2);;Alle Dateien (*)"
         elif flash_cmd == "microbit":
@@ -573,14 +599,15 @@ class FlashDialog(QDialog):
 
         if self._rb_online.isChecked():
             url = self._online_url.text().strip()
-            if not url.endswith(".bin"):
+            ext = ".uf2" if self._flash_cmd == "rp2" else ".hex" if self._flash_cmd == "microbit" else ".bin"
+            if not any(url.endswith(e) for e in (".bin", ".uf2", ".hex")):
                 QMessageBox.information(
                     self, "Hinweis",
-                    "Bitte die direkte .bin-Download-URL von micropython.org eingeben.\n"
-                    "Öffne die Download-Seite im Browser und kopiere den Link zur .bin Datei."
+                    f"Bitte die direkte {ext}-Download-URL von micropython.org eingeben.\n"
+                    "Öffne die Download-Seite im Browser und kopiere den direkten Download-Link."
                 )
                 return
-            dest = str(Path.home() / "micropython_firmware.bin")
+            dest = str(Path.home() / f"micropython_firmware{ext}")
             self._downloader = FirmwareDownloader(url, dest)
             self._downloader.log.connect(self._log_append)
             self._downloader.progress.connect(self._progress.setValue)

@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import (
     QAction, QFont, QIcon, QKeySequence, QColor,
 )
@@ -245,19 +245,6 @@ class MainWindow(QMainWindow):
         )
         self._m_upy.addSeparator()
 
-        # Board-Untermenü
-        m_board = self._m_upy.addMenu("Controller wählen")
-        for board_id in SUPPORTED_BOARDS:
-            act = QAction(SUPPORTED_BOARDS[board_id]["label"], self)
-            act.setCheckable(True)
-            act.setChecked(board_id == self._board)
-            act.triggered.connect(lambda checked, b=board_id: self._set_board(b))
-            m_board.addAction(act)
-        self._m_board_actions = {
-            b: m_board.actions()[i]
-            for i, b in enumerate(SUPPORTED_BOARDS)
-        }
-
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
         self._add_action(m_help, f"Über {APP_NAME}", self._show_about)
@@ -306,27 +293,34 @@ class MainWindow(QMainWindow):
 
         tb.addSeparator()
 
-        # Board-Auswahl (nur im MicroPython-Modus sichtbar)
-        self._board_lbl = QLabel("  Board: ")
-        self._board_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
-        tb.addWidget(self._board_lbl)
+        # Geräte-Auswahl (nur im MicroPython-Modus sichtbar)
+        self._port_lbl = QLabel("  Gerät: ")
+        self._port_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
+        tb.addWidget(self._port_lbl)
 
-        self._board_combo = QComboBox()
-        for bid, binfo in SUPPORTED_BOARDS.items():
-            self._board_combo.addItem(binfo["label"], bid)
-        self._board_combo.setStyleSheet(self._mode_combo.styleSheet())
-        self._board_combo.currentIndexChanged.connect(
-            lambda i: self._set_board(self._board_combo.itemData(i))
+        self._port_combo = QComboBox()
+        self._port_combo.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f" border:1px solid {THEME['border']}; border-radius:4px;"
+            f" padding:3px 6px; min-width:200px;"
         )
-        tb.addWidget(self._board_combo)
+        self._port_combo.currentIndexChanged.connect(self._on_port_selected)
+        tb.addWidget(self._port_combo)
 
-        self._board_lbl.setVisible(False)
-        self._board_combo.setVisible(False)
+        self._port_refresh_act = tbtn("↻", self._refresh_ports, "Geräte aktualisieren")
+        self._port_lbl.setVisible(False)
+        self._port_combo.setVisible(False)
+        self._port_refresh_act.setVisible(False)
 
         tb.addSeparator()
         self._upload_btn_act = tbtn("↑  Hochladen", self._upload_to_device,
                                      "Code auf Controller übertragen (F7)")
         self._upload_btn_act.setVisible(False)
+
+        # Timer für automatisches Port-Scanning im MicroPython-Modus
+        self._port_scan_timer = QTimer(self)
+        self._port_scan_timer.setInterval(3000)
+        self._port_scan_timer.timeout.connect(self._refresh_ports)
 
     # ──────────────────────────────────────────────────────────────────────
     # Zentralbereich
@@ -528,27 +522,21 @@ class MainWindow(QMainWindow):
         self._mode = self._mode_combo.itemData(index)
         is_upy = self._mode == "micropython"
         self._m_upy.setEnabled(is_upy)
-        self._board_lbl.setVisible(is_upy)
-        self._board_combo.setVisible(is_upy)
+        self._port_lbl.setVisible(is_upy)
+        self._port_combo.setVisible(is_upy)
+        self._port_refresh_act.setVisible(is_upy)
         self._act_upload.setVisible(is_upy)
         self._upload_btn_act.setVisible(is_upy)
-        label = "MicroPython" if is_upy else "Python (lokal)"
-        board_label = f" – {SUPPORTED_BOARDS[self._board]['label']}" if is_upy else ""
-        self._status_mode.setText(label + board_label)
+        if is_upy:
+            self._refresh_ports()
+            self._port_scan_timer.start()
+            self._status_mode.setText("MicroPython")
+        else:
+            self._port_scan_timer.stop()
+            self._status_mode.setText("Python (lokal)")
 
     def _set_board(self, board_id: str):
         self._board = board_id
-        # Menü-Checkmarks aktualisieren
-        for bid, act in self._m_board_actions.items():
-            act.setChecked(bid == board_id)
-        # Combo synchronisieren
-        idx = self._board_combo.findData(board_id)
-        if idx >= 0:
-            self._board_combo.setCurrentIndex(idx)
-        if self._mode == "micropython":
-            self._status_mode.setText(
-                f"MicroPython – {SUPPORTED_BOARDS[board_id]['label']}"
-            )
 
     # ──────────────────────────────────────────────────────────────────────
     # Programmausführung
@@ -734,26 +722,75 @@ class MainWindow(QMainWindow):
             return str(venv_py)
         return sys.executable
 
-    def _get_serial_port(self, silent: bool = False) -> str | None:
+    def _refresh_ports(self):
+        """Scannt serielle Ports und aktualisiert die Combo-Box in der Toolbar."""
         try:
             import serial.tools.list_ports
-            ports = [p.device for p in serial.tools.list_ports.comports()]
+            ports = [(p.device, p.description) for p in serial.tools.list_ports.comports()]
         except Exception:
             ports = []
+        current = self._port_combo.currentData()
+        self._port_combo.blockSignals(True)
+        self._port_combo.clear()
         if not ports:
-            if not silent:
-                QMessageBox.warning(
-                    self, "Kein Controller",
-                    "Kein serielles Gerät gefunden.\n"
-                    "Bitte Controller anschließen und erneut versuchen."
-                )
-            return None
-        if len(ports) == 1:
-            return ports[0]
-        port, ok = QInputDialog.getItem(
-            self, "Port auswählen", "Serieller Port:", ports, 0, False
+            self._port_combo.addItem("— Kein Gerät —", None)
+        else:
+            for device, desc in ports:
+                label = f"{device}  ({desc})" if desc and desc != device else device
+                self._port_combo.addItem(label, device)
+        self._port_combo.blockSignals(False)
+
+        if current:
+            idx = self._port_combo.findData(current)
+            if idx >= 0:
+                self._port_combo.blockSignals(True)
+                self._port_combo.setCurrentIndex(idx)
+                self._port_combo.blockSignals(False)
+            else:
+                self._status_mode.setText("MicroPython  –  ⚠ Gerät getrennt")
+        elif ports:
+            # Erstmalige Befüllung: ersten Port auswählen und Firmware-Version lesen
+            self._on_port_selected(0)
+
+    def _on_port_selected(self, index: int):
+        """Wird aufgerufen wenn der Nutzer ein Gerät auswählt – liest Firmware-Version."""
+        port = self._port_combo.itemData(index)
+        if not port:
+            self._status_mode.setText("MicroPython")
+            return
+        self._status_mode.setText(f"MicroPython  –  {port}")
+        self._console.append_info(f"\n⚡  Verbunden mit {port} – lese Firmware-Version ...\n")
+        code = (
+            "import sys; "
+            "print('Board:', sys.platform); "
+            "print('MicroPython', sys.version)"
         )
-        return port if ok else None
+        cmd = [sys.executable, "-m", "mpremote", "connect", port, "exec", code]
+        proc = ProcessRunner(cmd)
+        proc.output.connect(
+            lambda text, kind: (
+                self._console.append_success(text)
+                if kind == "stdout" else None
+            )
+        )
+        proc.finished_run.connect(
+            lambda rc: self._console.append_error(
+                "⚠  Controller antwortet nicht. Bitte Verbindung prüfen.\n"
+            ) if rc != 0 else None
+        )
+        proc.start()
+        self._process = proc
+
+    def _get_serial_port(self, silent: bool = False) -> str | None:
+        """Gibt den aktuell in der Toolbar gewählten Port zurück."""
+        port = self._port_combo.currentData() if hasattr(self, "_port_combo") else None
+        if not port and not silent:
+            QMessageBox.warning(
+                self, "Kein Gerät",
+                "Kein serielles Gerät ausgewählt.\n"
+                "Bitte Controller anschließen und in der Toolbar auswählen."
+            )
+        return port
 
     def _show_about(self):
         QMessageBox.about(
