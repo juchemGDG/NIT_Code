@@ -127,20 +127,10 @@ class FlashWorker(QThread):
                 self.firmware_path,
             ]
         elif flash_cmd == "rp2":
-            # Pico: Firmware per Drag-and-Drop (UF2) oder picotool
-            self.log.emit(
-                "Hinweis: Für den Raspberry Pi Pico bitte den Pico im BOOTSEL-Modus "
-                "anschließen und die UF2-Datei manuell auf das Laufwerk kopieren,\n"
-                "oder picotool verwenden.\n"
-            )
-            self.done.emit(True, "Manuelle Installation erforderlich.")
+            self._flash_pico()
             return
         elif flash_cmd == "microbit":
-            # micro:bit: Drag-and-Drop HEX
-            self.log.emit(
-                "Hinweis: Für den micro:bit bitte die HEX-Datei auf das MICROBIT-Laufwerk kopieren.\n"
-            )
-            self.done.emit(True, "Manuelle Installation erforderlich.")
+            self._flash_microbit()
             return
         else:
             cmd = [sys.executable, "-m", "esptool", "--port", self.port,
@@ -163,6 +153,156 @@ class FlashWorker(QThread):
             self.done.emit(False, "esptool nicht gefunden. Bitte installieren: pip install esptool")
         except Exception as e:
             self.done.emit(False, str(e))
+
+    # ------------------------------------------------------------------
+    # Pico: UF2 automatisch auf das BOOTSEL-Laufwerk kopieren
+    # ------------------------------------------------------------------
+    def _find_pico_drive(self) -> str | None:
+        """Sucht das RPI-RP2 / RPI-RP2W Laufwerk (BOOTSEL-Modus)."""
+        import sys
+        candidates = []
+        if sys.platform == "darwin":
+            # macOS: /Volumes/RPI-RP2 oder RPI-RP2W
+            import os
+            for name in os.listdir("/Volumes"):
+                if name.upper().startswith("RPI-RP2"):
+                    candidates.append(f"/Volumes/{name}")
+        elif sys.platform == "win32":
+            import string, ctypes
+            for letter in string.ascii_uppercase:
+                drive = f"{letter}:\\"
+                if ctypes.windll.kernel32.GetDriveTypeW(drive) == 2:  # DRIVE_REMOVABLE
+                    label_buf = ctypes.create_unicode_buffer(261)
+                    ctypes.windll.kernel32.GetVolumeInformationW(
+                        drive, label_buf, 261, None, None, None, None, 0
+                    )
+                    if label_buf.value.upper().startswith("RPI-RP2"):
+                        candidates.append(drive)
+        else:
+            # Linux: /media/<user>/RPI-RP2 oder /run/media/<user>/RPI-RP2
+            import os, getpass
+            for base in [f"/media/{getpass.getuser()}", "/media", "/run/media"]:
+                if os.path.isdir(base):
+                    for sub in os.listdir(base):
+                        if sub.upper().startswith("RPI-RP2"):
+                            candidates.append(os.path.join(base, sub))
+                        # Linux: /media/<user>/<name>
+                        subpath = os.path.join(base, sub)
+                        if os.path.isdir(subpath):
+                            for entry in os.listdir(subpath):
+                                if entry.upper().startswith("RPI-RP2"):
+                                    candidates.append(os.path.join(subpath, entry))
+        return candidates[0] if candidates else None
+
+    def _flash_pico(self):
+        import shutil, time
+        self.log.emit("Suche Raspberry Pi Pico im BOOTSEL-Modus ...\n")
+        self.progress.emit(10)
+
+        # Bis zu 20 Sekunden warten, damit Schüler den BOOTSEL noch drücken können
+        drive = None
+        for i in range(20):
+            drive = self._find_pico_drive()
+            if drive:
+                break
+            self.log.emit(f"  Warte ... ({i+1}/20) – Pico im BOOTSEL-Modus anschließen!\n")
+            self.progress.emit(10 + i)
+            time.sleep(1)
+
+        if not drive:
+            self.done.emit(
+                False,
+                "Kein Pico im BOOTSEL-Modus gefunden!\n\n"
+                "Bitte:\n"
+                "1. BOOTSEL-Taste auf dem Pico gedrückt halten\n"
+                "2. USB-Kabel anschließen\n"
+                "3. Taste loslassen\n"
+                "4. Erneut versuchen."
+            )
+            return
+
+        self.log.emit(f"Pico gefunden: {drive}\n")
+        self.progress.emit(50)
+
+        fw = self.firmware_path
+        if not fw.lower().endswith(".uf2"):
+            self.done.emit(False, "Für den Raspberry Pi Pico wird eine .uf2-Datei benötigt!")
+            return
+
+        try:
+            import os
+            dest = os.path.join(drive, os.path.basename(fw))
+            self.log.emit(f"Kopiere {os.path.basename(fw)} → {drive} ...\n")
+            shutil.copy2(fw, dest)
+            self.progress.emit(100)
+            self.log.emit("Pico startet automatisch neu mit der neuen Firmware.\n")
+            self.done.emit(True, "Flash erfolgreich! Pico startet neu.")
+        except Exception as e:
+            self.done.emit(False, f"Fehler beim Kopieren: {e}")
+
+    # ------------------------------------------------------------------
+    # micro:bit: HEX automatisch auf das MICROBIT-Laufwerk kopieren
+    # ------------------------------------------------------------------
+    def _find_microbit_drive(self) -> str | None:
+        import sys, os
+        if sys.platform == "darwin":
+            for name in os.listdir("/Volumes"):
+                if name.upper() == "MICROBIT":
+                    return f"/Volumes/{name}"
+        elif sys.platform == "win32":
+            import string, ctypes
+            for letter in string.ascii_uppercase:
+                drive = f"{letter}:\\"
+                label_buf = ctypes.create_unicode_buffer(261)
+                ctypes.windll.kernel32.GetVolumeInformationW(
+                    drive, label_buf, 261, None, None, None, None, 0
+                )
+                if label_buf.value.upper() == "MICROBIT":
+                    return drive
+        else:
+            import getpass
+            for base in [f"/media/{getpass.getuser()}", "/media", "/run/media"]:
+                if os.path.isdir(base):
+                    for sub in os.listdir(base):
+                        if sub.upper() == "MICROBIT":
+                            return os.path.join(base, sub)
+        return None
+
+    def _flash_microbit(self):
+        import shutil, time
+        self.log.emit("Suche micro:bit ...\n")
+        self.progress.emit(10)
+
+        drive = None
+        for i in range(15):
+            drive = self._find_microbit_drive()
+            if drive:
+                break
+            self.log.emit(f"  Warte ... ({i+1}/15) – micro:bit anschließen!\n")
+            self.progress.emit(10 + i)
+            time.sleep(1)
+
+        if not drive:
+            self.done.emit(False, "Kein micro:bit gefunden! Bitte anschließen.")
+            return
+
+        self.log.emit(f"micro:bit gefunden: {drive}\n")
+        self.progress.emit(50)
+
+        fw = self.firmware_path
+        if not fw.lower().endswith(".hex"):
+            self.done.emit(False, "Für den micro:bit wird eine .hex-Datei benötigt!")
+            return
+
+        try:
+            import os
+            dest = os.path.join(drive, os.path.basename(fw))
+            self.log.emit(f"Kopiere {os.path.basename(fw)} → {drive} ...\n")
+            shutil.copy2(fw, dest)
+            self.progress.emit(100)
+            self.done.emit(True, "Flash erfolgreich! micro:bit startet neu.")
+        except Exception as e:
+            self.done.emit(False, f"Fehler beim Kopieren: {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -216,12 +356,30 @@ class FlashDialog(QDialog):
         layout.setSpacing(10)
 
         # Board-Info
-        info = QLabel(f"Board: <b>{SUPPORTED_BOARDS.get(self._board, {}).get('label', self._board)}</b>")
+        board_info = SUPPORTED_BOARDS.get(self._board, {})
+        info = QLabel(f"Board: <b>{board_info.get('label', self._board)}</b>")
         info.setStyleSheet(f"color:{THEME['accent']}; font-size:13px;")
         layout.addWidget(info)
 
-        # Serieller Port
-        port_group = QGroupBox("Serieller Port")
+        # Hinweis für Pico / micro:bit
+        self._is_uf2 = board_info.get("flash_cmd") in ("rp2", "microbit")
+        if self._is_uf2:
+            hint_text = (
+                "💡 <b>Pico/micro:bit:</b> Gerät im BOOTSEL-Modus anschließen – "
+                "das Programm kopiert die Firmware automatisch!"
+                if board_info.get("flash_cmd") == "rp2"
+                else "💡 <b>micro:bit:</b> Gerät anschließen – die HEX-Datei wird automatisch übertragen!"
+            )
+            hint = QLabel(hint_text)
+            hint.setWordWrap(True)
+            hint.setStyleSheet(
+                f"background:{THEME['bg_panel']}; color:{THEME['info']};"
+                f" border:1px solid {THEME['border']}; border-radius:5px; padding:8px;"
+            )
+            layout.addWidget(hint)
+
+        # Serieller Port (nur für ESP32 relevant)
+        port_group = QGroupBox("Serieller Port (nur für ESP32)")
         pg = QHBoxLayout(port_group)
         self._port_combo = QComboBox()
         self._refresh_ports()
@@ -230,6 +388,7 @@ class FlashDialog(QDialog):
         btn_refresh.setFixedWidth(32)
         btn_refresh.clicked.connect(self._refresh_ports)
         pg.addWidget(btn_refresh)
+        port_group.setVisible(not self._is_uf2)
         layout.addWidget(port_group)
 
         # Firmware-Quelle
@@ -244,7 +403,9 @@ class FlashDialog(QDialog):
         # Lokale Datei
         local_row = QHBoxLayout()
         self._local_path = QLineEdit()
-        self._local_path.setPlaceholderText("Pfad zur .bin Datei ...")
+        ext = ".uf2" if board_info.get("flash_cmd") == "rp2" else \
+              ".hex" if board_info.get("flash_cmd") == "microbit" else ".bin"
+        self._local_path.setPlaceholderText(f"Pfad zur {ext} Datei ...")
         local_row.addWidget(self._local_path)
         btn_browse = QPushButton("Durchsuchen")
         btn_browse.clicked.connect(self._browse_firmware)
@@ -253,14 +414,15 @@ class FlashDialog(QDialog):
 
         # Online-URL
         self._online_url = QLineEdit()
-        board_page = SUPPORTED_BOARDS.get(self._board, {}).get("download_page", "")
+        board_page = board_info.get("download_page", "")
         self._online_url.setPlaceholderText(
             f"https://micropython.org/download/{board_page}/"
         )
         self._online_url.setText(
             f"https://micropython.org/download/{board_page}/"
         )
-        fg.addWidget(QLabel("Download-URL (.bin direkt):"))
+        url_lbl = QLabel(f"Download-URL ({ext} direkt):")
+        fg.addWidget(url_lbl)
         fg.addWidget(self._online_url)
         layout.addWidget(fw_group)
 
@@ -301,8 +463,16 @@ class FlashDialog(QDialog):
                 self._port_combo.addItem(p)
 
     def _browse_firmware(self):
+        board_info = SUPPORTED_BOARDS.get(self._board, {})
+        flash_cmd = board_info.get("flash_cmd", "esp32")
+        if flash_cmd == "rp2":
+            file_filter = "UF2-Firmware (*.uf2);;Alle Dateien (*)"
+        elif flash_cmd == "microbit":
+            file_filter = "HEX-Firmware (*.hex);;Alle Dateien (*)"
+        else:
+            file_filter = "BIN-Firmware (*.bin);;Alle Dateien (*)"
         path, _ = QFileDialog.getOpenFileName(
-            self, "Firmware wählen", str(Path.home()), "Firmware (*.bin *.hex *.uf2)"
+            self, "Firmware wählen", str(Path.home()), file_filter
         )
         if path:
             self._local_path.setText(path)
@@ -312,8 +482,10 @@ class FlashDialog(QDialog):
         self._log.append(text.rstrip())
 
     def _start_flash(self):
-        port = self._port_combo.currentText()
-        if "Kein" in port:
+        board_info = SUPPORTED_BOARDS.get(self._board, {})
+        flash_cmd = board_info.get("flash_cmd", "esp32")
+        port = self._port_combo.currentText() if not self._is_uf2 else "n/a"
+        if not self._is_uf2 and "Kein" in port:
             QMessageBox.warning(self, "Kein Port", "Bitte einen seriellen Port auswählen.")
             return
 
