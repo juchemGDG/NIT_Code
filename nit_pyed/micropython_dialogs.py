@@ -670,35 +670,61 @@ class LibInstallWorker(QThread):
     def run(self):
         import subprocess, sys, tempfile
         for finfo in self.files:
-            name = finfo["name"]
-            url = finfo["download_url"]
-            self.log.emit(f"Lade {name} herunter ...\n")
-            try:
-                resp = requests.get(url, timeout=15)
-                resp.raise_for_status()
-                with tempfile.NamedTemporaryFile(
-                    suffix=os.path.splitext(name)[1], delete=False
-                ) as tmp:
-                    tmp.write(resp.content)
-                    tmp_path = tmp.name
-
-                self.log.emit(f"Übertrage {name} auf Controller ({self.port}) ...\n")
-                result = subprocess.run(
-                    [sys.executable, "-m", "mpremote", "connect", self.port,
-                     "cp", tmp_path, f":{name}"],
-                    capture_output=True, text=True, timeout=30
-                )
-                os.unlink(tmp_path)
-                if result.returncode == 0:
-                    self.log.emit(f"✓ {name} erfolgreich übertragen.\n")
-                else:
-                    self.log.emit(f"✗ Fehler bei {name}: {result.stderr}\n")
-                    self.done.emit(False, f"Fehler bei {name}")
+            if finfo.get("type") == "dir":
+                # Unterordner: .py-Dateien (keine Beispiele) holen und installieren
+                dir_name = finfo["name"]
+                self.log.emit(f"📁 Lade Bibliothek '{dir_name}' ...\n")
+                try:
+                    resp = requests.get(finfo["url"], timeout=10)
+                    resp.raise_for_status()
+                    dir_contents = resp.json()
+                    # Bibliotheks-Dateien: .py ohne 'beispiel'
+                    lib_files = [
+                        f for f in dir_contents
+                        if f.get("type") == "file"
+                        and f["name"].endswith(".py")
+                        and not f["name"].lower().startswith("beispiel")
+                    ]
+                    if not lib_files:
+                        lib_files = [f for f in dir_contents
+                                     if f.get("type") == "file" and f["name"].endswith(".py")]
+                except Exception as e:
+                    self.log.emit(f"✗ Fehler beim Laden von '{dir_name}': {e}\n")
+                    self.done.emit(False, str(e))
                     return
-            except Exception as e:
-                self.log.emit(f"✗ Ausnahme bei {name}: {e}\n")
-                self.done.emit(False, str(e))
-                return
+            else:
+                lib_files = [finfo]
+
+            for file_info in lib_files:
+                name = file_info["name"]
+                url = file_info["download_url"]
+                self.log.emit(f"Lade {name} herunter ...\n")
+                try:
+                    resp = requests.get(url, timeout=15)
+                    resp.raise_for_status()
+                    with tempfile.NamedTemporaryFile(
+                        suffix=os.path.splitext(name)[1], delete=False
+                    ) as tmp:
+                        tmp.write(resp.content)
+                        tmp_path = tmp.name
+
+                    self.log.emit(f"Übertrage {name} auf Controller ({self.port}) ...\n")
+                    result = subprocess.run(
+                        [sys.executable, "-m", "mpremote", "connect", self.port,
+                         "cp", tmp_path, f":{name}"],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    os.unlink(tmp_path)
+                    if result.returncode == 0:
+                        self.log.emit(f"✓ {name} erfolgreich übertragen.\n")
+                    else:
+                        self.log.emit(f"✗ Fehler bei {name}: {result.stderr}\n")
+                        self.done.emit(False, f"Fehler bei {name}")
+                        return
+                except Exception as e:
+                    self.log.emit(f"✗ Ausnahme bei {name}: {e}\n")
+                    self.done.emit(False, str(e))
+                    return
         self.done.emit(True, "Alle Bibliotheken übertragen.")
 
 
@@ -817,14 +843,20 @@ class LibraryManagerDialog(QDialog):
         threading.Thread(target=fetch, daemon=True).start()
 
     def _populate_list(self, data: list):
-        self._files = [f for f in data if f.get("type") == "file"]
+        self._files = [
+            f for f in data
+            if f.get("type") == "dir" and not f["name"].startswith(".")
+        ]
         self._list.clear()
         for f in self._files:
             item = QListWidgetItem(f["name"])
             item.setData(Qt.ItemDataRole.UserRole, f)
             self._list.addItem(item)
-        self._btn_install.setEnabled(True)
-        self._log.append(f"{len(self._files)} Dateien gefunden.")
+        if self._files:
+            self._btn_install.setEnabled(True)
+            self._log.append(f"{len(self._files)} Bibliotheken gefunden.")
+        else:
+            self._log.append("Keine Bibliotheken gefunden.")
 
     def _on_select(self, current, _):
         if not current:
@@ -835,12 +867,24 @@ class LibraryManagerDialog(QDialog):
 
         def fetch_preview():
             try:
-                url = finfo.get("download_url", "")
-                if url:
-                    resp = requests.get(url, timeout=10)
-                    content = resp.text[:3000]
-                    from PyQt6.QtCore import QTimer
-                    QTimer.singleShot(0, lambda: self._preview.setPlainText(content))
+                dir_url = finfo.get("url", "")
+                if not dir_url:
+                    return
+                resp = requests.get(dir_url, timeout=10)
+                resp.raise_for_status()
+                dir_contents = resp.json()
+                readme = next(
+                    (f for f in dir_contents if f["name"].lower() == "readme.md"),
+                    None
+                )
+                if readme and readme.get("download_url"):
+                    r2 = requests.get(readme["download_url"], timeout=10)
+                    content = r2.text[:3000]
+                else:
+                    py_files = [f["name"] for f in dir_contents if f["name"].endswith(".py")]
+                    content = "Enthaltene Dateien:\n" + "\n".join(f"  • {n}" for n in py_files)
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self._preview.setPlainText(content))
             except Exception as e:
                 from PyQt6.QtCore import QTimer
                 QTimer.singleShot(0, lambda: self._preview.setPlainText(f"Vorschau nicht verfügbar: {e}"))
