@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 
 from .config import APP_NAME, APP_VERSION, THEME, SUPPORTED_BOARDS
 from .editor_widget import CodeEditor
-from .file_panel import FilePanel
+from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner
 
 
@@ -342,10 +342,24 @@ class MainWindow(QMainWindow):
         self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._main_splitter.setHandleWidth(2)
 
-        # Dateibaum
+        # Linker Bereich: vertikaler Splitter (lokale Dateien + Controller-Dateien)
+        self._left_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._left_splitter.setHandleWidth(2)
+        self._left_splitter.setMinimumWidth(180)
+        self._left_splitter.setMaximumWidth(350)
+
         self._file_panel = FilePanel()
+        self._file_panel.setMinimumWidth(0)
+        self._file_panel.setMaximumWidth(10000)
         self._file_panel.file_open_requested.connect(self._open_file_path)
-        self._main_splitter.addWidget(self._file_panel)
+        self._left_splitter.addWidget(self._file_panel)
+
+        self._device_panel = DeviceFilePanel()
+        self._device_panel.file_open_requested.connect(self._open_file_path)
+        self._device_panel.setVisible(False)
+        self._left_splitter.addWidget(self._device_panel)
+
+        self._main_splitter.addWidget(self._left_splitter)
 
         # Rechter Bereich: vertikaler Splitter (Editor oben, Konsole unten)
         self._right_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -533,13 +547,17 @@ class MainWindow(QMainWindow):
         self._port_refresh_act.setVisible(is_upy)
         self._act_upload.setVisible(is_upy)
         self._upload_btn_act.setVisible(is_upy)
+        self._device_panel.setVisible(is_upy)
         if is_upy:
             self._refresh_ports()
             self._port_scan_timer.start()
             self._status_mode.setText("MicroPython")
+            self._left_splitter.setSizes([300, 250])
         else:
             self._port_scan_timer.stop()
             self._status_mode.setText("Python (lokal)")
+            self._device_panel.refresh("")
+            self._left_splitter.setSizes([600, 0])
 
     def _set_board(self, board_id: str):
         self._board = board_id
@@ -765,6 +783,7 @@ class MainWindow(QMainWindow):
             self._status_mode.setText("MicroPython")
             return
         self._status_mode.setText(f"MicroPython  –  {port}")
+        self._device_panel.refresh(port)
         self._console.append_info(f"\n⚡  Verbunden mit {port} – lese Firmware-Version ...\n")
         code = (
             "import sys; "
