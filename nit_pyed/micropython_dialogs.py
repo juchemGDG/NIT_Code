@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QProgressBar, QFileDialog, QTextEdit,
     QGroupBox, QRadioButton, QLineEdit, QListWidget,
-    QListWidgetItem, QSplitter, QMessageBox, QCheckBox,
+    QListWidgetItem, QSplitter, QMessageBox, QCheckBox, QWidget,
 )
 from PyQt6.QtGui import QFont, QColor
 
