@@ -729,8 +729,39 @@ class LibInstallWorker(QThread):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Bibliotheks-Manager-Dialog
+# Hilfworker für HTTP-Requests (thread-sicher via pyqtSignal)
 # ──────────────────────────────────────────────────────────────────────────────
+class _HttpWorker(QThread):
+    result = pyqtSignal(object)   # beliebige Python-Objekte
+    error  = pyqtSignal(str)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self._url = url
+
+    def run(self):
+        try:
+            resp = requests.get(self._url, timeout=12)
+            resp.raise_for_status()
+            self.result.emit(resp.json())
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class _ReadmeWorker(QThread):
+    text = pyqtSignal(str)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self._url = url
+
+    def run(self):
+        try:
+            resp = requests.get(self._url, timeout=12)
+            resp.raise_for_status()
+            self.text.emit(resp.text[:4000])
+        except Exception as e:
+            self.text.emit(f"(Vorschau nicht verfügbar: {e})")
 class LibraryManagerDialog(QDialog):
     def __init__(self, port: str = "", parent=None):
         super().__init__(parent)
@@ -740,6 +771,8 @@ class LibraryManagerDialog(QDialog):
         self._port = port
         self._files: list[dict] = []
         self._worker: LibInstallWorker | None = None
+        self._http_worker: _HttpWorker | None = None
+        self._preview_worker: _HttpWorker | None = None
         self._setup_ui()
         self._fetch_libs()
 
@@ -828,19 +861,10 @@ class LibraryManagerDialog(QDialog):
 
     def _fetch_libs(self):
         self._log.append("Lade Dateiliste von GitHub ...")
-
-        def fetch():
-            try:
-                resp = requests.get(LIB_REPO_API, timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self._populate_list(data))
-            except Exception as e:
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self._log.append(f"Fehler: {e}"))
-
-        threading.Thread(target=fetch, daemon=True).start()
+        self._http_worker = _HttpWorker(LIB_REPO_API, self)
+        self._http_worker.result.connect(self._populate_list)
+        self._http_worker.error.connect(lambda e: self._log.append(f"Fehler: {e}"))
+        self._http_worker.start()
 
     def _populate_list(self, data: list):
         self._files = [
@@ -862,34 +886,33 @@ class LibraryManagerDialog(QDialog):
         if not current:
             return
         finfo = current.data(Qt.ItemDataRole.UserRole)
-        if not finfo:
+        if not finfo or not finfo.get("url"):
             return
+        # Verzeichnisinhalt laden und README / Dateiliste anzeigen
+        self._preview_worker = _HttpWorker(finfo["url"], self)
+        self._preview_worker.result.connect(self._show_preview)
+        self._preview_worker.error.connect(
+            lambda e: self._preview.setPlainText(f"Vorschau nicht verfügbar: {e}")
+        )
+        self._preview_worker.start()
 
-        def fetch_preview():
-            try:
-                dir_url = finfo.get("url", "")
-                if not dir_url:
-                    return
-                resp = requests.get(dir_url, timeout=10)
-                resp.raise_for_status()
-                dir_contents = resp.json()
-                readme = next(
-                    (f for f in dir_contents if f["name"].lower() == "readme.md"),
-                    None
-                )
-                if readme and readme.get("download_url"):
-                    r2 = requests.get(readme["download_url"], timeout=10)
-                    content = r2.text[:3000]
-                else:
-                    py_files = [f["name"] for f in dir_contents if f["name"].endswith(".py")]
-                    content = "Enthaltene Dateien:\n" + "\n".join(f"  • {n}" for n in py_files)
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self._preview.setPlainText(content))
-            except Exception as e:
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self._preview.setPlainText(f"Vorschau nicht verfügbar: {e}"))
-
-        threading.Thread(target=fetch_preview, daemon=True).start()
+    def _show_preview(self, dir_contents: list):
+        readme = next(
+            (f for f in dir_contents if f["name"].lower() == "readme.md"),
+            None
+        )
+        if readme and readme.get("download_url"):
+            w = _HttpWorker(readme["download_url"], self)
+            w.result.connect(lambda _: None)   # JSON würde fehlschlagen
+            # README ist kein JSON – separaten Worker für Text bauen
+            self._readme_worker = _ReadmeWorker(readme["download_url"], self)
+            self._readme_worker.text.connect(self._preview.setPlainText)
+            self._readme_worker.start()
+        else:
+            py_files = [f["name"] for f in dir_contents if f["name"].endswith(".py")]
+            self._preview.setPlainText(
+                "Enthaltene Dateien:\n" + "\n".join(f"  • {n}" for n in py_files)
+            )
 
     def _install_selected(self):
         selected = [item.data(Qt.ItemDataRole.UserRole)
