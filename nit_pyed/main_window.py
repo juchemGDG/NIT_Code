@@ -318,7 +318,7 @@ class MainWindow(QMainWindow):
         # Geräte-Auswahl (nur im MicroPython-Modus sichtbar)
         self._port_lbl = QLabel("  Gerät: ")
         self._port_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
-        tb.addWidget(self._port_lbl)
+        self._port_lbl_act = tb.addWidget(self._port_lbl)
 
         self._port_combo = QComboBox()
         self._port_combo.setStyleSheet(
@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
             f" padding:3px 6px; min-width:200px;"
         )
         self._port_combo.currentIndexChanged.connect(self._on_port_selected)
-        tb.addWidget(self._port_combo)
+        self._port_combo_act = tb.addWidget(self._port_combo)
 
         self._port_refresh_act = tbtn("↻", self._refresh_ports, "Geräte aktualisieren")
         # Widget für den ↻-Button suchen und vergrößern
@@ -339,8 +339,8 @@ class MainWindow(QMainWindow):
                     f"QToolButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
                 )
                 break
-        self._port_lbl.setVisible(False)
-        self._port_combo.setVisible(False)
+        self._port_lbl_act.setVisible(False)
+        self._port_combo_act.setVisible(False)
         self._port_refresh_act.setVisible(False)
 
         tb.addSeparator()
@@ -605,8 +605,8 @@ class MainWindow(QMainWindow):
         is_upy = self._mode == "micropython"
         self._m_upy.setEnabled(is_upy)
         self._m_python.setEnabled(not is_upy)
-        self._port_lbl.setVisible(is_upy)
-        self._port_combo.setVisible(is_upy)
+        self._port_lbl_act.setVisible(is_upy)
+        self._port_combo_act.setVisible(is_upy)
         self._port_refresh_act.setVisible(is_upy)
         self._act_upload.setVisible(is_upy)
         self._upload_btn_act.setVisible(is_upy)
