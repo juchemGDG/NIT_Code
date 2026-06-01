@@ -206,8 +206,9 @@ class FilePanel(QWidget):
 # ──────────────────────────────────────────────────────────────────────────────
 
 class _DeviceListWorker(QThread):
-    result = pyqtSignal(list)   # [(name, size_str), ...]
-    error  = pyqtSignal(str)
+    result       = pyqtSignal(list)   # [(name, size_str), ...]
+    firmware_info = pyqtSignal(str)   # Firmware-Version-String
+    error        = pyqtSignal(str)
 
     def __init__(self, port: str):
         super().__init__()
@@ -215,7 +216,9 @@ class _DeviceListWorker(QThread):
 
     def run(self):
         code = (
-            "import os\n"
+            "import os, sys\n"
+            "v = sys.implementation\n"
+            "print('FIRMWARE:' + sys.version + ' auf ' + sys.platform)\n"
             "for f in sorted(os.listdir()):\n"
             "    try:\n"
             "        print(str(os.stat(f)[6]) + '|' + f)\n"
@@ -236,7 +239,9 @@ class _DeviceListWorker(QThread):
         files = []
         for line in r.stdout.splitlines():
             line = line.strip()
-            if "|" in line:
+            if line.startswith("FIRMWARE:"):
+                self.firmware_info.emit(line[len("FIRMWARE:"):])
+            elif "|" in line:
                 size_str, name = line.split("|", 1)
                 files.append((name.strip(), size_str.strip()))
         self.result.emit(files)
@@ -246,8 +251,9 @@ class DeviceFilePanel(QWidget):
     """Zeigt Dateien auf dem angeschlossenen MicroPython-Controller."""
 
     file_open_requested = pyqtSignal(str)
-    refresh_started     = pyqtSignal()    # Port wird gleich belegt
-    refresh_done        = pyqtSignal()    # Port wieder frei   # lokaler Temp-Pfad
+    refresh_started     = pyqtSignal()
+    refresh_done        = pyqtSignal()
+    firmware_info       = pyqtSignal(str)   # Firmware-Version an main_window weiterleiten
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -323,6 +329,7 @@ class DeviceFilePanel(QWidget):
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self._list)
+        layout.addStretch()   # leerer Raum bleibt unten
 
     def refresh(self, port: str):
         self._port = port
@@ -338,6 +345,7 @@ class DeviceFilePanel(QWidget):
 
         worker = _DeviceListWorker(port)
         worker.result.connect(self._on_result)
+        worker.firmware_info.connect(self.firmware_info)
         worker.error.connect(self._on_error)
         worker.finished.connect(lambda: self._btn_refresh.setEnabled(True))
         worker.finished.connect(lambda: self.refresh_done.emit())

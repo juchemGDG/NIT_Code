@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
         self._mode = "python"       # "python" | "micropython"
         self._board = "ESP32"
         self._process: ProcessRunner | None = None
+        self._port_busy = False     # verhindert gleichzeitige mpremote-Prozesse
         self._setup_window()
         self._setup_menubar()
         self._setup_toolbar()
@@ -372,6 +373,9 @@ class MainWindow(QMainWindow):
         self._device_panel.file_open_requested.connect(self._open_file_path)
         self._device_panel.setVisible(False)
         self._left_splitter.addWidget(self._device_panel)
+        # FilePanel wächst mit, DeviceFilePanel bleibt kompakt
+        self._left_splitter.setStretchFactor(0, 1)
+        self._left_splitter.setStretchFactor(1, 0)
 
         self._main_splitter.addWidget(self._left_splitter)
 
@@ -389,8 +393,11 @@ class MainWindow(QMainWindow):
         # Konsole
         self._console = ConsolePanel()
         self._console.error_link_clicked.connect(self._jump_to_error)
-        self._device_panel.refresh_started.connect(self._console.pause_shell)
-        self._device_panel.refresh_done.connect(self._console.resume_shell)
+        self._device_panel.refresh_started.connect(self._on_device_refresh_start)
+        self._device_panel.refresh_done.connect(self._on_device_refresh_done)
+        self._device_panel.firmware_info.connect(
+            lambda info: self._console.append_success(f"✓  MicroPython {info}\n")
+        )
         self._right_splitter.addWidget(self._console)
 
         self._right_splitter.setSizes([520, 200])
@@ -418,8 +425,30 @@ class MainWindow(QMainWindow):
         sb.addWidget(self._status_file)
 
     # ──────────────────────────────────────────────────────────────────────
-    # Tab-Verwaltung
+    # Port-Busy-Verwaltung (verhindert parallele mpremote-Prozesse)
     # ──────────────────────────────────────────────────────────────────────
+    def _acquire_port(self) -> bool:
+        """True wenn Port frei war und jetzt reserviert wird, sonst False."""
+        if self._port_busy:
+            self._console.append_error(
+                "⚠  Port wird gerade verwendet. Bitte kurz warten.\n"
+            )
+            return False
+        self._port_busy = True
+        self._console.pause_shell()
+        return True
+
+    def _release_port(self):
+        self._port_busy = False
+        self._console.resume_shell()
+
+    def _on_device_refresh_start(self):
+        self._port_busy = True
+        self._console.pause_shell()
+
+    def _on_device_refresh_done(self):
+        self._port_busy = False
+        self._console.resume_shell()
     def _new_tab(self, filepath: str | None = None):
         tab = EditorTab(filepath)
         if filepath and os.path.isfile(filepath):
@@ -684,12 +713,12 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _query_firmware_version(self):
-        """Fragt die MicroPython-Firmware-Version vom Controller ab."""
         port = self._get_serial_port()
         if not port:
             return
+        if not self._acquire_port():
+            return
         self._console.append_info(f"ℹ️  Lese Firmware-Version von {port} ...\n")
-        self._console.pause_shell()
         code = (
             "import sys; "
             "v = sys.implementation; "
@@ -706,46 +735,31 @@ class MainWindow(QMainWindow):
             )
         )
         proc.finished_run.connect(
-            lambda code: self._console.append_info("\n") if code == 0
-            else self._console.append_error(
+            lambda rc: self._console.append_error(
                 "✗  Konnte keine Verbindung herstellen.\n"
                 "Bitte Controller anschließen und erneut versuchen.\n"
-            )
+            ) if rc != 0 else None
         )
-        proc.finished_run.connect(lambda _rc: self._console.resume_shell())
+        proc.finished_run.connect(lambda _rc: self._release_port())
         proc.start()
         self._process = proc
 
     def _reset_controller(self):
-        """Soft-Reset via mpremote reset (behandelt Verbindungsabbruch korrekt)."""
         port = self._get_serial_port()
         if not port:
             return
+        if not self._acquire_port():
+            return
         self._console.append_info(f"🔄  Starte Controller auf {port} neu ...\n")
-        self._console.pause_shell()
-
-        # Schritt 1: Firmware-Version abfragen
-        code = "import sys; print('MicroPython', sys.version, 'auf', sys.platform)"
-        # Schritt 2: Reset über mpremote reset-Subkommando (hält Disconnect aus)
-        # mpremote unterstützt Chaining mit '+'
         cmd = [
             sys.executable, "-m", "mpremote",
-            "connect", port,
-            "exec", code,
-            "+", "reset",
+            "connect", port, "reset",
         ]
         proc = ProcessRunner(cmd)
-        proc.output.connect(
-            lambda text, kind: (
-                self._console.append_success(text)
-                if kind == "stdout"
-                else None   # mpremote-Reset gibt manchmal harmlose Warnings aus
-            )
-        )
         proc.finished_run.connect(
             lambda rc: self._console.append_success("✓  Controller neu gestartet.\n")
         )
-        proc.finished_run.connect(lambda _rc: self._console.resume_shell())
+        proc.finished_run.connect(lambda _rc: self._release_port())
         proc.start()
         self._process = proc
 
