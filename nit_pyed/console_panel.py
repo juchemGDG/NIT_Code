@@ -640,4 +640,4 @@ class ConsolePanel(QWidget):
             cmd = [exe, "-i"]
             label = "Shell  –  Python REPL"
         self.tabs.setTabText(1, label)
-        self._shell.restart(cmd)
+        self.shell.restart(cmd)
