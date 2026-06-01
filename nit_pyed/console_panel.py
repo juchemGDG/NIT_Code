@@ -699,3 +699,9 @@ class ConsolePanel(QWidget):
             self._shell_pending_cmd = None
             self.shell.restart(cmd)
         self.tabs.setTabText(1, label)
+
+    def set_font_size(self, size: int):
+        """Schriftgröße der Konsole und Shell ändern."""
+        font = QFont("JetBrains Mono, Fira Code, Consolas, monospace", size)
+        self.output_console.output.setFont(font)
+        self.shell.output.setFont(font)

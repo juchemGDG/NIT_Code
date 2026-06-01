@@ -18,6 +18,7 @@ from .config import APP_NAME, APP_VERSION, THEME, SUPPORTED_BOARDS
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
+from .settings_dialog import SettingsDialog
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -184,6 +185,8 @@ class MainWindow(QMainWindow):
         self._board = "ESP32"
         self._process: ProcessRunner | None = None
         self._port_busy = False     # verhindert gleichzeitige mpremote-Prozesse
+        self._settings_font_size: int = 14
+        self._settings_line_numbers: bool = True
         self._setup_window()
         self._setup_menubar()
         self._setup_toolbar()
@@ -226,6 +229,8 @@ class MainWindow(QMainWindow):
         self._add_action(m_file, "Öffnen …",     self._open_file,     "Ctrl+O")
         self._add_action(m_file, "Speichern",    self._save_file,     "Ctrl+S")
         self._add_action(m_file, "Speichern als …", self._save_file_as, "Ctrl+Shift+S")
+        m_file.addSeparator()
+        self._add_action(m_file, "⚙  Einstellungen …", self._open_settings, "Ctrl+,")
         m_file.addSeparator()
         self._add_action(m_file, "Beenden",      self.close,          "Ctrl+Q")
 
@@ -875,6 +880,24 @@ class MainWindow(QMainWindow):
             + "<br>".join(b["label"] for b in SUPPORTED_BOARDS.values())
             + "</p>"
         )
+
+    def _open_settings(self):
+        dlg = SettingsDialog(
+            self,
+            font_size=self._settings_font_size,
+            line_numbers=self._settings_line_numbers,
+        )
+        if dlg.exec() == SettingsDialog.DialogCode.Accepted:
+            self._settings_font_size = dlg.font_size
+            self._settings_line_numbers = dlg.line_numbers
+            self._apply_settings()
+
+    def _apply_settings(self):
+        """Einstellungen auf alle offenen Tabs + Konsole anwenden."""
+        for tab in self._tabs:
+            tab.editor.set_font_size(self._settings_font_size)
+            tab.editor.set_line_numbers_visible(self._settings_line_numbers)
+        self._console.set_font_size(self._settings_font_size)
 
     def closeEvent(self, event):
         for tab in self._tabs:

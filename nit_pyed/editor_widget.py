@@ -178,6 +178,23 @@ class CodeEditor(QWidget):
             return self.sci.isModified()
         return self.sci.document().isModified()
 
+    def set_font_size(self, size: int):
+        """Schriftgröße des Editors und des Lexers ändern."""
+        font = QFont("JetBrains Mono, Fira Code, Consolas, monospace", size)
+        if HAS_QSCI:
+            self.sci.setFont(font)
+            if hasattr(self, "_lexer") and self._lexer:
+                for style in range(128):
+                    self._lexer.setFont(font, style)
+                self._lexer.setDefaultFont(font)
+        else:
+            self.sci.setFont(font)
+
+    def set_line_numbers_visible(self, visible: bool):
+        """Zeilennummern ein- oder ausblenden."""
+        if HAS_QSCI:
+            self.sci.setMarginWidth(0, "0000" if visible else 0)
+
 
 # ------------------------------------------------------------------
 # Fallback-Editor ohne QScintilla
