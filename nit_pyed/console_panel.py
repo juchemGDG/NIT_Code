@@ -314,7 +314,7 @@ class ShellWidget(QWidget):
         self._master_fd: int | None = None   # PTY master (Unix)
         self._text_ready.connect(self._do_append)
         self._setup_ui()
-        self._start_shell()
+        self._start_shell([sys.executable, "-i"])  # Standard: Python REPL
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -366,21 +366,37 @@ class ShellWidget(QWidget):
             f"QPushButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
         )
 
-    def _start_shell(self):
-        shell = os.environ.get("SHELL", "/bin/bash") if sys.platform != "win32" else "cmd.exe"
+    def restart(self, cmd: list):
+        """Beendet den aktuellen Prozess und startet neu mit neuem Befehl."""
+        if self._master_fd is not None:
+            try:
+                os.close(self._master_fd)
+            except OSError:
+                pass
+            self._master_fd = None
+        if self._proc and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+        self._proc = None
+        self.output.clear()
+        self._start_shell(cmd)
+
+    def _start_shell(self, cmd: list):
+        """Startet cmd als interaktiven Prozess (PTY auf Unix, PIPE auf Windows)."""
         try:
             if sys.platform != "win32":
-                # Unix/macOS: PTY verwenden damit bash/sh nicht buffert
+                # Unix/macOS: PTY damit readline/REPL korrekt funktioniert
                 import pty, termios, fcntl, struct
                 master_fd, slave_fd = pty.openpty()
-                # Fenstergroesse setzen (80x24) damit bash sich korrekt verhält
                 try:
                     fcntl.ioctl(slave_fd, termios.TIOCSWINSZ,
                                 struct.pack("HHHH", 24, 80, 0, 0))
                 except Exception:
                     pass
                 self._proc = subprocess.Popen(
-                    [shell],
+                    cmd,
                     stdin=slave_fd,
                     stdout=slave_fd,
                     stderr=slave_fd,
@@ -393,7 +409,7 @@ class ShellWidget(QWidget):
                 t.start()
             else:
                 self._proc = subprocess.Popen(
-                    [shell],
+                    cmd,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -404,7 +420,7 @@ class ShellWidget(QWidget):
                 t = threading.Thread(target=self._read_output, daemon=True)
                 t.start()
         except Exception as e:
-            self._append(f"Shell konnte nicht gestartet werden: {e}\n", THEME["error"])
+            self._append(f"Prozess konnte nicht gestartet werden: {e}\n", THEME["error"])
 
     def _read_pty(self):
         """Liest kontinuierlich vom PTY-Master (Unix/macOS)."""
@@ -613,3 +629,15 @@ class ConsolePanel(QWidget):
 
     def clear_output(self):
         self.output_console.clear_output()
+
+    def set_shell_mode(self, mode: str, port: str = "", python_exec: str = ""):
+        """Startet Shell-Tab neu: Python-REPL (mode='python') oder MicroPython-REPL."""
+        if mode == "micropython" and port:
+            cmd = [sys.executable, "-m", "mpremote", "connect", port]
+            label = f"Shell  –  MicroPython REPL ({port})"
+        else:
+            exe = python_exec or sys.executable
+            cmd = [exe, "-i"]
+            label = "Shell  –  Python REPL"
+        self.tabs.setTabText(1, label)
+        self._shell.restart(cmd)

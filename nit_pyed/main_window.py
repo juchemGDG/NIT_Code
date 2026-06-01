@@ -561,6 +561,8 @@ class MainWindow(QMainWindow):
             self._status_mode.setText("Python (lokal)")
             self._device_panel.refresh("")
             self._left_splitter.setSizes([600, 0])
+            self._console.set_shell_mode("python",
+                                         python_exec=self._get_python_executable())
 
     def _set_board(self, board_id: str):
         self._board = board_id
@@ -793,6 +795,7 @@ class MainWindow(QMainWindow):
             return
         self._status_mode.setText(f"MicroPython  –  {port}")
         self._device_panel.refresh(port)
+        self._console.set_shell_mode("micropython", port=port)
         self._console.append_info(f"\n⚡  Verbunden mit {port} – lese Firmware-Version ...\n")
         code = (
             "import sys; "
