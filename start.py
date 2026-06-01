@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NIT PyEd - Python & MicroPython Editor für den Unterricht
+"""NIT_Code - Python & MicroPython Editor für den Unterricht
 Startskript: Erstellt .venv falls nötig und startet den Editor.
 """
 import sys

@@ -1,4 +1,4 @@
-"""Einstiegspunkt für NIT PyEd."""
+"""Einstiegspunkt für NIT_Code."""
 import sys
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication
@@ -30,7 +30,7 @@ def main():
     )
 
     app = QApplication(sys.argv)
-    app.setApplicationName("NIT PyEd")
+    app.setApplicationName("NIT_Code")
     app.setOrganizationName("NIT")
     app.setStyleSheet(GLOBAL_STYLE)
 

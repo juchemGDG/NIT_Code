@@ -1,4 +1,4 @@
-"""Haupt-Fenster von NIT PyEd."""
+"""Haupt-Fenster von NIT_Code."""
 import os
 import sys
 import traceback
@@ -20,6 +20,7 @@ from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
 from .settings_dialog import SettingsDialog
+from .tutor_panel import TutorPanel
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ GLOBAL_STYLE = f"""
 QMainWindow, QWidget {{
     background: {THEME['bg_dark']};
     color: {THEME['text']};
-    font-family: 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
     font-size: 13px;
 }}
 QMenuBar {{
@@ -185,6 +186,7 @@ class MainWindow(QMainWindow):
         self._mode = "python"       # "python" | "micropython"
         self._board = "ESP32"
         self._process: ProcessRunner | None = None
+        self._retired_threads: list = []   # hält QThread-Referenzen bis finished
         self._port_busy = False     # verhindert gleichzeitige mpremote-Prozesse
         self._settings_font_size: int = 14
         self._settings_line_numbers: bool = True
@@ -193,6 +195,9 @@ class MainWindow(QMainWindow):
         self._settings_autosave_secs: int = 0
         self._settings_python_exec: str = ""
         self._settings_scrollback: int = 5000
+        self._settings_tutor_enabled: bool = False
+        self._settings_tutor_url: str = ""
+        self._settings_tutor_model: str = ""
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._autosave_all)
         self._setup_window()
@@ -431,7 +436,13 @@ class MainWindow(QMainWindow):
 
         self._right_splitter.setSizes([520, 200])
         self._main_splitter.addWidget(self._right_splitter)
-        self._main_splitter.setSizes([220, 1060])
+
+        # Tutor-Panel (standardmäßig ausgeblendet)
+        self._tutor_panel = TutorPanel()
+        self._tutor_panel.setVisible(False)
+        self._main_splitter.addWidget(self._tutor_panel)
+
+        self._main_splitter.setSizes([220, 1060, 0])
 
         root_layout.addWidget(self._main_splitter)
 
@@ -470,6 +481,20 @@ class MainWindow(QMainWindow):
     def _release_port(self):
         self._port_busy = False
         self._console.resume_shell()
+
+    def _retire_process(self):
+        """Alten self._process sicher aufbewahren bis QThread.finished feuert.
+        Verhindert 'QThread destroyed while still running' → abort()."""
+        old = self._process
+        if old is None:
+            return
+        if old.isRunning():
+            old.terminate_process()
+            self._retired_threads.append(old)
+            old.finished.connect(
+                lambda t=old: self._retired_threads.remove(t)
+                if t in self._retired_threads else None
+            )
 
     def _on_device_refresh_start(self):
         self._port_busy = True
@@ -664,6 +689,7 @@ class MainWindow(QMainWindow):
         self._console.clear_output()
         self._console.append_info(f"▶  Starte: {tab.filepath}\n")
 
+        self._retire_process()
         if self._mode == "python":
             python = self._get_python_executable()
             cmd = [python, "-u", tab.filepath]
@@ -732,6 +758,7 @@ class MainWindow(QMainWindow):
         self._console.append_info(f"↑  Lade {remote_name} auf {port} hoch ...\n")
         cmd = [sys.executable, "-m", "mpremote", "connect", port,
                "cp", tab.filepath, f":{remote_name}"]
+        self._retire_process()
         self._process = ProcessRunner(cmd)
         self._process.output.connect(self._on_process_output)
         self._process.finished_run.connect(
@@ -774,6 +801,7 @@ class MainWindow(QMainWindow):
             ) if rc != 0 else None
         )
         proc.finished_run.connect(lambda _rc: self._release_port())
+        self._retire_process()
         proc.start()
         self._process = proc
 
@@ -793,6 +821,7 @@ class MainWindow(QMainWindow):
             lambda rc: self._console.append_success("✓  Controller neu gestartet.\n")
         )
         proc.finished_run.connect(lambda _rc: self._release_port())
+        self._retire_process()
         proc.start()
         self._process = proc
 
@@ -900,6 +929,9 @@ class MainWindow(QMainWindow):
             autosave_secs=self._settings_autosave_secs,
             python_exec=self._settings_python_exec,
             scrollback=self._settings_scrollback,
+            tutor_enabled=self._settings_tutor_enabled,
+            tutor_url=self._settings_tutor_url,
+            tutor_model=self._settings_tutor_model,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
             self._settings_font_size = dlg.font_size
@@ -909,6 +941,9 @@ class MainWindow(QMainWindow):
             self._settings_autosave_secs = dlg.autosave_secs
             self._settings_python_exec = dlg.python_exec
             self._settings_scrollback = dlg.scrollback_lines
+            self._settings_tutor_enabled = dlg.tutor_enabled
+            self._settings_tutor_url = dlg.tutor_url
+            self._settings_tutor_model = dlg.tutor_model
             try:
                 self._apply_settings()
             except Exception as exc:
@@ -932,6 +967,20 @@ class MainWindow(QMainWindow):
         self._autosave_timer.stop()
         if self._settings_autosave_secs > 0:
             self._autosave_timer.start(self._settings_autosave_secs * 1000)
+        # KI-Tutor
+        self._tutor_panel.setVisible(self._settings_tutor_enabled)
+        if self._settings_tutor_enabled:
+            self._tutor_panel.apply_settings(
+                self._settings_tutor_url,
+                self._settings_tutor_model,
+            )
+            sizes = self._main_splitter.sizes()
+            if sizes[2] == 0:
+                total = sum(sizes)
+                self._main_splitter.setSizes([sizes[0], total - sizes[0] - 320, 320])
+        else:
+            sizes = self._main_splitter.sizes()
+            self._main_splitter.setSizes([sizes[0], sizes[1] + sizes[2], 0])
 
     def _autosave_all(self):
         """Alle geänderten, bereits gespeicherten Tabs automatisch speichern."""
@@ -954,4 +1003,11 @@ class MainWindow(QMainWindow):
                     event.ignore()
                     return
                 break
+        # Laufende QThreads synchron beenden bevor Python-GC greift
+        if self._process and self._process.isRunning():
+            self._process.terminate_process()
+            self._process.wait(2000)
+        for t in list(self._retired_threads):
+            if t.isRunning():
+                t.wait(1000)
         event.accept()

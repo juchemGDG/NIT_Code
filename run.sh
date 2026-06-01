@@ -1,5 +1,5 @@
 #!/bin/bash
-# NIT PyEd – Linux/macOS Starter
+# NIT_Code – Linux/macOS Starter
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 

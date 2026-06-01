@@ -1,5 +1,5 @@
 @echo off
-REM NIT PyEd – Windows Starter
+REM NIT_Code – Windows Starter
 cd /d "%~dp0"
 
 if not exist ".venv" (

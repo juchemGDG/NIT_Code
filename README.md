@@ -1,6 +1,8 @@
-# NIT PyEd
+# NIT_Code
 
-**NIT PyEd** ist ein moderner, plattformunabhängiger Code-Editor für Python und MicroPython – entwickelt für den Einsatz im Schulunterricht (Sekundarstufe I & II).
+**NIT_Code** ist ein moderner, plattformunabhängiger Code-Editor für Python und MicroPython – entwickelt für den Einsatz im Schulunterricht (Sekundarstufe I & II).
+
+GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 
 ---
 
@@ -17,6 +19,7 @@
 | **Shell** | Integriertes Terminal für Einzelbefehle |
 | **Dateibaum** | Ordner/Dateien verwalten, neue Dateien erstellen |
 | **Modernes Design** | Dunkles Theme, optimal für den Unterricht |
+| **KI-Tutor „Infi"** | Lokaler, kostenloser KI-Tutor für Python-Anfängerinnen und -Anfänger (optional, via Ollama) |
 
 ---
 
@@ -24,6 +27,59 @@
 
 - **Python 3.10+** muss installiert sein
 - Für MicroPython-Funktionen: Controller per USB anschließen
+
+---
+
+## KI-Tutor „Infi" (optional)
+
+Infi ist ein eingebauter, ermutigender Lern-Assistent für Python- und Arduino-Anfängerinnen und -Anfänger. Er läuft **vollständig lokal und kostenlos** über [Ollama](https://ollama.com) – es wird keine Internetverbindung und kein API-Schlüssel benötigt.
+
+Die Option erscheint in den Einstellungen nur, wenn Ollama auf dem Rechner installiert ist.
+
+### Installation (einmalig pro Rechner)
+
+#### Windows
+
+1. Installer herunterladen: [ollama.com/download](https://ollama.com/download/windows)
+2. Setup ausführen – Ollama startet danach automatisch im Hintergrund
+3. Eingabeaufforderung öffnen (`Win + R` → `cmd`) und Modell herunterladen:
+   ```cmd
+   ollama pull llama3.2
+   ```
+
+#### Linux
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2
+```
+
+#### macOS
+
+```bash
+brew install ollama
+ollama pull llama3.2
+```
+
+> Alternativ: Installer unter [ollama.com/download](https://ollama.com/download/mac) herunterladen.
+
+### Empfohlene Modelle
+
+| Modell | Größe | Empfehlung |
+|---|---|---|
+| `llama3.2` | ~2 GB | Standard – gut und schnell |
+| `llama3.1:8b` | ~4,7 GB | Bessere Qualität, mehr RAM nötig |
+| `gemma2:2b` | ~1,6 GB | Für schwächere Schulrechner |
+
+### Infi aktivieren
+
+1. NIT_Code starten
+2. **Datei → Einstellungen** öffnen (oder `Strg+,`)
+3. Im Abschnitt **KI-TUTOR (INFI)** den Haken bei „Infi-Tutor aktivieren" setzen
+4. **Übernehmen** klicken – das Chat-Panel öffnet sich rechts
+
+> Das Modell kann im Einstellungs-Dialog jederzeit geändert werden (Feld „Modell").  
+> Ollama muss laufen, bevor Infi gestartet wird. Beim Fehler „Keine Verbindung" bitte in einer Eingabeaufforderung `ollama serve` ausführen.
 
 ---
 
@@ -83,7 +139,7 @@ oder direkt:
 ## Projektstruktur
 
 ```
-NIT_PyEd/
+NIT_Code/
 ├── nit_pyed/
 │   ├── main.py                 # Einstiegspunkt
 │   ├── main_window.py          # Hauptfenster
@@ -91,6 +147,7 @@ NIT_PyEd/
 │   ├── file_panel.py           # Dateibaum
 │   ├── console_panel.py        # Konsole + Shell
 │   ├── micropython_dialogs.py  # Flash- & Bibliotheks-Dialog
+│   ├── tutor_panel.py          # KI-Tutor „Infi" (Ollama-Chat)
 │   └── config.py               # Konstanten & Theme
 ├── start.py                    # Bootstrap-Skript
 ├── run.sh                      # Linux/macOS Starter

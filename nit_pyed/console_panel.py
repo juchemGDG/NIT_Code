@@ -444,27 +444,26 @@ class ShellWidget(QWidget):
 
     def _read_pty(self):
         """Liest kontinuierlich vom PTY-Master (Unix/macOS)."""
-        import select
-        while self._proc and self._proc.poll() is None:
+        import select, re as _re
+        while True:
+            # Lokale Kopie sichert gegen Race mit _kill_proc (setzt master_fd = None)
+            fd = self._master_fd
+            if fd is None or self._proc is None or self._proc.poll() is not None:
+                break
             try:
-                r, _, _ = select.select([self._master_fd], [], [], 0.1)
+                r, _, _ = select.select([fd], [], [], 0.1)
                 if r:
-                    data = os.read(self._master_fd, 4096)
+                    data = os.read(fd, 4096)
                     if data:
                         text = data.decode("utf-8", errors="replace")
                         # ANSI/VT100-Escape-Sequenzen entfernen
-                        import re as _re
-                        # CSI-Sequenzen: ESC [ <param-bytes 0x20-0x3f>* <final-byte 0x40-0x7e>
-                        # deckt auch ESC[?2004h (Bracketed-Paste) und alle DEC-Privatmodi ab
                         text = _re.sub(r'\x1b\[[\x20-\x3f]*[\x40-\x7e]', '', text)
-                        text = _re.sub(r'\x1b\][^\x07]*\x07', '', text)   # OSC
-                        text = _re.sub(r'\x1b[^[\]]', '', text)            # sonstige 2-Zeichen-ESC
-                        # \r ohne folgendes \n = "Zeilenanfang" → wegwerfen (readline-Redraw)
-                        import re as _re2
-                        text = _re2.sub(r'\r(?!\n)', '', text)
+                        text = _re.sub(r'\x1b\][^\x07]*\x07', '', text)
+                        text = _re.sub(r'\x1b[^[\]]', '', text)
+                        text = _re.sub(r'\r(?!\n)', '', text)
                         text = text.replace('\r\n', '\n')
                         self._bridge_append(text, THEME["terminal_text"])
-            except OSError:
+            except (OSError, TypeError):
                 break
 
     def _read_output(self):

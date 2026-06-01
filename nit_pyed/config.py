@@ -1,6 +1,7 @@
-"""Konstanten und Konfiguration für NIT PyEd."""
+"""Konstanten und Konfiguration für NIT_Code."""
+import shutil
 
-APP_NAME = "NIT PyEd"
+APP_NAME = "NIT_Code"
 APP_VERSION = "1.0.1"
 
 # GitHub-Repository für Bibliotheken
@@ -38,6 +39,15 @@ SUPPORTED_BOARDS = {
 }
 
 # Farbschema (dunkel, modern)
+# KI-Tutor (Ollama)
+TUTOR_DEFAULT_URL   = "http://localhost:11434"
+TUTOR_DEFAULT_MODEL = "llama3.2"
+
+
+def is_ollama_available() -> bool:
+    """True wenn das ollama-Kommando im PATH gefunden wird."""
+    return shutil.which("ollama") is not None
+
 THEME = {
     "bg_dark":        "#1e1e2e",
     "bg_mid":         "#252535",

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/crawl_chapters.sh)",
+      "Bash(/tmp/crawl_chapters.sh)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
