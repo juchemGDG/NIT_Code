@@ -109,7 +109,7 @@ python start.py
 oder direkt:
 
 ```bash
-.venv/bin/python -m nit_pyed.main
+.venv/bin/python -m nit_code.main
 ```
 
 ---
@@ -140,7 +140,7 @@ oder direkt:
 
 ```
 NIT_Code/
-├── nit_pyed/
+├── nit_code/
 │   ├── main.py                 # Einstiegspunkt
 │   ├── main_window.py          # Hauptfenster
 │   ├── editor_widget.py        # Code-Editor (QScintilla)

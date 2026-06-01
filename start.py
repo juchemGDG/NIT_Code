@@ -65,7 +65,7 @@ def run_editor():
     project_dir = str(Path(__file__).parent)
     env = os.environ.copy()
     env["PYTHONPATH"] = project_dir
-    os.execve(str(python), [str(python), "-m", "nit_pyed.main"] + sys.argv[1:], env)
+    os.execve(str(python), [str(python), "-m", "nit_code.main"] + sys.argv[1:], env)
 
 
 def main():
