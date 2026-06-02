@@ -54,10 +54,10 @@ def _find_arm_python() -> str | None:
 
 
 def pip_install():
-    pip = VENV_DIR / ("Scripts/pip.exe" if sys.platform == "win32" else "bin/pip")
+    python = VENV_DIR / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
     print("Installiere Abhängigkeiten ...")
-    subprocess.check_call([str(pip), "install", "--upgrade", "pip"])
-    subprocess.check_call([str(pip), "install", "-r", str(REQ_FILE)])
+    subprocess.check_call([str(python), "-m", "pip", "install", "--upgrade", "pip"])
+    subprocess.check_call([str(python), "-m", "pip", "install", "-r", str(REQ_FILE)])
 
 
 def run_editor():
