@@ -41,8 +41,9 @@ class AisChatPanel(QWidget):
         layout.addWidget(header)
 
         if _WEBENGINE_AVAILABLE:
-            # Eingebettete Web-Ansicht
+            # Eingebettete Web-Ansicht mit mobilem Viewport
             self._view = QWebEngineView()
+            self._view.loadFinished.connect(self._inject_mobile_viewport)
             self._view.setUrl(QUrl(AIS_CHAT_URL))
             layout.addWidget(self._view, stretch=1)
         else:
@@ -58,3 +59,17 @@ class AisChatPanel(QWidget):
             info.setWordWrap(True)
             layout.addWidget(info)
             layout.addStretch()
+
+    def _inject_mobile_viewport(self):
+        """Setzt Viewport auf Smartphone-Breite, damit das responsive Layout greift."""
+        self._view.page().runJavaScript("""
+            (function() {
+                var meta = document.querySelector('meta[name="viewport"]');
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    document.head.appendChild(meta);
+                }
+                meta.content = 'width=390, initial-scale=1.0';
+            })();
+        """)
