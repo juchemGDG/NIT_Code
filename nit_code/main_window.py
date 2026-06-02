@@ -1,5 +1,7 @@
 """Haupt-Fenster von NIT_Code."""
 import os
+import shutil
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -12,7 +14,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTabWidget, QLabel, QStatusBar, QToolBar, QToolButton,
     QComboBox, QFileDialog, QMessageBox, QInputDialog, QMenu,
-    QDialog, QPushButton,
+    QDialog, QPushButton, QTextEdit,
 )
 
 from .config import APP_NAME, APP_VERSION, THEME, SUPPORTED_BOARDS
@@ -199,6 +201,7 @@ class MainWindow(QMainWindow):
         self._settings_tutor_url: str = ""
         self._settings_tutor_model: str = ""
         self._settings_sketchbook: str = str(Path.home())
+        self._settings_git_repo: str = ""
         self._settings_store = QSettings()
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._autosave_all)
@@ -208,6 +211,7 @@ class MainWindow(QMainWindow):
         self._setup_toolbar()
         self._setup_central()
         self._setup_statusbar()
+        self._update_git_status_label()
         self._new_tab()             # Startdatei
         self._apply_settings()      # Standard-Einstellungen sofort anwenden
         # currentIndexChanged feuerte beim addItem noch nicht (Signal erst danach verbunden)
@@ -293,6 +297,22 @@ class MainWindow(QMainWindow):
             self._m_upy, "🔄  Controller neu starten", self._reset_controller
         )
         self._m_upy.addSeparator()
+
+        # ── Git ──
+        m_git = mb.addMenu("Git")
+        self._add_action(m_git, "Repository klonen …", self._git_clone)
+        self._add_action(m_git, "Repository auswählen …", self._git_select_repo)
+        m_git.addSeparator()
+        self._add_action(m_git, "Status", self._git_status)
+        self._add_action(m_git, "Fetch", self._git_fetch)
+        self._add_action(m_git, "Pull", self._git_pull)
+        self._add_action(m_git, "Push", self._git_push)
+        m_git.addSeparator()
+        self._add_action(m_git, "Aktuellen Branch anzeigen", self._git_show_branch)
+        self._add_action(m_git, "Branch wechseln …", self._git_switch_branch)
+        self._add_action(m_git, "Historie anzeigen …", self._git_show_history)
+        m_git.addSeparator()
+        self._add_action(m_git, "Commit …", self._git_commit)
 
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
@@ -463,6 +483,10 @@ class MainWindow(QMainWindow):
             f"color:{THEME['accent']}; font-weight:bold; padding:0 8px;"
         )
         sb.addPermanentWidget(self._status_mode)
+
+        self._status_git = QLabel("Git: —")
+        self._status_git.setStyleSheet(f"color:{THEME['text_dim']}; padding:0 8px;")
+        sb.addPermanentWidget(self._status_git)
 
         self._status_board = QLabel("")
         self._status_board.setStyleSheet(f"color:{THEME['text_dim']}; padding:0 8px;")
@@ -852,6 +876,359 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     # ──────────────────────────────────────────────────────────────────────
+    # Git-Aktionen
+    # ──────────────────────────────────────────────────────────────────────
+    def _get_git_base_dir(self) -> str:
+        candidate = self._settings_sketchbook
+        if candidate and os.path.isdir(candidate):
+            return candidate
+        return str(Path.home())
+
+    def _detect_git_repo_root(self, start_dir: str) -> str | None:
+        try:
+            res = subprocess.run(
+                ["git", "-C", start_dir, "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                return res.stdout.strip()
+        except Exception:
+            return None
+        return None
+
+    def _list_git_repos_in_sketchbook(self) -> list[str]:
+        base = self._get_git_base_dir()
+        repos: list[str] = []
+        seen: set[str] = set()
+
+        base_repo = self._detect_git_repo_root(base)
+        if base_repo:
+            normalized = str(Path(base_repo).resolve())
+            repos.append(normalized)
+            seen.add(normalized)
+
+        for root, dirs, _files in os.walk(base):
+            if ".git" in dirs:
+                repo_root = str(Path(root).resolve())
+                if repo_root not in seen:
+                    repos.append(repo_root)
+                    seen.add(repo_root)
+                dirs[:] = [d for d in dirs if d != ".git"]
+
+        repos.sort(key=lambda p: p.casefold())
+        return repos
+
+    def _select_git_repo_from_list(self, repos: list[str], title: str) -> str | None:
+        if not repos:
+            return None
+
+        base = Path(self._get_git_base_dir())
+        labels = []
+        mapping: dict[str, str] = {}
+        for repo in repos:
+            repo_path = Path(repo)
+            try:
+                label = str(repo_path.relative_to(base))
+                if not label:
+                    label = "."
+            except ValueError:
+                label = repo
+            if label in mapping:
+                label = repo
+            labels.append(label)
+            mapping[label] = repo
+
+        labels.sort(key=lambda s: s.casefold())
+        default_idx = 0
+        if self._settings_git_repo and self._settings_git_repo in repos:
+            for i, lbl in enumerate(labels):
+                if mapping[lbl] == self._settings_git_repo:
+                    default_idx = i
+                    break
+
+        selected, ok = QInputDialog.getItem(
+            self,
+            title,
+            "Repository:",
+            labels,
+            default_idx,
+            False,
+        )
+        if not ok or not selected:
+            return None
+        return mapping[selected]
+
+    def _resolve_git_repo(self, interactive: bool = True) -> str | None:
+        if self._settings_git_repo and os.path.isdir(self._settings_git_repo):
+            repo = self._detect_git_repo_root(self._settings_git_repo)
+            if repo:
+                normalized = str(Path(repo).resolve())
+                if normalized == str(Path(self._settings_git_repo).resolve()):
+                    self._settings_git_repo = normalized
+                    return normalized
+
+        repos = self._list_git_repos_in_sketchbook()
+        if not repos:
+            return None
+        if len(repos) == 1:
+            self._settings_git_repo = repos[0]
+            self._update_git_status_label()
+            return repos[0]
+        if not interactive:
+            return None
+
+        selected_repo = self._select_git_repo_from_list(repos, "Git: Repository auswählen")
+        if not selected_repo:
+            return None
+        self._settings_git_repo = selected_repo
+        self._save_persistent_settings()
+        self._update_git_status_label()
+        return selected_repo
+
+    def _require_git_repo(self) -> str | None:
+        repo = self._resolve_git_repo(interactive=True)
+        if repo:
+            return repo
+        QMessageBox.warning(
+            self,
+            "Git",
+            "Im Sketchbook-Ordner wurde kein Git-Repository gefunden.\n"
+            "Bitte zuerst ein Repository klonen oder initialisieren.",
+        )
+        return None
+
+    def _git_select_repo(self):
+        repos = self._list_git_repos_in_sketchbook()
+        if not repos:
+            QMessageBox.warning(
+                self,
+                "Git",
+                "Im Sketchbook-Ordner wurden keine Repositories gefunden.",
+            )
+            return
+        selected_repo = self._select_git_repo_from_list(repos, "Git: Repository auswählen")
+        if not selected_repo:
+            return
+        self._settings_git_repo = selected_repo
+        self._save_persistent_settings()
+        self._update_git_status_label()
+        self._console.append_info(f"[Git] Aktives Repository: {selected_repo}\n")
+
+    def _run_git_process(self, cmd: list[str], cwd: str, label: str, on_success=None):
+        if shutil.which("git") is None:
+            QMessageBox.critical(self, "Git", "Git wurde auf diesem System nicht gefunden.")
+            return
+
+        self._console.append_info(f"\n[Git] {label}\n")
+        self._console.append_info(f"[Git] Arbeitsordner: {cwd}\n")
+        self._console.append_info(f"[Git] Befehl: {' '.join(cmd)}\n")
+
+        proc = ProcessRunner(cmd, cwd=cwd)
+        proc.output.connect(
+            lambda text, kind: self._console.append_output(text)
+            if kind == "stdout"
+            else self._console.append_error(text)
+        )
+        proc.finished_run.connect(
+            lambda code: self._console.append_success(f"[Git] Fertig (Code {code})\n")
+            if code == 0
+            else self._console.append_error(f"[Git] Fehler (Code {code})\n")
+        )
+        if on_success is not None:
+            proc.finished_run.connect(lambda code: on_success() if code == 0 else None)
+        self._retire_process()
+        self._process = proc
+        proc.start()
+
+    def _git_clone(self):
+        url, ok = QInputDialog.getText(
+            self,
+            "Git: Repository klonen",
+            "Repository-URL (HTTPS/SSH):",
+        )
+        if not ok or not url.strip():
+            return
+        url = url.strip()
+
+        default_target = os.path.basename(url.rstrip("/")).removesuffix(".git") or "projekt"
+        target_name, ok = QInputDialog.getText(
+            self,
+            "Git: Zielordner",
+            "Ordnername im Sketchbook:",
+            text=default_target,
+        )
+        if not ok or not target_name.strip():
+            return
+
+        base = self._get_git_base_dir()
+        target = os.path.join(base, target_name.strip())
+        if os.path.exists(target):
+            QMessageBox.warning(self, "Git", f"Zielordner existiert bereits:\n{target}")
+            return
+        self._run_git_process(
+            ["git", "clone", url, target],
+            cwd=base,
+            label="Repository klonen",
+            on_success=lambda: self._set_active_repo_after_clone(target),
+        )
+
+    def _set_active_repo_after_clone(self, repo_path: str):
+        normalized = str(Path(repo_path).resolve())
+        self._settings_git_repo = normalized
+        self._save_persistent_settings()
+        self._update_git_status_label()
+        self._console.append_success(f"[Git] Aktives Repository gesetzt: {normalized}\n")
+
+    def _git_show_branch(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+        branch = self._get_current_branch(repo)
+        if not branch:
+            QMessageBox.warning(self, "Git", "Aktueller Branch konnte nicht ermittelt werden.")
+            return
+        self._console.append_info(f"[Git] Aktueller Branch: {branch}\n")
+        QMessageBox.information(self, "Git", f"Aktueller Branch:\n{branch}")
+
+    def _get_current_branch(self, repo: str) -> str | None:
+        res = subprocess.run(
+            ["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            return None
+        branch = res.stdout.strip()
+        return branch or None
+
+    def _git_switch_branch(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+
+        res = subprocess.run(
+            ["git", "-C", repo, "branch", "--format", "%(refname:short)"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            self._console.append_error(res.stderr or "[Git] Branches konnten nicht gelesen werden.\n")
+            return
+
+        branches = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        if not branches:
+            QMessageBox.warning(self, "Git", "Keine lokalen Branches gefunden.")
+            return
+
+        current = self._get_current_branch(repo) or ""
+        try:
+            default_idx = branches.index(current)
+        except ValueError:
+            default_idx = 0
+
+        target, ok = QInputDialog.getItem(
+            self,
+            "Git: Branch wechseln",
+            "Branch:",
+            branches,
+            default_idx,
+            True,
+        )
+        if not ok or not target.strip():
+            return
+        target = target.strip()
+        if target == current:
+            self._console.append_info(f"[Git] Bereits auf Branch '{target}'.\n")
+            return
+
+        self._run_git_process(["git", "switch", target], cwd=repo, label=f"Branch wechseln zu {target}")
+
+    def _git_show_history(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+
+        res = subprocess.run(
+            ["git", "-C", repo, "--no-pager", "log", "--oneline", "--decorate", "-n", "50"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            self._console.append_error(res.stderr or "[Git] Historie konnte nicht gelesen werden.\n")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Git: Historie")
+        dialog.resize(760, 520)
+
+        layout = QVBoxLayout(dialog)
+        history_view = QTextEdit(dialog)
+        history_view.setReadOnly(True)
+        history_view.setFont(QFont("JetBrains Mono, Fira Code, Consolas, monospace", 10))
+        history_view.setPlainText(res.stdout.strip() or "(Keine Commits gefunden)")
+        layout.addWidget(history_view)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Schließen")
+        close_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec()
+
+    def _git_status(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+        self._run_git_process(["git", "status", "--short", "--branch"], cwd=repo, label="Status")
+
+    def _git_fetch(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+        self._run_git_process(["git", "fetch", "--all", "--prune"], cwd=repo, label="Fetch")
+
+    def _git_pull(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+        self._run_git_process(["git", "pull"], cwd=repo, label="Pull")
+
+    def _git_push(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+        self._run_git_process(["git", "push"], cwd=repo, label="Push")
+
+    def _git_commit(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+        msg, ok = QInputDialog.getText(
+            self,
+            "Git: Commit",
+            "Commit-Nachricht:",
+        )
+        if not ok or not msg.strip():
+            return
+        self._run_git_process(
+            ["git", "add", "-A"],
+            cwd=repo,
+            label="Änderungen stagen",
+            on_success=lambda: self._run_git_process(
+                ["git", "commit", "-m", msg.strip()],
+                cwd=repo,
+                label="Commit erstellen",
+            ),
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
     # Fehlernavigation
     # ──────────────────────────────────────────────────────────────────────
     def _jump_to_error(self, filepath: str, lineno: int):
@@ -1006,6 +1383,7 @@ class MainWindow(QMainWindow):
         self._settings_sketchbook = self._normalize_sketchbook_dir(
             str(self._settings_store.value("files/sketchbook_dir", self._settings_sketchbook) or "")
         )
+        self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
 
     def _save_persistent_settings(self):
         self._settings_store.setValue("editor/font_size", self._settings_font_size)
@@ -1019,6 +1397,7 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("tutor/url", self._settings_tutor_url)
         self._settings_store.setValue("tutor/model", self._settings_tutor_model)
         self._settings_store.setValue("files/sketchbook_dir", self._settings_sketchbook)
+        self._settings_store.setValue("git/repo_dir", self._settings_git_repo)
         self._settings_store.sync()
 
     def _choose_sketchbook_dir(self):
@@ -1029,8 +1408,26 @@ class MainWindow(QMainWindow):
         )
         if folder:
             self._settings_sketchbook = self._normalize_sketchbook_dir(folder)
+            self._settings_git_repo = ""
             self._apply_sketchbook_root()
             self._save_persistent_settings()
+            self._update_git_status_label()
+
+    def _update_git_status_label(self):
+        if not hasattr(self, "_status_git"):
+            return
+        repo = self._settings_git_repo
+        if not repo or not os.path.isdir(repo):
+            self._status_git.setText("Git: —")
+            return
+
+        try:
+            rel = Path(repo).resolve().relative_to(Path(self._settings_sketchbook).resolve())
+            label = "." if str(rel) == "." else str(rel)
+        except Exception:
+            label = Path(repo).name or repo
+
+        self._status_git.setText(f"Git: {label}")
 
     def _apply_sketchbook_root(self):
         if hasattr(self, "_file_panel"):
