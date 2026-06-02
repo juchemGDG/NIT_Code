@@ -1533,7 +1533,7 @@ class MainWindow(QMainWindow):
         self._settings_autosave_secs = self._settings_int("editor/autosave_secs", self._settings_autosave_secs)
         self._settings_python_exec = str(self._settings_store.value("python/executable", self._settings_python_exec) or "")
         self._settings_scrollback = self._settings_int("console/scrollback", self._settings_scrollback)
-        self._settings_tutor_enabled = self._settings_bool("tutor/enabled", self._settings_tutor_enabled)
+        self._settings_tutor_mode = str(self._settings_store.value("tutor/mode", self._settings_tutor_mode) or "none")
         self._settings_tutor_url = str(self._settings_store.value("tutor/url", self._settings_tutor_url) or "")
         self._settings_tutor_model = str(self._settings_store.value("tutor/model", self._settings_tutor_model) or "")
         self._settings_sketchbook = self._normalize_sketchbook_dir(
@@ -1549,7 +1549,7 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("editor/autosave_secs", self._settings_autosave_secs)
         self._settings_store.setValue("python/executable", self._settings_python_exec)
         self._settings_store.setValue("console/scrollback", self._settings_scrollback)
-        self._settings_store.setValue("tutor/enabled", self._settings_tutor_enabled)
+        self._settings_store.setValue("tutor/mode", self._settings_tutor_mode)
         self._settings_store.setValue("tutor/url", self._settings_tutor_url)
         self._settings_store.setValue("tutor/model", self._settings_tutor_model)
         self._settings_store.setValue("files/sketchbook_dir", self._settings_sketchbook)
