@@ -5,7 +5,7 @@ import tempfile
 import subprocess
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QModelIndex
 from PyQt6.QtGui import QFileSystemModel, QIcon, QFont, QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView,
@@ -14,6 +14,24 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import THEME
+
+
+class _DirsFirstProxy(QSortFilterProxyModel):
+    """Sortiert Verzeichnisse vor Dateien und danach alphabetisch."""
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        model = self.sourceModel()
+        if model is None:
+            return super().lessThan(left, right)
+
+        left_is_dir = model.fileInfo(left).isDir()
+        right_is_dir = model.fileInfo(right).isDir()
+        if left_is_dir != right_is_dir:
+            return left_is_dir and not right_is_dir
+
+        left_name = str(model.data(left, Qt.ItemDataRole.DisplayRole) or "")
+        right_name = str(model.data(right, Qt.ItemDataRole.DisplayRole) or "")
+        return left_name.casefold() < right_name.casefold()
 
 
 class FilePanel(QWidget):
@@ -84,8 +102,11 @@ class FilePanel(QWidget):
         # Ordner immer sichtbar lassen; nur nicht passende Dateien ausgrauen.
         self._model.setNameFilterDisables(True)
 
+        self._proxy = _DirsFirstProxy(self)
+        self._proxy.setSourceModel(self._model)
+
         self._tree = QTreeView()
-        self._tree.setModel(self._model)
+        self._tree.setModel(self._proxy)
         self._tree.setStyleSheet(
             f"""
             QTreeView {{
@@ -113,6 +134,8 @@ class FilePanel(QWidget):
             self._tree.hideColumn(col)
         self._tree.setAnimated(True)
         self._tree.setIndentation(16)
+        self._tree.setSortingEnabled(True)
+        self._tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self._tree.doubleClicked.connect(self._on_double_click)
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._show_context_menu)
@@ -121,9 +144,16 @@ class FilePanel(QWidget):
     def set_root(self, path: str):
         self._root = path
         self._model.setRootPath(path)
-        self._tree.setRootIndex(self._model.index(path))
+        source_root = self._model.index(path)
+        self._tree.setRootIndex(self._proxy.mapFromSource(source_root))
         short = path if len(path) < 30 else "…" + path[-27:]
         self._path_label.setText(short)
+
+    def _index_to_path(self, index) -> str:
+        if not index.isValid():
+            return self._root
+        source_index = self._proxy.mapToSource(index)
+        return self._model.filePath(source_index)
 
     def _open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Ordner öffnen", self._root)
@@ -131,13 +161,13 @@ class FilePanel(QWidget):
             self.set_root(folder)
 
     def _on_double_click(self, index):
-        path = self._model.filePath(index)
+        path = self._index_to_path(index)
         if os.path.isfile(path):
             self.file_open_requested.emit(path)
 
     def _show_context_menu(self, pos):
         index = self._tree.indexAt(pos)
-        path = self._model.filePath(index) if index.isValid() else self._root
+        path = self._index_to_path(index)
         menu = QMenu(self)
         menu.setStyleSheet(
             f"""
@@ -157,6 +187,7 @@ class FilePanel(QWidget):
         )
         if os.path.isfile(path):
             menu.addAction("Öffnen", lambda: self.file_open_requested.emit(path))
+            menu.addAction("Öffnen mit …", lambda: self._open_with(path))
             menu.addSeparator()
         menu.addAction("Neue Datei", lambda: self._new_file(
             os.path.dirname(path) if os.path.isfile(path) else path
@@ -168,6 +199,20 @@ class FilePanel(QWidget):
             menu.addSeparator()
             menu.addAction("Löschen", lambda: self._delete(path))
         menu.exec(self._tree.viewport().mapToGlobal(pos))
+
+    def _open_with(self, path: str):
+        app, _ = QFileDialog.getOpenFileName(
+            self,
+            "Programm für 'Öffnen mit …' wählen",
+            "/usr/bin",
+            "Alle Dateien (*)",
+        )
+        if not app:
+            return
+        try:
+            subprocess.Popen([app, path])
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", str(e))
 
     def _new_file(self, folder: str):
         name, ok = QInputDialog.getText(self, "Neue Datei", "Dateiname:")
