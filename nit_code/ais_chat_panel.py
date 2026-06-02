@@ -1,10 +1,17 @@
 """AIS-Chat-Panel – eingebettete Web-Ansicht von app.ais-chat.schule."""
 try:
     from PyQt6.QtCore import QUrl
+    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     _WEBENGINE_AVAILABLE = True
 except ImportError:
     _WEBENGINE_AVAILABLE = False
+
+_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+    "Version/17.0 Mobile/15E148 Safari/604.1"
+)
 
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
@@ -41,8 +48,13 @@ class AisChatPanel(QWidget):
         layout.addWidget(header)
 
         if _WEBENGINE_AVAILABLE:
-            # Eingebettete Web-Ansicht mit mobilem Viewport
+            # Eigenes Profil mit mobilem User-Agent → Server liefert Smartphone-Layout
+            self._profile = QWebEngineProfile("ais_chat_panel", self)
+            self._profile.setHttpUserAgent(_MOBILE_UA)
+            page = QWebEnginePage(self._profile, self)
+
             self._view = QWebEngineView()
+            self._view.setPage(page)
             self._view.loadFinished.connect(self._inject_mobile_viewport)
             self._view.setUrl(QUrl(AIS_CHAT_URL))
             layout.addWidget(self._view, stretch=1)
@@ -61,7 +73,7 @@ class AisChatPanel(QWidget):
             layout.addStretch()
 
     def _inject_mobile_viewport(self):
-        """Setzt Viewport auf Smartphone-Breite, damit das responsive Layout greift."""
+        """Setzt Viewport auf device-width, damit der Inhalt die Panel-Breite füllt."""
         self._view.page().runJavaScript("""
             (function() {
                 var meta = document.querySelector('meta[name="viewport"]');
@@ -70,6 +82,6 @@ class AisChatPanel(QWidget):
                     meta.name = 'viewport';
                     document.head.appendChild(meta);
                 }
-                meta.content = 'width=390, initial-scale=1.0';
+                meta.content = 'width=device-width, initial-scale=1.0';
             })();
         """)
