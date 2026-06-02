@@ -588,11 +588,21 @@ class MainWindow(QMainWindow):
         tab = self._current_tab()
         if not tab:
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Speichern als", str(Path.home()),
-            "Python-Dateien (*.py);;Alle Dateien (*)"
+        dlg = QFileDialog(
+            self,
+            "Speichern als",
+            str(Path.home()),
+            "Python-Dateien (*.py);;Alle Dateien (*)",
         )
-        if path:
+        dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dlg.setFileMode(QFileDialog.FileMode.AnyFile)
+        # Nicht-nativer Dialog verhindert Fullscreen-Verhalten auf manchen Linux-Setups.
+        dlg.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        dlg.resize(900, 620)
+        dlg.setWindowState(dlg.windowState() & ~Qt.WindowState.WindowFullScreen)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selectedFiles():
+            path = dlg.selectedFiles()[0]
             tab.filepath = path
             self._do_save(tab, path)
             self._update_tab_title(tab)
