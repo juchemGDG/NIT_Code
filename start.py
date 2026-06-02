@@ -77,7 +77,7 @@ def main():
         python = VENV_DIR / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
         try:
             subprocess.check_call(
-                [str(python), "-c", "import PyQt6"],
+                [str(python), "-c", "import PyQt6; import PyQt6.QtWebEngineWidgets"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
