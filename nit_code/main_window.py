@@ -474,7 +474,7 @@ class MainWindow(QMainWindow):
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
-        self._main_splitter.setSizes([120, 1060, 0])
+        self._main_splitter.setSizes([150, 1060, 0])
         # Nur der Editor-Bereich wächst beim Vergrößern des Fensters
         self._main_splitter.setStretchFactor(0, 0)  # Datei-Panel: feste Breite
         self._main_splitter.setStretchFactor(1, 1)  # Editor: nimmt Extra-Platz
