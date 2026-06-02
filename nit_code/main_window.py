@@ -560,8 +560,9 @@ class MainWindow(QMainWindow):
     # Dateioperationen
     # ──────────────────────────────────────────────────────────────────────
     def _open_file(self):
+        start_dir = self._settings_sketchbook if os.path.isdir(self._settings_sketchbook) else str(Path.home())
         path, _ = QFileDialog.getOpenFileName(
-            self, "Datei öffnen", str(Path.home()),
+            self, "Datei öffnen", start_dir,
             "Python-Dateien (*.py);;Alle Dateien (*)"
         )
         if path:
@@ -588,10 +589,11 @@ class MainWindow(QMainWindow):
         tab = self._current_tab()
         if not tab:
             return
+        start_dir = self._settings_sketchbook if os.path.isdir(self._settings_sketchbook) else str(Path.home())
         dlg = QFileDialog(
             self,
             "Speichern als",
-            str(Path.home()),
+            start_dir,
             "Python-Dateien (*.py);;Alle Dateien (*)",
         )
         dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
