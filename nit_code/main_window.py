@@ -421,8 +421,8 @@ class MainWindow(QMainWindow):
         # Linker Bereich: vertikaler Splitter (lokale Dateien + Controller-Dateien)
         self._left_splitter = QSplitter(Qt.Orientation.Vertical)
         self._left_splitter.setHandleWidth(2)
-        self._left_splitter.setMinimumWidth(180)
-        self._left_splitter.setMaximumWidth(350)
+        self._left_splitter.setMinimumWidth(150)
+        self._left_splitter.setMaximumWidth(300)
 
         self._file_panel = FilePanel()
         self._file_panel.setMinimumWidth(0)
@@ -474,7 +474,7 @@ class MainWindow(QMainWindow):
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
-        self._main_splitter.setSizes([220, 1060, 0])
+        self._main_splitter.setSizes([200, 1060, 0])
 
         root_layout.addWidget(self._main_splitter)
 

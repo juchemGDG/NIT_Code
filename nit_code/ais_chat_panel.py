@@ -18,9 +18,9 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from .config import AIS_CHAT_URL, THEME
 
 # Feste Breite des Panels und Zoom-Faktor für das mobile Layout
-PANEL_WIDTH = 200
+PANEL_WIDTH = 400
 _VIEWPORT_WIDTH = 390   # Smartphone-Breite, auf die der Inhalt rendert
-PANEL_ZOOM = PANEL_WIDTH / _VIEWPORT_WIDTH
+PANEL_ZOOM = 0.9
 
 
 class AisChatPanel(QWidget):
