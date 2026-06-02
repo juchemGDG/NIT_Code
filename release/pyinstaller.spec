@@ -4,10 +4,11 @@ import sys
 
 block_cipher = None
 
-project_root = os.path.abspath('.')
-entry_script = os.path.join('release', 'launcher.py')
+spec_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(spec_dir, '..'))
+entry_script = os.path.join(spec_dir, 'launcher.py')
 
-logo_path = os.path.join('nit_code', 'logo.png')
+logo_path = os.path.join(project_root, 'nit_code', 'logo.png')
 datas = []
 if os.path.exists(logo_path):
     datas.append((logo_path, 'nit_code'))
