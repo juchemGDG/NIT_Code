@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QDialog, QPushButton, QTextEdit,
 )
 
-from .config import APP_NAME, APP_VERSION, THEME, SUPPORTED_BOARDS, python_executable
+from .config import APP_NAME, APP_VERSION, THEME, SUPPORTED_BOARDS, python_executable, tool_command
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
@@ -811,7 +811,7 @@ class MainWindow(QMainWindow):
 
         remote_name = os.path.basename(tab.filepath)
         self._console.append_info(f"↑  Lade {remote_name} auf {port} hoch ...\n")
-        cmd = [self._get_python_executable(), "-m", "mpremote", "connect", port,
+        cmd = [*tool_command("mpremote"), "connect", port,
                "cp", tab.filepath, f":{remote_name}"]
         self._retire_process()
         self._process = ProcessRunner(cmd)
@@ -840,7 +840,7 @@ class MainWindow(QMainWindow):
             "print('MicroPython', sys.version, 'auf', sys.platform); "
             "print('Implementation:', v.name, v.version)"
         )
-        cmd = [self._get_python_executable(), "-m", "mpremote", "connect", port, "exec", code]
+        cmd = [*tool_command("mpremote"), "connect", port, "exec", code]
         proc = ProcessRunner(cmd)
         proc.output.connect(
             lambda text, kind: (
@@ -868,7 +868,7 @@ class MainWindow(QMainWindow):
             return
         self._console.append_info(f"🔄  Starte Controller auf {port} neu ...\n")
         cmd = [
-            self._get_python_executable(), "-m", "mpremote",
+            *tool_command("mpremote"),
             "connect", port, "reset",
         ]
         proc = ProcessRunner(cmd)

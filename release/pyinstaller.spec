@@ -2,7 +2,19 @@
 import os
 import sys
 
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+
 block_cipher = None
+
+# mpremote/esptool werden nur per Subprozess ("App -m mpremote ...") genutzt und
+# daher von der statischen Analyse NICHT gefunden. Ohne explizites Einsammeln
+# fehlen sie im Bundle ("No module named mpremote"). Komplett mitnehmen.
+tool_datas, tool_binaries, tool_hiddenimports = [], [], []
+for _pkg in ("mpremote", "esptool", "serial", "serial.tools"):
+    _d, _b, _h = collect_all(_pkg)
+    tool_datas += _d
+    tool_binaries += _b
+    tool_hiddenimports += _h
 
 # In PyInstaller-Specs ist __file__ nicht zuverlässig verfügbar.
 cwd = os.getcwd()
@@ -54,13 +66,16 @@ elif sys.platform == 'darwin' and os.path.exists(logo_path):
 a = Analysis(
     [entry_script],
     pathex=[project_root],
-    binaries=[],
-    datas=datas,
+    binaries=tool_binaries,
+    datas=datas + tool_datas,
     hiddenimports=[
         'PyQt6.QtWebEngineWidgets',
         'PyQt6.QtWebEngineCore',
         'PyQt6.Qsci',
-    ],
+        'mpremote',
+        'mpremote.main',
+        'esptool',
+    ] + tool_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -104,7 +119,7 @@ if sys.platform == 'darwin':
         info_plist={
             'CFBundleName': 'NIT_Code',
             'CFBundleDisplayName': 'NIT_Code',
-            'CFBundleShortVersionString': '1.0.2',
-            'CFBundleVersion': '1.0.2',
+            'CFBundleShortVersionString': '1.0.3',
+            'CFBundleVersion': '1.0.3',
         },
     )

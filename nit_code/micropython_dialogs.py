@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont, QColor
 
-from .config import THEME, SUPPORTED_BOARDS, LIB_REPO_API, LIB_REPO_RAW, python_executable
+from .config import THEME, SUPPORTED_BOARDS, LIB_REPO_API, LIB_REPO_RAW, python_executable, tool_command
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Hilfsstil
@@ -119,7 +119,7 @@ class FlashWorker(QThread):
 
         if flash_cmd == "esp32":
             cmd = [
-                python_executable(), "-m", "esptool",
+                *tool_command("esptool"),
                 "--chip", "esp32",
                 "--port", self.port,
                 "--baud", str(baud),
@@ -133,7 +133,7 @@ class FlashWorker(QThread):
             self._flash_microbit()
             return
         else:
-            cmd = [python_executable(), "-m", "esptool", "--port", self.port,
+            cmd = [*tool_command("esptool"), "--port", self.port,
                    "write_flash", "0x0", self.firmware_path]
 
         try:
@@ -710,7 +710,7 @@ class LibInstallWorker(QThread):
 
                     self.log.emit(f"Übertrage {name} auf Controller ({self.port}) ...\n")
                     result = subprocess.run(
-                        [python_executable(), "-m", "mpremote", "connect", self.port,
+                        [*tool_command("mpremote"), "connect", self.port,
                          "cp", tmp_path, f":{name}"],
                         capture_output=True, text=True, timeout=30
                     )

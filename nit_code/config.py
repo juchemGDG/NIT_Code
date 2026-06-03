@@ -27,8 +27,24 @@ def python_executable() -> str:
     return sys.executable
 
 
+def tool_command(module: str) -> list[str]:
+    """Befehl, um ein mitgeliefertes Tool (``mpremote``/``esptool``) zu starten.
+
+    Im Frozen-Modus ruft sich die App selbst als Dispatcher auf
+    (``[sys.executable, "-m", module]`` – siehe ``release/launcher.py``), weil
+    der System-Python das Modul i. d. R. NICHT enthält
+    (``No module named mpremote``). Die Module sind ins PyInstaller-Bundle
+    eingepackt und werden vom Launcher in-process ausgeführt.
+
+    Im Dev-Modus wird der venv-/aktuelle Python verwendet.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "-m", module]
+    return [python_executable(), "-m", module]
+
+
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"

@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QLabel, QSplitter, QTabWidget,
 )
 
-from .config import THEME, python_executable
+from .config import THEME, python_executable, tool_command
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -682,7 +682,7 @@ class ConsolePanel(QWidget):
     def set_shell_mode(self, mode: str, port: str = "", python_exec: str = ""):
         """Setzt Shell-Modus. mpremote-REPL wird erst beim Tab-Klick gestartet."""
         if mode == "micropython" and port:
-            cmd = [python_executable(), "-m", "mpremote", "connect", port]
+            cmd = [*tool_command("mpremote"), "connect", port]
             label = f"Shell  –  MicroPython REPL ({port})"
             self._shell_is_micropython = True
             self.shell.stop()                 # alten Prozess beenden

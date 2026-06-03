@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QListWidget, QListWidgetItem, QSplitter,
 )
 
-from .config import THEME, python_executable
+from .config import THEME, tool_command
 
 
 class _DirsFirstProxy(QSortFilterProxyModel):
@@ -275,7 +275,7 @@ class _DeviceListWorker(QThread):
         )
         try:
             r = subprocess.run(
-                [python_executable(), "-m", "mpremote", "connect", self._port, "exec", code],
+                [*tool_command("mpremote"), "connect", self._port, "exec", code],
                 capture_output=True, text=True, timeout=12,
             )
         except Exception as e:
@@ -460,7 +460,7 @@ class DeviceFilePanel(QWidget):
         tmp_path = os.path.join(tempfile.gettempdir(), name)
         try:
             r = subprocess.run(
-                [python_executable(), "-m", "mpremote", "connect", self._port,
+                [*tool_command("mpremote"), "connect", self._port,
                  "cp", f":{name}", tmp_path],
                 capture_output=True, text=True, timeout=15,
             )
@@ -481,7 +481,7 @@ class DeviceFilePanel(QWidget):
             return
         try:
             r = subprocess.run(
-                [python_executable(), "-m", "mpremote", "connect", self._port,
+                [*tool_command("mpremote"), "connect", self._port,
                  "rm", f":{name}"],
                 capture_output=True, text=True, timeout=10,
             )
