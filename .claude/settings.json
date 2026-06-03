@@ -19,7 +19,13 @@
       "Bash(.venv/bin/python -m py_compile nit_code/main_window.py)",
       "Bash(.venv/bin/python -m py_compile nit_code/settings_dialog.py)",
       "Bash(.venv/bin/python -m py_compile nit_code/ais_chat_panel.py)",
-      "Bash(.venv/bin/python -m py_compile nit_code/ais_chat_panel.py nit_code/main_window.py)"
+      "Bash(.venv/bin/python -m py_compile nit_code/ais_chat_panel.py nit_code/main_window.py)",
+      "Bash(xargs ls -la)",
+      "Bash(rm -f '=10.0')",
+      "Bash(git push *)"
+    ],
+    "additionalDirectories": [
+      "/workspaces/NIT_PyEd"
     ]
   }
 }
