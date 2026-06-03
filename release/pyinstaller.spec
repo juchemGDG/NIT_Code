@@ -119,7 +119,7 @@ if sys.platform == 'darwin':
         info_plist={
             'CFBundleName': 'NIT_Code',
             'CFBundleDisplayName': 'NIT_Code',
-            'CFBundleShortVersionString': '1.0.3',
-            'CFBundleVersion': '1.0.3',
+            'CFBundleShortVersionString': '1.1.3',
+            'CFBundleVersion': '1.1.3',
         },
     )
