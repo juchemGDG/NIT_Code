@@ -210,6 +210,103 @@ class CodeEditor(QWidget):
         if HAS_QSCI:
             self.sci.setCaretLineVisible(enabled)
 
+    def comment_selection(self):
+        """Markierte Zeilen mit # auskommentieren."""
+        self._modify_comments("comment")
+
+    def uncomment_selection(self):
+        """Kommentarzeichen # von markierten Zeilen entfernen."""
+        self._modify_comments("uncomment")
+
+    def toggle_comment(self):
+        """Kommentar in markierten Zeilen umschalten."""
+        self._modify_comments("toggle")
+
+    def _modify_comments(self, action: str):
+        if HAS_QSCI:
+            self._modify_comments_scintilla(action)
+        else:
+            self._modify_comments_fallback(action)
+
+    def _modify_comments_scintilla(self, action: str):
+        sci = self.sci
+        line_from, _idx_from, line_to, idx_to = sci.getSelection()
+        if line_from < 0:
+            line_from, _ = sci.getCursorPosition()
+            line_to = line_from
+        elif idx_to == 0 and line_to > line_from:
+            line_to -= 1
+
+        if action == "toggle":
+            texts = [sci.text(l).strip() for l in range(line_from, line_to + 1) if sci.text(l).strip()]
+            all_commented = bool(texts) and all(t.startswith('#') for t in texts)
+            action = "uncomment" if all_commented else "comment"
+
+        sci.beginUndoAction()
+        try:
+            for line in range(line_from, line_to + 1):
+                raw = sci.text(line)
+                body = raw.rstrip('\r\n')
+                indent = body[:len(body) - len(body.lstrip())]
+                code = body[len(indent):]
+                if action == "comment":
+                    if not code.strip():
+                        continue
+                    new_body = f"{indent}# {code}"
+                elif code.startswith('# '):
+                    new_body = f"{indent}{code[2:]}"
+                elif code.startswith('#'):
+                    new_body = f"{indent}{code[1:]}"
+                else:
+                    continue
+                sci.setSelection(line, 0, line, len(body))
+                sci.replaceSelectedText(new_body)
+        finally:
+            sci.endUndoAction()
+
+    def _modify_comments_fallback(self, action: str):
+        from PyQt6.QtGui import QTextCursor
+        edit = self.sci._edit
+        cursor = edit.textCursor()
+        if not cursor.hasSelection():
+            cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        doc = edit.document()
+        sel_start, sel_end = cursor.selectionStart(), cursor.selectionEnd()
+        b_from = doc.findBlock(sel_start)
+        b_to = doc.findBlock(max(sel_start, sel_end - 1))
+
+        blocks = []
+        b = b_from
+        while b.isValid() and b.blockNumber() <= b_to.blockNumber():
+            blocks.append(b)
+            b = b.next()
+
+        if action == "toggle":
+            texts = [b.text().strip() for b in blocks if b.text().strip()]
+            all_commented = bool(texts) and all(t.startswith('#') for t in texts)
+            action = "uncomment" if all_commented else "comment"
+
+        main_cursor = edit.textCursor()
+        main_cursor.beginEditBlock()
+        for b in reversed(blocks):
+            text = b.text()
+            indent = text[:len(text) - len(text.lstrip())]
+            code = text[len(indent):]
+            if action == "comment":
+                if not code.strip():
+                    continue
+                new_text = f"{indent}# {code}"
+            elif code.startswith('# '):
+                new_text = f"{indent}{code[2:]}"
+            elif code.startswith('#'):
+                new_text = f"{indent}{code[1:]}"
+            else:
+                continue
+            c = QTextCursor(b)
+            c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            c.insertText(new_text)
+        main_cursor.endEditBlock()
+
 
 # ------------------------------------------------------------------
 # Fallback-Editor ohne QScintilla

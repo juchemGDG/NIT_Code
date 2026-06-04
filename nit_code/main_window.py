@@ -267,6 +267,10 @@ class MainWindow(QMainWindow):
         self._add_action(m_edit, "Ausschneiden", self._cut,   "Ctrl+X")
         self._add_action(m_edit, "Kopieren",     self._copy,  "Ctrl+C")
         self._add_action(m_edit, "Einfügen",     self._paste, "Ctrl+V")
+        m_edit.addSeparator()
+        self._add_action(m_edit, "Auskommentieren",      self._comment_selection,   "Ctrl+Shift+C")
+        self._add_action(m_edit, "Einkommentieren",      self._uncomment_selection, "Ctrl+Shift+U")
+        self._add_action(m_edit, "Kommentar umschalten", self._toggle_comment,      "Ctrl+/")
 
         # ── Ausführen ──
         m_run = mb.addMenu("Ausführen")
@@ -685,6 +689,21 @@ class MainWindow(QMainWindow):
         tab = self._current_tab()
         if tab and hasattr(tab.editor, "sci"):
             tab.editor.sci.paste()
+
+    def _comment_selection(self):
+        tab = self._current_tab()
+        if tab:
+            tab.editor.comment_selection()
+
+    def _uncomment_selection(self):
+        tab = self._current_tab()
+        if tab:
+            tab.editor.uncomment_selection()
+
+    def _toggle_comment(self):
+        tab = self._current_tab()
+        if tab:
+            tab.editor.toggle_comment()
 
     # ────────────────────────────────────────────────────────────────────��─
     # Modus & Board
