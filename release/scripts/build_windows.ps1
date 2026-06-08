@@ -11,7 +11,6 @@ python -m pip install -r "$RootDir/requirements.txt" -r "$RootDir/release/requir
 pyinstaller "$RootDir/release/pyinstaller.spec" --noconfirm --clean
 
 $DistDir = Join-Path $RootDir "dist/NIT_Code"
-$ExePath = Join-Path $DistDir "NIT_Code.exe"
 $ZipPath = Join-Path $OutDir "NIT_Code-windows.zip"
 
 if (Test-Path $ZipPath) {
@@ -19,6 +18,5 @@ if (Test-Path $ZipPath) {
 }
 
 Compress-Archive -Path "$DistDir/*" -DestinationPath $ZipPath
-Copy-Item $ExePath (Join-Path $OutDir "NIT_Code.exe") -Force
 
-Write-Host "Windows-Pakete erstellt: $ZipPath und NIT_Code.exe"
+Write-Host "Windows-Paket erstellt: $ZipPath"
