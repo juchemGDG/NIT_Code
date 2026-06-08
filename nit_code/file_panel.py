@@ -307,6 +307,7 @@ class DeviceFilePanel(QWidget):
         super().__init__(parent)
         self._port = ""
         self._worker: _DeviceListWorker | None = None
+        self._retired_workers: list = []
         self._setup_ui()
 
     def _setup_ui(self):
@@ -387,6 +388,17 @@ class DeviceFilePanel(QWidget):
             self._status_lbl.setText("(kein Gerät verbunden)")
             self._status_lbl.setVisible(True)
             return
+
+        # Keep a reference to the old worker until its thread has stopped so
+        # QThread::~QThread() is never called while the thread is still running.
+        old = self._worker
+        if old is not None and old.isRunning():
+            self._retired_workers.append(old)
+            old.finished.connect(
+                lambda t=old: self._retired_workers.remove(t)
+                if t in self._retired_workers else None
+            )
+
         self._status_lbl.setText(f"⏳ Lade {port} …")
         self._status_lbl.setVisible(True)
         self._btn_refresh.setEnabled(False)

@@ -34,7 +34,16 @@
       "Bash(python -c \"import esptool; print\\([n for n in dir\\(esptool\\) if 'main' in n.lower\\(\\)]\\)\")",
       "Bash(python -m py_compile nit_code/config.py nit_code/file_panel.py nit_code/console_panel.py nit_code/main_window.py nit_code/micropython_dialogs.py release/launcher.py)",
       "Bash(python -m py_compile release/pyinstaller.spec)",
-      "Bash(python -c \"import inspect,mpremote.main as m; print\\(inspect.signature\\(m.main\\)\\)\")"
+      "Bash(python -c \"import inspect,mpremote.main as m; print\\(inspect.signature\\(m.main\\)\\)\")",
+      "Bash(python -m py_compile nit_code/editor_widget.py)",
+      "Bash(python -m py_compile nit_code/main_window.py)",
+      "Bash(python -m py_compile nit_code/completion.py)",
+      "Bash(pip index *)",
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "Bash(python -c \"import micropython_stdlib_stubs, micropython_esp32_stubs; import pathlib; print\\(pathlib.Path\\(micropython_stdlib_stubs.__file__\\).parent\\); print\\(pathlib.Path\\(micropython_esp32_stubs.__file__\\).parent\\)\")",
+      "Bash(find /usr/local/python/3.12.1/lib/python3.12/site-packages -maxdepth 2 -name \"*.pyi\" | grep -i micropython | head -20 && echo \"---\" && ls /usr/local/python/3.12.1/lib/python3.12/site-packages | grep -i micropython)",
+      "Read(//usr/local/python/3.12.1/lib/python3.12/site-packages/**)"
     ],
     "additionalDirectories": [
       "/workspaces/NIT_PyEd"
