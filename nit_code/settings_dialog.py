@@ -262,7 +262,8 @@ class SettingsDialog(QDialog):
 
         self._combo_tutor_mode = QComboBox()
         self._combo_tutor_mode.addItem("Kein Chatbot", "none")
-        self._combo_tutor_mode.addItem("Lokaler Chatbot (Ollama / Infi)", "ollama")
+        self._combo_tutor_mode.addItem("KI-Tutor: Infi (Ollama)", "ollama")
+        self._combo_tutor_mode.addItem("Code-Generator (Ollama)", "coder")
         self._combo_tutor_mode.addItem("AIS-Chat (Schule)", "aischat")
         idx = max(0, self._combo_tutor_mode.findData(tutor_mode))
         self._combo_tutor_mode.setCurrentIndex(idx)
@@ -301,7 +302,7 @@ class SettingsDialog(QDialog):
             form_ollama.addRow("", not_found)
 
         root.addWidget(self._ollama_container)
-        self._ollama_container.setVisible(tutor_mode == "ollama")
+        self._ollama_container.setVisible(tutor_mode in ("ollama", "coder"))
         self._combo_tutor_mode.currentIndexChanged.connect(self._on_tutor_mode_changed)
 
         root.addStretch()
@@ -372,7 +373,7 @@ class SettingsDialog(QDialog):
 
     def _on_tutor_mode_changed(self, _index: int):
         self._ollama_container.setVisible(
-            self._combo_tutor_mode.currentData() == "ollama"
+            self._combo_tutor_mode.currentData() in ("ollama", "coder")
         )
 
     @property

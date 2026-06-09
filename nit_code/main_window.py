@@ -23,6 +23,7 @@ from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
 from .ais_chat_panel import AisChatPanel
+from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
 from .tutor_panel import TutorPanel
 
@@ -688,12 +689,15 @@ class MainWindow(QMainWindow):
         self._right_splitter.setSizes([520, 200])
         self._main_splitter.addWidget(self._right_splitter)
 
-        # KI-Panel: TutorPanel (Ollama) und AisChatPanel im Stack
+        # KI-Panel: TutorPanel (Ollama), AisChatPanel, CoderPanel im Stack
         self._ai_stack = QStackedWidget()
-        self._tutor_panel = TutorPanel()
-        self._aischat_panel = AisChatPanel()
-        self._ai_stack.addWidget(self._tutor_panel)    # Index 0 → Ollama
+        self._tutor_panel    = TutorPanel()
+        self._aischat_panel  = AisChatPanel()
+        self._coder_panel    = CoderPanel()
+        self._ai_stack.addWidget(self._tutor_panel)    # Index 0 → Infi/Ollama
         self._ai_stack.addWidget(self._aischat_panel)  # Index 1 → AIS-Chat
+        self._ai_stack.addWidget(self._coder_panel)    # Index 2 → Code-Generator
+        self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
@@ -1709,6 +1713,14 @@ class MainWindow(QMainWindow):
             tab.editor.mark_error_line(lineno)
 
     # ──────────────────────────────────────────────────────────────────────
+    # Code-Generator: generierten Code in neuen Tab einfügen
+    # ──────────────────────────────────────────────────────────────────────
+    def _on_insert_generated_code(self, code: str):
+        tab = self._new_tab()
+        tab.editor.set_text(code)
+        self._update_tab_title(tab)
+
+    # ──────────────────────────────────────────────────────────────────────
     # Hilfsfunktionen
     # ──────────────────────────────────────────────────────────────────────
     def _get_python_executable(self) -> str:
@@ -1972,6 +1984,19 @@ class MainWindow(QMainWindow):
             if sizes[2] == 0:
                 total = sum(sizes)
                 self._main_splitter.setSizes([sizes[0], total - sizes[0] - 320, 320])
+        elif mode == "coder":
+            self._ai_stack.setMinimumWidth(0)
+            self._ai_stack.setMaximumWidth(16777215)
+            self._ai_stack.setCurrentIndex(2)
+            self._ai_stack.setVisible(True)
+            self._coder_panel.apply_settings(
+                self._settings_tutor_url,
+                self._settings_tutor_model,
+            )
+            sizes = self._main_splitter.sizes()
+            if sizes[2] == 0:
+                total = sum(sizes)
+                self._main_splitter.setSizes([sizes[0], total - sizes[0] - 360, 360])
         elif mode == "aischat":
             self._ai_stack.setFixedWidth(PANEL_WIDTH)
             self._ai_stack.setCurrentIndex(1)
