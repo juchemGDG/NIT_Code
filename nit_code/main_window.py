@@ -1289,18 +1289,29 @@ class MainWindow(QMainWindow):
         self._console.append_info(f"[Git] Befehl: {' '.join(log_cmd)}\n")
 
         proc = ProcessRunner(cmd, cwd=cwd)
+        # stderr puffern: Git schreibt Fortschritts-/Info-Meldungen auf stderr,
+        # auch bei Erfolg. Erst nach Prozessende entscheiden ob rot (Fehler) oder normal.
+        stderr_buf: list[str] = []
         proc.output.connect(
             lambda text, kind: self._console.append_output(text)
             if kind == "stdout"
-            else self._console.append_error(text)
+            else stderr_buf.append(text)
         )
-        proc.finished_run.connect(
-            lambda code: self._console.append_success(f"[Git] Fertig (Code {code})\n")
-            if code == 0
-            else self._console.append_error(f"[Git] Fehler (Code {code})\n")
-        )
-        if on_success is not None:
-            proc.finished_run.connect(lambda code: on_success() if code == 0 else None)
+
+        def _on_finish(code: int):
+            for chunk in stderr_buf:
+                if code == 0:
+                    self._console.append_output(chunk)
+                else:
+                    self._console.append_error(chunk)
+            if code == 0:
+                self._console.append_success(f"[Git] Fertig (Code {code})\n")
+                if on_success is not None:
+                    on_success()
+            else:
+                self._console.append_error(f"[Git] Fehler (Code {code})\n")
+
+        proc.finished_run.connect(_on_finish)
         self._retire_process()
         self._process = proc
         proc.start()
