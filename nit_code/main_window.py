@@ -205,7 +205,7 @@ class GitCloneDialog(QDialog):
         auth_form.setSpacing(8)
 
         self._username_edit = QLineEdit()
-        self._username_edit.setPlaceholderText("GitHub-Benutzername")
+        self._username_edit.setPlaceholderText("Benutzername")
         auth_form.addRow("Benutzername:", self._username_edit)
 
         pw_widget = QWidget()
@@ -214,7 +214,7 @@ class GitCloneDialog(QDialog):
         pw_layout.setSpacing(4)
         self._password_edit = QLineEdit()
         self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._password_edit.setPlaceholderText("Passwort oder Personal Access Token")
+        self._password_edit.setPlaceholderText("Passwort oder Access Token")
         self._pw_toggle = QPushButton("Zeigen")
         self._pw_toggle.setCheckable(True)
         self._pw_toggle.setFixedWidth(70)
@@ -227,13 +227,10 @@ class GitCloneDialog(QDialog):
         pw_layout.addWidget(self._pw_toggle)
         auth_form.addRow("Passwort / Token:", pw_widget)
 
-        token_hint = QLabel(
-            "Tipp: Bei GitHub unter Einstellungen → Developer settings → "
-            "Personal access tokens einen Token erstellen (Scope: repo)."
-        )
-        token_hint.setWordWrap(True)
-        token_hint.setObjectName("hintLabel")
-        auth_form.addRow("", token_hint)
+        self._auth_hint = QLabel("")
+        self._auth_hint.setWordWrap(True)
+        self._auth_hint.setObjectName("hintLabel")
+        auth_form.addRow("", self._auth_hint)
 
         layout.addWidget(self._auth_group)
 
@@ -327,11 +324,41 @@ class GitCloneDialog(QDialog):
     def _on_target_edited(self):
         self._target_manually_edited = True
 
+    # Bekannte Hosts, bei denen ein Token statt Passwort erforderlich ist
+    _TOKEN_REQUIRED_HOSTS = {"github.com", "gitlab.com"}
+    # Bekannte Hosts, bei denen normales Passwort funktioniert
+    _PASSWORD_OK_HOSTS = {"codeberg.org"}
+
     def _update_auth_section(self, url: str):
         is_https = url.startswith(("https://", "http://"))
         is_ssh = url.startswith("git@") or url.startswith("ssh://")
         self._auth_group.setVisible(is_https)
         self._ssh_hint.setVisible(is_ssh)
+
+        if is_https:
+            try:
+                host = urlparse(url).hostname or ""
+            except Exception:
+                host = ""
+
+            if host in self._TOKEN_REQUIRED_HOSTS:
+                self._auth_hint.setText(
+                    f"Tipp ({host}): Passwörter werden nicht mehr akzeptiert. "
+                    "Bitte einen Personal Access Token verwenden: "
+                    "Einstellungen → Developer settings → Personal access tokens (Scope: repo)."
+                )
+            elif host in self._PASSWORD_OK_HOSTS:
+                self._auth_hint.setText(
+                    f"Tipp ({host}): Normaler Benutzername und Passwort funktionieren hier direkt."
+                )
+            elif host:
+                self._auth_hint.setText(
+                    f"Tipp: Je nach Anbieter ({host}) funktioniert entweder das normale "
+                    "Passwort oder ein Access Token."
+                )
+            else:
+                self._auth_hint.setText("")
+
         self.adjustSize()
 
     def url(self) -> str:
