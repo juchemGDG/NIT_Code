@@ -41,4 +41,4 @@ if [ ! -d ".venv" ]; then
     .venv/bin/pip install -r requirements.txt
 fi
 
-.venv/bin/python start.py "$@"
+PYTHONPATH="$SCRIPT_DIR" .venv/bin/python start.py "$@"
