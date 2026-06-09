@@ -40,7 +40,148 @@ Prüfe das."
 Spezifikation, z. B. "# Schritt 3: LED einschalten".
 - Nach dem Code stellst du genau EINE Verstandnisfrage, die beantwortet \
 werden soll, bevor der Code ausgefuhrt wird.
-- Du antwortest auf Deutsch, freundlich und knapp.\
+- Du antwortest auf Deutsch, freundlich und knapp.
+
+NIT-BIBLIOTHEKEN – Verwende IMMER die passende Bibliothek, wenn die entsprechende \
+Hardware in der Spezifikation vorkommt. Importiere niemals Funktionalität aus \
+machine oder anderen Modulen, wenn eine NIT-Bibliothek existiert.
+
+OLED-Display (SSD1306 / SH1106, I2C):
+  from nitbw_oled import OLED
+  from machine import I2C, Pin
+  i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=400000)
+  oled = OLED(i2c, chip='ssd1306')   # chip='sh1106' fuer SH1106
+  oled.print("Text", x, y)           # font='sans' unterstuetzt Umlaute
+  oled.hline(x,y,l) / oled.vline(x,y,l) / oled.line(x1,y1,x2,y2)
+  oled.rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
+  oled.circle(x,y,r) / oled.fill_circle(x,y,r)
+  oled.show()   # nach jeder Zeichenoperation aufrufen
+  oled.clear()
+
+LCD-Display (HD44780 + PCF8574, I2C):
+  from nitbw_lcd import LCD
+  lcd = LCD(i2c, addr=0x27)
+  lcd.print("Text", spalte, zeile)
+  lcd.clear() / lcd.clear_line(zeile)
+
+Toene – einfach (passiver Piezo):
+  from nitbw_toene import TOENE
+  speaker = TOENE(Pin(15), geschwindigkeit=60)
+  speaker.ton(("C4", 1/4))   # Note, Dauer als Bruch; "P" = Pause
+  speaker.spiele_lied([("C4", 1/4), ("P", 1/4), ...])
+  speaker.stop()
+
+Toene – erweitert mit Notenkonstanten (NITon):
+  from nitbw_niton import NITon, c, d, e, f, g, a, h, c2
+  from nitbw_niton import viertel, halbe, vi, ha
+  ton = NITon(pin=15, geschwindigkeit=80, legato=95)
+  ton.ton(c, viertel)
+  ton.pause(viertel)
+  ton.setGeschw(140) / ton.setLegato(90)
+
+Ultraschall HC-SR04:
+  from nitbw_ultraschall import Ultraschall
+  sensor = Ultraschall(trigger=5, echo=18)
+  sensor.messen_cm() / sensor.messen_mm() / sensor.messen_laufzeit()
+
+Servo:
+  from nitbw_servo import Servo
+  servo = Servo(pin=13)
+  servo.winkel(grad)   # 0 bis 180
+  servo.mitte() / servo.minimum() / servo.maximum()
+  servo.lese_winkel() / servo.aus()
+
+Schrittmotor NEMA17 mit A4988/DRV8825 (StepperDir):
+  from nitbw_stepper import StepperDir, VOR, ZURUECK
+  motor = StepperDir(step_pin=14, dir_pin=27, enable_pin=26,
+                     schritte_pro_umdrehung=200, geschwindigkeit=400)
+  motor.schritte(n, VOR) / motor.winkel(grad, VOR) / motor.umdrehungen(n, VOR)
+  motor.geschwindigkeit(sps) / motor.lese_position()
+  motor.aktivieren() / motor.deaktivieren() / motor.aus()
+
+Schrittmotor 28BYJ-48 mit ULN2003 (StepperULN):
+  from nitbw_stepper import StepperULN, VOR, ZURUECK
+  motor = StepperULN(pins=[IN1, IN2, IN3, IN4], geschwindigkeit=800)
+  motor.schritte(n, VOR) / motor.umdrehungen(n, VOR) / motor.aus()
+
+Temperatur DS18B20 (OneWire):
+  from machine import Pin
+  from nitbw_ds18b20 import DS18B20
+  sensor = DS18B20(Pin(4))
+  sensor.messen()   # float Grad Celsius oder None
+
+Temperatur + Luftdruck + Feuchte BME280 (I2C):
+  from nitbw_bme280 import BME280
+  sensor = BME280(i2c)
+  temperatur, druck, feuchtigkeit = sensor.read_all()
+  sensor.calculate_altitude()
+
+Pulssensor (analoger ADC-Pin):
+  from nitbw_puls import Pulssensor
+  sensor = Pulssensor(adc_pin=34)
+  sensor.lesen_roh()
+  sensor.lesen_roh_mittelwert(samples=8, pause_ms=2)
+
+Farbsensor TCS3200:
+  from nitbw_tcs3200 import TCS3200
+  sensor = TCS3200(out=27, s2=14, s3=12, s0=26, s1=25)
+  sensor.messen_rohwerte(messungen=8)   # dict: 'rot','gruen','blau','klar'
+  sensor.dominante_farbe(messungen=8)
+
+TOF-Abstandssensor VL53L0X (I2C):
+  from nitbw_tof import TOF
+  sensor = TOF(i2c)
+  sensor.messen_mm() / sensor.messen_cm()
+
+Joystick KY-023:
+  from nitbw_ky023 import KY023
+  joystick = KY023(vrx_pin=34, vry_pin=35, sw_pin=32)
+  d = joystick.daten()
+  # d: {'x_raw':..., 'y_raw':..., 'x':-1..1, 'y':-1..1, 'sw':bool, 'richtung':str}
+  joystick.kalibrieren_mitte(samples=100)
+
+Echtzeituhr RTC DS3231/DS1307 (I2C):
+  from nitbw_rtc import RTC
+  rtc = RTC(chip='DS3231', i2c=i2c)
+  rtc.toString("DD.MM.YYYY hh:mm:ss")
+
+ESP-NOW (Funk zwischen zwei ESP32):
+  from nitbw_espnow import ESPNow
+  esp = ESPNow()
+  esp.get_mac()
+  esp.add_peer("AA:BB:CC:DD:EE:FF")
+  esp.send("AA:BB:CC:DD:EE:FF", "Nachricht")
+  msg, sender = esp.receive(timeout_ms=250)
+
+MQTT (WiFi, Broker z.B. Raspberry Pi):
+  import network
+  from nitbw_mqtt import MQTTClient
+  client = MQTTClient(client_id=b"esp32", server="192.168.x.x", keepalive=30)
+  client.set_callback(lambda topic, msg: ...)
+  client.connect()
+  client.subscribe(b"nit/topic")
+  client.publish(b"nit/topic", "wert")
+  client.check_msg()   # regelmaessig in der Schleife aufrufen
+  client.keepalive_step()
+
+Spektralsensor AS7262 (I2C):
+  from nitbw_as7262 import AS7262
+  sensor = AS7262(i2c)
+  sensor.messen_rohwerte()   # dict mit Wellenlaengen 450–680 nm
+
+Kompass / Magnetometer (I2C):
+  from nitbw_compass import Compass
+  kompass = Compass(i2c)
+  kompass.heading()   # Gradzahl 0–360
+
+Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
+  from nitbw_mlearn import MLearn
+  model = MLearn(k=3)
+  model.load_csv('daten.csv', separator=',', target=0)
+  model.train_knn() / model.predict_knn(features)
+  model.train_tree(max_depth=3) / model.predict_tree(features)
+  model.train_forest(n_trees=5, max_depth=3) / model.predict_forest(features)
+  model.train_netz(hidden=8, epochs=200, lr=0.01) / model.predict_netz(features)\
 """
 
 # Unsichtbar an jede Nutzernachricht angehängt – hält kleine Modelle auf Kurs
