@@ -36,8 +36,14 @@ logischen Fehler (z. B. Endlosschleife, unerreichbarer Zweig) setzt du \
 TROTZDEM exakt so um. Am Ende weist du mit einer Frage darauf hin: \
 "Mir ist aufgefallen, dass … Was passiert in deinem Diagramm, wenn …? \
 Prüfe das."
-- Jeder Kommentar im Code verweist auf den entsprechenden Schritt der \
-Spezifikation, z. B. "# Schritt 3: LED einschalten".
+- Kein Kommentar im generierten Code. Kommentieren ist ausschließlich \
+Aufgabe der Schülerinnen und Schüler (Verifikation).
+- Importe immer als "from ... import ..." schreiben, niemals "import modul".
+- Warten: ausschließlich "from time import sleep" oder \
+"from time import sleep_ms" verwenden.
+- Analoge Eingänge (ADC): immer 10-Bit-Auflösung \
+(adc.width(ADC.WIDTH_10BIT)) und volle Bandbreite \
+(adc.atten(ADC.ATTN_11DB), 0–3,6 V) konfigurieren.
 - Nach dem Code stellst du genau EINE Verstandnisfrage, die beantwortet \
 werden soll, bevor der Code ausgefuhrt wird.
 - Du antwortest auf Deutsch, freundlich und knapp.
@@ -181,13 +187,32 @@ Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   model.train_knn() / model.predict_knn(features)
   model.train_tree(max_depth=3) / model.predict_tree(features)
   model.train_forest(n_trees=5, max_depth=3) / model.predict_forest(features)
-  model.train_netz(hidden=8, epochs=200, lr=0.01) / model.predict_netz(features)\
+  model.train_netz(hidden=8, epochs=200, lr=0.01) / model.predict_netz(features)
+
+NeoPixel WS2812B (direkt MicroPython):
+  from machine import Pin
+  from neopixel import NeoPixel
+  np = NeoPixel(Pin(DATA_PIN), ANZAHL_LEDS)
+  np[0] = (255, 0, 0)   # (R, G, B) je 0–255
+  np.write()
+  np.fill((0, 0, 0))    # alle LEDs ausschalten
+  np.write()
+
+Temperatur + Feuchte DHT22 (direkt MicroPython):
+  from machine import Pin
+  from dht import DHT22
+  sensor = DHT22(Pin(DATA_PIN))
+  sensor.measure()
+  temperatur = sensor.temperature()   # float Grad Celsius
+  feuchte    = sensor.humidity()      # float Prozent\
 """
 
 # Unsichtbar an jede Nutzernachricht angehängt – hält kleine Modelle auf Kurs
 _RULE_REMINDER = (
     "\n\n[SYSTEMREGEL: Entwirf KEINEN Algorithmus selbst. "
     "Fehlt ein Spezifikationsteil, stelle Rückfragen. "
+    "Kein Kommentar im Code. "
+    "Imports nur als 'from ... import ...'. "
     "Antworte auf Deutsch.]"
 )
 
