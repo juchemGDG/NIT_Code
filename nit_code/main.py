@@ -45,9 +45,15 @@ def main():
     if not logo.isNull():
         app.setWindowIcon(logo)
 
-    # Standard-Schrift
-    font = QFont("Segoe UI, Ubuntu, Helvetica Neue, sans-serif", 13)
-    app.setFont(font)
+    # Standard-Schrift (plattformspezifisch, um Font-Scan-Warnung zu vermeiden)
+    import sys as _sys
+    if _sys.platform == "darwin":
+        _font_family = ".AppleSystemUIFont"
+    elif _sys.platform == "win32":
+        _font_family = "Segoe UI"
+    else:
+        _font_family = "Ubuntu"
+    app.setFont(QFont(_font_family, 13))
 
     window = MainWindow()
     window.showMaximized()

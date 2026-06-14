@@ -56,11 +56,13 @@ class AisChatPanel(QWidget):
 
         if _WEBENGINE_AVAILABLE:
             # Off-the-record Profil: kein Name → kein Persistenzordner auf Disk
+            # Reihenfolge: Profile als erstes Kind, View als zweites Kind des Panels.
+            # Qt löscht Kinder in umgekehrter Reihenfolge → View (+ Page) vor Profile → korrekte Cleanup-Reihenfolge.
             self._profile = QWebEngineProfile(self)
             self._profile.setHttpUserAgent(_MOBILE_UA)
-            page = QWebEnginePage(self._profile, self)
 
-            self._view = QWebEngineView()
+            self._view = QWebEngineView(self)
+            page = QWebEnginePage(self._profile, self._view)
             self._view.setPage(page)
             self._view.loadFinished.connect(self._inject_viewport)
             self._view.setUrl(QUrl(AIS_CHAT_URL))
