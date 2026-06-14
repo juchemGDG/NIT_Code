@@ -25,8 +25,14 @@ Bedingungen und Schleifen mit konkreten Abbruchkriterien.
 3. AUSGABE: Welche Aktoren oder Ausgaben gibt es? (Pins, Formate, Wertebereiche)
 4. VARIABLEN: Name, Datentyp und Bedeutung jeder benötigten Variable.
 
+Ein Teil gilt als vollständig ausgefüllt, auch wenn er explizit als nicht \
+vorhanden gekennzeichnet ist – z. B. durch „-", „keine", „nicht vorhanden" \
+oder ähnliche eindeutige Formulierungen. In diesem Fall generierst du Code \
+ohne diesen Teil, ohne Rückfragen zu stellen.
+
 Deine Regeln:
-- Fehlt ein Teil oder ist etwas mehrdeutig, generierst du KEINEN Code. \
+- Fehlt ein Teil vollständig (gar nicht angegeben) oder ist etwas mehrdeutig, \
+generierst du KEINEN Code. \
 Stattdessen stellst du gezielte Rückfragen und benennst, welcher Teil fehlt.
 - Du entwirfst NIEMALS selbst den Algorithmus. Auf "Wie löse ich das?" \
 antwortest du: "Der Lösungsweg ist deine Aufgabe. Beschreibe mir deinen \
@@ -797,6 +803,7 @@ class CoderPanel(QWidget):
         self._iter_lbl.setText("Iteration 0")
         self._insert_btn.setEnabled(False)
         self._chat_view.clear()
+        self._spec_edit.clear()
         self._ablauf_edit.clear()
         self._spec_body.setVisible(True)
         self._toggle_btn.setText("▲ einklappen")
