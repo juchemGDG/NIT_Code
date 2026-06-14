@@ -175,89 +175,92 @@ class TutorPanel(QWidget):
         layout.setSpacing(0)
 
         # Header
-        header = QWidget()
-        header.setFixedHeight(36)
-        header.setStyleSheet(
-            f"background:{THEME['bg_panel']};"
-            f"border-bottom:1px solid {THEME['border']};"
-        )
-        hlay = QHBoxLayout(header)
+        self._header = QWidget()
+        self._header.setFixedHeight(36)
+        hlay = QHBoxLayout(self._header)
         hlay.setContentsMargins(10, 0, 10, 0)
-        title_lbl = QLabel("🤖  Infi – KI-Tutor")
-        title_lbl.setStyleSheet(
-            f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
-        )
-        hlay.addWidget(title_lbl)
+        self._title_lbl = QLabel("🤖  Infi – KI-Tutor")
+        hlay.addWidget(self._title_lbl)
         hlay.addStretch()
         self._status_lbl = QLabel("●")
-        self._status_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
         self._status_lbl.setToolTip("Ollama-Status")
         hlay.addWidget(self._status_lbl)
-        layout.addWidget(header)
+        layout.addWidget(self._header)
 
         # Chat-Verlauf
         self._chat_view = QTextEdit()
         self._chat_view.setReadOnly(True)
-        self._chat_view.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:none; padding:8px;"
-            f"font-family: system-ui, -apple-system, 'Segoe UI', 'Ubuntu', sans-serif;"
-            f"font-size: 12px;"
-        )
         layout.addWidget(self._chat_view, stretch=1)
 
         # Trennlinie
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"background:{THEME['border']}; margin:0;")
-        sep.setFixedHeight(1)
-        layout.addWidget(sep)
+        self._sep = QFrame()
+        self._sep.setFrameShape(QFrame.Shape.HLine)
+        self._sep.setFixedHeight(1)
+        layout.addWidget(self._sep)
 
         # Eingabebereich
-        input_area = QWidget()
-        input_area.setStyleSheet(f"background:{THEME['bg_panel']};")
-        ilay = QVBoxLayout(input_area)
+        self._input_area = QWidget()
+        ilay = QVBoxLayout(self._input_area)
         ilay.setContentsMargins(8, 6, 8, 8)
         ilay.setSpacing(6)
 
         self._input = QTextEdit()
         self._input.setPlaceholderText("Frag Infi …  (Strg+Enter = Senden)")
         self._input.setFixedHeight(72)
-        self._input.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
-            f"font-family: system-ui, -apple-system, 'Segoe UI', 'Ubuntu', sans-serif;"
-            f"font-size: 12px;"
-        )
         self._input.installEventFilter(self)
         ilay.addWidget(self._input)
 
         btn_row = QHBoxLayout()
         self._clear_btn = QPushButton("Verlauf löschen")
-        self._clear_btn.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
-        )
         self._clear_btn.clicked.connect(self._clear_history)
         btn_row.addWidget(self._clear_btn)
         btn_row.addStretch()
 
         self._send_btn = QPushButton("Senden")
-        self._send_btn.setStyleSheet(
-            f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:5px 18px;"
-        )
         self._send_btn.clicked.connect(self._send_message)
         btn_row.addWidget(self._send_btn)
         ilay.addLayout(btn_row)
 
-        layout.addWidget(input_area)
+        layout.addWidget(self._input_area)
+        self.refresh_theme()
 
         # Begrüßung
         self._append_infi(
             "Hallo! Ich bin Infi, dein Tutor für Python und Arduino. 👋\n\n"
             "Erzähl mir kurz: Was möchtest du heute programmieren und "
             "was hast du schon ausprobiert?"
+        )
+
+    # ── Theme-Refresh ─────────────────────────────────────────────────────────
+    def refresh_theme(self):
+        self._header.setStyleSheet(
+            f"background:{THEME['bg_panel']}; border-bottom:1px solid {THEME['border']};"
+        )
+        self._title_lbl.setStyleSheet(
+            f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
+        )
+        self._status_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        self._chat_view.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:none; padding:8px;"
+            f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif;"
+            f"font-size:12px;"
+        )
+        self._sep.setStyleSheet(f"background:{THEME['border']}; margin:0;")
+        self._input_area.setStyleSheet(f"background:{THEME['bg_panel']};")
+        self._input.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif;"
+            f"font-size:12px;"
+        )
+        self._clear_btn.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+        )
+        self._send_btn.setStyleSheet(
+            f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
+            f"border:none; border-radius:4px; padding:5px 18px;"
         )
 
     # ── Strg+Enter senden ───────────────────────────────────────────────────

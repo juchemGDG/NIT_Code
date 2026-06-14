@@ -376,30 +376,17 @@ class CoderPanel(QWidget):
         root.setSpacing(0)
 
         # ── Header ────────────────────────────────────────────────────────
-        header = QWidget()
-        header.setFixedHeight(36)
-        header.setStyleSheet(
-            f"background:{THEME['bg_panel']};"
-            f"border-bottom:1px solid {THEME['border']};"
-        )
-        hlay = QHBoxLayout(header)
+        self._header = QWidget()
+        self._header.setFixedHeight(36)
+        hlay = QHBoxLayout(self._header)
         hlay.setContentsMargins(10, 0, 10, 0)
-        title_lbl = QLabel("⚙  Code-Generator")
-        title_lbl.setStyleSheet(
-            f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
-        )
-        hlay.addWidget(title_lbl)
+        self._title_lbl = QLabel("⚙  Code-Generator")
+        hlay.addWidget(self._title_lbl)
         hlay.addStretch()
         self._iter_lbl = QLabel("Iteration 0")
-        self._iter_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:10px;"
-        )
         hlay.addWidget(self._iter_lbl)
         self._status_lbl = QLabel("●")
-        self._status_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:10px; margin-left:6px;"
-        )
-        root.addWidget(header)
+        root.addWidget(self._header)
 
         # ── Spezifikations-Accordion ───────────────────────────────────────
         self._spec_wrapper = QWidget()
@@ -409,12 +396,8 @@ class CoderPanel(QWidget):
         sw_layout.setSpacing(4)
 
         acc_row = QHBoxLayout()
-        spec_lbl = QLabel("SPEZIFIKATION")
-        spec_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:10px;"
-            f"font-weight:bold; letter-spacing:1px;"
-        )
-        acc_row.addWidget(spec_lbl)
+        self._spec_lbl = QLabel("SPEZIFIKATION")
+        acc_row.addWidget(self._spec_lbl)
         acc_row.addStretch()
         self._toggle_btn = QPushButton("▲ einklappen")
         self._toggle_btn.setStyleSheet(
@@ -452,12 +435,8 @@ class CoderPanel(QWidget):
 
         # Kopfzeile mit Modus-Toggle
         ablauf_header = QHBoxLayout()
-        ablauf_lbl = QLabel("ABLAUF")
-        ablauf_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:10px;"
-            f"font-weight:bold; letter-spacing:1px;"
-        )
-        ablauf_header.addWidget(ablauf_lbl)
+        self._ablauf_lbl = QLabel("ABLAUF")
+        ablauf_header.addWidget(self._ablauf_lbl)
         ablauf_header.addStretch()
 
         self._btn_freitext = QPushButton("📝 Freitext")
@@ -487,6 +466,7 @@ class CoderPanel(QWidget):
 
         # Signalwort-Bausteine (nur im Freitext-Modus sichtbar)
         self._signal_row = QWidget()
+        self._signal_btns: list = []
         signal_layout = QHBoxLayout(self._signal_row)
         signal_layout.setContentsMargins(0, 0, 0, 0)
         signal_layout.setSpacing(3)
@@ -498,6 +478,7 @@ class CoderPanel(QWidget):
                 lambda _checked=False, s=snippet: self._insert_signal_snippet(s)
             )
             signal_layout.addWidget(btn)
+            self._signal_btns.append(btn)
         signal_layout.addStretch()
         ablauf_layout.addWidget(self._signal_row)
 
@@ -515,33 +496,24 @@ class CoderPanel(QWidget):
         sw_layout.addWidget(self._spec_body)
         root.addWidget(self._spec_wrapper)
 
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.HLine)
-        sep1.setStyleSheet(f"background:{THEME['border']}; margin:0;")
-        sep1.setFixedHeight(1)
-        root.addWidget(sep1)
+        self._sep1 = QFrame()
+        self._sep1.setFrameShape(QFrame.Shape.HLine)
+        self._sep1.setFixedHeight(1)
+        root.addWidget(self._sep1)
 
         # ── Chat-Verlauf ─────────────────────────────────────────────────
         self._chat_view = QTextEdit()
         self._chat_view.setReadOnly(True)
-        self._chat_view.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:none; padding:8px;"
-            f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif;"
-            f"font-size:12px;"
-        )
         root.addWidget(self._chat_view, stretch=1)
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet(f"background:{THEME['border']}; margin:0;")
-        sep2.setFixedHeight(1)
-        root.addWidget(sep2)
+        self._sep2 = QFrame()
+        self._sep2.setFrameShape(QFrame.Shape.HLine)
+        self._sep2.setFixedHeight(1)
+        root.addWidget(self._sep2)
 
         # ── Eingabe & Buttons ────────────────────────────────────────────
-        input_area = QWidget()
-        input_area.setStyleSheet(f"background:{THEME['bg_panel']};")
-        ilay = QVBoxLayout(input_area)
+        self._input_area = QWidget()
+        ilay = QVBoxLayout(self._input_area)
         ilay.setContentsMargins(8, 6, 8, 8)
         ilay.setSpacing(6)
 
@@ -550,47 +522,30 @@ class CoderPanel(QWidget):
             "Rückfrage beantworten …  (Strg+Enter = Senden)"
         )
         self._input.setFixedHeight(60)
-        self._input.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
-            f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif;"
-            f"font-size:12px;"
-        )
         self._input.installEventFilter(self)
         ilay.addWidget(self._input)
 
         btn_row = QHBoxLayout()
 
         self._clear_btn = QPushButton("Neu starten")
-        self._clear_btn.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
-        )
         self._clear_btn.clicked.connect(self._clear_history)
         btn_row.addWidget(self._clear_btn)
 
         self._insert_btn = QPushButton("→ Editor")
         self._insert_btn.setToolTip("Letzten Code-Block in neuen Tab einfügen")
         self._insert_btn.setEnabled(False)
-        self._insert_btn.setStyleSheet(
-            f"background:{THEME['success']}; color:#1e1e2e; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:4px 10px;"
-        )
         self._insert_btn.clicked.connect(self._on_insert_code)
         btn_row.addWidget(self._insert_btn)
 
         btn_row.addStretch()
 
         self._send_btn = QPushButton("Senden")
-        self._send_btn.setStyleSheet(
-            f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:5px 18px;"
-        )
         self._send_btn.clicked.connect(self._send_message)
         btn_row.addWidget(self._send_btn)
 
         ilay.addLayout(btn_row)
-        root.addWidget(input_area)
+        root.addWidget(self._input_area)
+        self.refresh_theme()
 
         # Begrüßung
         self._append_bot(
@@ -606,6 +561,90 @@ class CoderPanel(QWidget):
         visible = self._spec_body.isVisible()
         self._spec_body.setVisible(not visible)
         self._toggle_btn.setText("▼ ausklappen" if visible else "▲ einklappen")
+
+    # ── Theme-Refresh ─────────────────────────────────────────────────────────
+    def refresh_theme(self):
+        self._header.setStyleSheet(
+            f"background:{THEME['bg_panel']}; border-bottom:1px solid {THEME['border']};"
+        )
+        self._title_lbl.setStyleSheet(
+            f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
+        )
+        self._iter_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        self._status_lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; margin-left:6px;"
+        )
+        self._spec_wrapper.setStyleSheet(f"background:{THEME['bg_panel']};")
+        self._spec_lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; font-weight:bold; letter-spacing:1px;"
+        )
+        self._toggle_btn.setStyleSheet(
+            f"background:transparent; color:{THEME['text_dim']}; border:none; font-size:10px; padding:0 2px;"
+        )
+        self._spec_edit.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:11px;"
+        )
+        self._ablauf_lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; font-weight:bold; letter-spacing:1px;"
+        )
+        self._ablauf_edit.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:11px;"
+        )
+        self._send_spec_btn.setStyleSheet(
+            f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
+            f"border:none; border-radius:4px; padding:5px 12px; font-size:12px;"
+        )
+        self._sep1.setStyleSheet(f"background:{THEME['border']}; margin:0;")
+        self._chat_view.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:none; padding:8px;"
+            f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif; font-size:12px;"
+        )
+        self._sep2.setStyleSheet(f"background:{THEME['border']}; margin:0;")
+        self._input_area.setStyleSheet(f"background:{THEME['bg_panel']};")
+        self._input.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif; font-size:12px;"
+        )
+        self._clear_btn.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+        )
+        self._insert_btn.setStyleSheet(
+            f"background:{THEME['success']}; color:#1e1e2e; font-weight:bold;"
+            f"border:none; border-radius:4px; padding:4px 10px;"
+        )
+        self._send_btn.setStyleSheet(
+            f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
+            f"border:none; border-radius:4px; padding:5px 18px;"
+        )
+        btn_active = (
+            f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
+            f"border:none; border-radius:4px; padding:3px 8px; font-size:11px;"
+        )
+        btn_inactive = (
+            f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px;"
+            f"padding:3px 8px; font-size:11px;"
+        )
+        btn_signal = (
+            f"background:{THEME['bg_mid']}; color:{THEME['info']};"
+            f"border:1px solid {THEME['border']}; border-radius:3px;"
+            f"padding:2px 6px; font-size:10px;"
+        )
+        if self._ablauf_mode == "freitext":
+            self._btn_freitext.setStyleSheet(btn_active)
+            self._btn_mermaid.setStyleSheet(btn_inactive)
+        else:
+            self._btn_freitext.setStyleSheet(btn_inactive)
+            self._btn_mermaid.setStyleSheet(btn_active)
+        for btn in self._signal_btns:
+            btn.setStyleSheet(btn_signal)
 
     # ── Ablauf-Modus umschalten ───────────────────────────────────────────────
     def _set_ablauf_mode(self, mode: str):

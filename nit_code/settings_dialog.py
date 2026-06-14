@@ -235,6 +235,7 @@ class SettingsDialog(QDialog):
 
         self._combo_as = QComboBox()
         self._combo_as.setFixedWidth(120)
+        self._combo_as.setMaxVisibleItems(6)
         for label, secs in _AUTOSAVE_OPTIONS:
             self._combo_as.addItem(label, secs)
         idx = next((i for i, (_, s) in enumerate(_AUTOSAVE_OPTIONS) if s == autosave_secs), 0)
@@ -274,6 +275,7 @@ class SettingsDialog(QDialog):
         form_design.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._combo_theme = QComboBox()
+        self._combo_theme.setMaxVisibleItems(6)
         self._combo_theme.addItem("Modernes Dunkel-Design", "modern_dark")
         self._combo_theme.addItem("Klassisches Hell-Design (Eclipse)", "classic_light")
         tidx = max(0, self._combo_theme.findData(theme))
@@ -343,6 +345,7 @@ class SettingsDialog(QDialog):
         form_ai.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._combo_tutor_mode = QComboBox()
+        self._combo_tutor_mode.setMaxVisibleItems(6)
         self._combo_tutor_mode.addItem("Kein Chatbot", "none")
         self._combo_tutor_mode.addItem("KI-Tutor: Infi (Ollama)", "ollama")
         self._combo_tutor_mode.addItem("Code-Generator (Ollama)", "coder")
@@ -372,6 +375,7 @@ class SettingsDialog(QDialog):
         model_row_lay.setSpacing(4)
 
         self._combo_tutor_model = QComboBox()
+        self._combo_tutor_model.setMaxVisibleItems(6)
         self._combo_tutor_model.setEditable(True)
         self._combo_tutor_model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._combo_tutor_model.lineEdit().setPlaceholderText(TUTOR_DEFAULT_MODEL)

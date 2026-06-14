@@ -53,44 +53,30 @@ class FilePanel(QWidget):
         layout.setSpacing(0)
 
         # Header
-        header = QWidget()
-        header.setStyleSheet(f"background:{THEME['bg_panel']};")
-        h_layout = QHBoxLayout(header)
+        self._header = QWidget()
+        h_layout = QHBoxLayout(self._header)
         h_layout.setContentsMargins(8, 6, 4, 6)
 
-        title = QLabel("DATEIEN")
-        title.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px;"
-        )
-        h_layout.addWidget(title)
+        self._title_lbl = QLabel("DATEIEN")
+        h_layout.addWidget(self._title_lbl)
         h_layout.addStretch()
 
-        btn_open = QPushButton("⊕")
-        btn_open.setToolTip("Ordner öffnen")
-        btn_open.setFixedSize(22, 22)
-        btn_open.setStyleSheet(
-            f"QPushButton {{ background:transparent; color:{THEME['accent']};"
-            f" border:none; font-size:16px; }}"
-            f"QPushButton:hover {{ color:{THEME['accent_hover']}; }}"
-        )
-        btn_open.clicked.connect(self._open_folder)
-        h_layout.addWidget(btn_open)
-        layout.addWidget(header)
+        self._btn_open = QPushButton("⊕")
+        self._btn_open.setToolTip("Ordner öffnen")
+        self._btn_open.setFixedSize(22, 22)
+        self._btn_open.clicked.connect(self._open_folder)
+        h_layout.addWidget(self._btn_open)
+        layout.addWidget(self._header)
 
         # Aktueller Pfad
         self._path_label = QLabel()
-        self._path_label.setStyleSheet(
-            f"background:{THEME['bg_panel']}; color:{THEME['text_dim']};"
-            f" font-size:10px; padding:2px 8px 4px 8px;"
-        )
         self._path_label.setWordWrap(True)
         layout.addWidget(self._path_label)
 
         # Trennlinie
-        sep = QWidget()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background:{THEME['border']};")
-        layout.addWidget(sep)
+        self._sep_widget = QWidget()
+        self._sep_widget.setFixedHeight(1)
+        layout.addWidget(self._sep_widget)
 
         # Dateimodell
         self._model = QFileSystemModel()
@@ -107,6 +93,35 @@ class FilePanel(QWidget):
 
         self._tree = QTreeView()
         self._tree.setModel(self._proxy)
+        self._tree.setHeaderHidden(True)
+        # Nur Name-Spalte anzeigen
+        for col in range(1, 4):
+            self._tree.hideColumn(col)
+        self._tree.setAnimated(True)
+        self._tree.setIndentation(16)
+        self._tree.setSortingEnabled(True)
+        self._tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+        self._tree.doubleClicked.connect(self._on_double_click)
+        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._show_context_menu)
+        layout.addWidget(self._tree)
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        self._header.setStyleSheet(f"background:{THEME['bg_panel']};")
+        self._title_lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px;"
+        )
+        self._btn_open.setStyleSheet(
+            f"QPushButton {{ background:transparent; color:{THEME['accent']};"
+            f" border:none; font-size:16px; }}"
+            f"QPushButton:hover {{ color:{THEME['accent_hover']}; }}"
+        )
+        self._path_label.setStyleSheet(
+            f"background:{THEME['bg_panel']}; color:{THEME['text_dim']};"
+            f" font-size:10px; padding:2px 8px 4px 8px;"
+        )
+        self._sep_widget.setStyleSheet(f"background:{THEME['border']};")
         self._tree.setStyleSheet(
             f"""
             QTreeView {{
@@ -128,18 +143,6 @@ class FilePanel(QWidget):
             }}
             """
         )
-        self._tree.setHeaderHidden(True)
-        # Nur Name-Spalte anzeigen
-        for col in range(1, 4):
-            self._tree.hideColumn(col)
-        self._tree.setAnimated(True)
-        self._tree.setIndentation(16)
-        self._tree.setSortingEnabled(True)
-        self._tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-        self._tree.doubleClicked.connect(self._on_double_click)
-        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._tree.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self._tree)
 
     def set_root(self, path: str):
         self._root = path
@@ -317,44 +320,53 @@ class DeviceFilePanel(QWidget):
         layout.setSpacing(0)
 
         # Header
-        header = QWidget()
-        header.setStyleSheet(f"background:{THEME['bg_panel']};")
-        h = QHBoxLayout(header)
+        self._dev_header = QWidget()
+        h = QHBoxLayout(self._dev_header)
         h.setContentsMargins(8, 6, 4, 6)
-        title = QLabel("CONTROLLER")
-        title.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px;"
-        )
-        h.addWidget(title)
+        self._dev_title_lbl = QLabel("CONTROLLER")
+        h.addWidget(self._dev_title_lbl)
         h.addStretch()
         self._btn_refresh = QPushButton("↻")
         self._btn_refresh.setToolTip("Dateiliste aktualisieren")
         self._btn_refresh.setFixedSize(22, 22)
+        self._btn_refresh.clicked.connect(lambda: self.refresh(self._port))
+        h.addWidget(self._btn_refresh)
+        layout.addWidget(self._dev_header)
+
+        # Trennlinie
+        self._dev_sep = QWidget()
+        self._dev_sep.setFixedHeight(1)
+        layout.addWidget(self._dev_sep)
+
+        # Status
+        self._status_lbl = QLabel("(kein Gerät verbunden)")
+        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._status_lbl)
+
+        # Dateiliste
+        self._list = QListWidget()
+        self._list.setVisible(False)
+        self._list.doubleClicked.connect(self._on_double_click)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._show_context_menu)
+        layout.addWidget(self._list)
+        layout.addStretch()   # leerer Raum bleibt unten
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        self._dev_header.setStyleSheet(f"background:{THEME['bg_panel']};")
+        self._dev_title_lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px;"
+        )
         self._btn_refresh.setStyleSheet(
             f"QPushButton {{ background:transparent; color:{THEME['accent']};"
             f" border:none; font-size:14px; }}"
             f"QPushButton:hover {{ color:{THEME['accent_hover']}; }}"
         )
-        self._btn_refresh.clicked.connect(lambda: self.refresh(self._port))
-        h.addWidget(self._btn_refresh)
-        layout.addWidget(header)
-
-        # Trennlinie
-        sep = QWidget()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background:{THEME['border']};")
-        layout.addWidget(sep)
-
-        # Status
-        self._status_lbl = QLabel("(kein Gerät verbunden)")
-        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._dev_sep.setStyleSheet(f"background:{THEME['border']};")
         self._status_lbl.setStyleSheet(
             f"color:{THEME['text_dim']}; font-size:11px; padding:6px;"
         )
-        layout.addWidget(self._status_lbl)
-
-        # Dateiliste
-        self._list = QListWidget()
         self._list.setStyleSheet(
             f"""
             QListWidget {{
@@ -373,12 +385,6 @@ class DeviceFilePanel(QWidget):
             }}
             """
         )
-        self._list.setVisible(False)
-        self._list.doubleClicked.connect(self._on_double_click)
-        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._list.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self._list)
-        layout.addStretch()   # leerer Raum bleibt unten
 
     def refresh(self, port: str):
         self._port = port

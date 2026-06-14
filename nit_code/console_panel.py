@@ -287,6 +287,12 @@ class OutputConsole(QTextEdit):
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
 
+    def refresh_theme(self):
+        self.setStyleSheet(
+            f"background:{THEME['terminal_bg']}; color:{THEME['terminal_text']};"
+            f" border:none; padding:4px;"
+        )
+
     def clear_output(self):
         self.clear()
         self._links.clear()
@@ -357,11 +363,11 @@ class ShellWidget(QWidget):
         self._input.installEventFilter(self)
         input_row.addWidget(self._input)
 
-        btn_clear = QPushButton("Leeren")
-        btn_clear.setFixedWidth(70)
-        btn_clear.setStyleSheet(self._btn_style())
-        btn_clear.clicked.connect(self.output.clear)
-        input_row.addWidget(btn_clear)
+        self._btn_clear = QPushButton("Leeren")
+        self._btn_clear.setFixedWidth(70)
+        self._btn_clear.setStyleSheet(self._btn_style())
+        self._btn_clear.clicked.connect(self.output.clear)
+        input_row.addWidget(self._btn_clear)
 
         layout.addLayout(input_row)
 
@@ -371,6 +377,21 @@ class ShellWidget(QWidget):
             f" border:1px solid {THEME['border']}; border-radius:4px; padding:3px 8px; }}"
             f"QPushButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
         )
+
+    def refresh_theme(self):
+        self.output.setStyleSheet(
+            f"background:{THEME['terminal_bg']}; color:{THEME['terminal_text']};"
+            f" border:none; padding:4px;"
+        )
+        self._prompt_label.setStyleSheet(
+            f"color:{THEME['accent']}; font-family:monospace; font-size:12px;"
+        )
+        self._input.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f" border:1px solid {THEME['border']}; border-radius:4px; padding:3px 6px;"
+            f" font-family:'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size:11px;"
+        )
+        self._btn_clear.setStyleSheet(self._btn_style())
 
     def restart(self, cmd: list):
         """Beendet den aktuellen Prozess und startet neu mit neuem Befehl."""
@@ -623,6 +644,38 @@ class ConsolePanel(QWidget):
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self.tabs)
+
+    def refresh_theme(self):
+        self.tabs.setStyleSheet(
+            f"""
+            QTabWidget::pane {{
+                border: none;
+                background: {THEME['terminal_bg']};
+            }}
+            QTabBar::tab {{
+                background: {THEME['bg_panel']};
+                color: {THEME['text_dim']};
+                padding: 5px 14px;
+                border: none;
+                border-right: 1px solid {THEME['border']};
+            }}
+            QTabBar::tab:selected {{
+                background: {THEME['terminal_bg']};
+                color: {THEME['text']};
+                border-bottom: 2px solid {THEME['accent']};
+            }}
+            """
+        )
+        self._input_prompt.setStyleSheet(
+            f"color:{THEME['accent']}; font-family:monospace; font-size:13px;"
+        )
+        self._input_field.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f" border:1px solid {THEME['accent']}; border-radius:4px; padding:3px 6px;"
+            f" font-family:'JetBrains Mono', Consolas, monospace; font-size:11px;"
+        )
+        self.output_console.refresh_theme()
+        self.shell.refresh_theme()
 
     def _on_tab_changed(self, index: int):
         """mpremote-REPL erst starten wenn Shell-Tab aktiv wird."""

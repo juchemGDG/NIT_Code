@@ -1993,6 +1993,12 @@ class MainWindow(QMainWindow):
             tab.editor.set_word_wrap(self._settings_word_wrap)
             tab.editor.set_highlight_current_line(self._settings_highlight_line)
             tab.editor.refresh_theme()
+        self._file_panel.refresh_theme()
+        self._device_panel.refresh_theme()
+        self._console.refresh_theme()
+        self._tutor_panel.refresh_theme()
+        self._coder_panel.refresh_theme()
+        self._aischat_panel.refresh_theme()
         self._console.set_font_size(self._settings_font_size)
         self._console.set_scrollback_limit(self._settings_scrollback)
         # Auto-Save-Timer

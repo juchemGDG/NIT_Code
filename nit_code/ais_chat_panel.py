@@ -39,20 +39,13 @@ class AisChatPanel(QWidget):
         layout.setSpacing(0)
 
         # Header
-        header = QWidget()
-        header.setFixedHeight(36)
-        header.setStyleSheet(
-            f"background:{THEME['bg_panel']};"
-            f"border-bottom:1px solid {THEME['border']};"
-        )
-        hlay = QHBoxLayout(header)
+        self._header = QWidget()
+        self._header.setFixedHeight(36)
+        hlay = QHBoxLayout(self._header)
         hlay.setContentsMargins(10, 0, 10, 0)
-        title_lbl = QLabel("🏫  AIS-Chat")
-        title_lbl.setStyleSheet(
-            f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
-        )
-        hlay.addWidget(title_lbl)
-        layout.addWidget(header)
+        self._title_lbl = QLabel("🏫  AIS-Chat")
+        hlay.addWidget(self._title_lbl)
+        layout.addWidget(self._header)
 
         if _WEBENGINE_AVAILABLE:
             # Off-the-record Profil: kein Name → kein Persistenzordner auf Disk
@@ -79,6 +72,16 @@ class AisChatPanel(QWidget):
             info.setWordWrap(True)
             layout.addWidget(info)
             layout.addStretch()
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        self._header.setStyleSheet(
+            f"background:{THEME['bg_panel']};"
+            f"border-bottom:1px solid {THEME['border']};"
+        )
+        self._title_lbl.setStyleSheet(
+            f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
+        )
 
     def _inject_viewport(self, *_):
         if self._view is None:
