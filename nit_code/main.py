@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QIcon
 
-from .main_window import MainWindow, GLOBAL_STYLE
+from .main_window import MainWindow, build_global_style
 
 
 def _find_logo() -> QIcon:
@@ -39,7 +39,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("NIT_Code")
     app.setOrganizationName("NIT")
-    app.setStyleSheet(GLOBAL_STYLE)
+    app.setStyleSheet(build_global_style())
 
     logo = _find_logo()
     if not logo.isNull():
