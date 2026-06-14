@@ -1,12 +1,17 @@
 """Einstellungs-Dialog für NIT_Code."""
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QSpinBox, QCheckBox, QPushButton, QFrame,
     QComboBox, QLineEdit, QFileDialog, QWidget,
 )
 
-from .config import THEME, TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL, is_ollama_available, AIS_CHAT_URL
+from .config import (
+    THEME, THEMES,
+    TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL,
+    OLLAMA_WEB_PASSWORD,
+    is_ollama_available, AIS_CHAT_URL,
+)
 
 # Auto-Save-Intervalle: Anzeigetext → Sekunden
 _AUTOSAVE_OPTIONS = [
@@ -17,8 +22,64 @@ _AUTOSAVE_OPTIONS = [
 ]
 
 
+# ── Hintergrund-Thread: Ollama-Modelle abrufen ──────────────────────────────
+
+class _OllamaFetcher(QThread):
+    """Ruft verfügbare Ollama-Modelle vom API-Endpunkt ab (ohne UI zu blockieren)."""
+    models_ready = pyqtSignal(list)
+    error        = pyqtSignal(str)
+
+    def __init__(self, url: str, password: str = ""):
+        super().__init__()
+        self._url      = url.rstrip("/")
+        self._password = password
+
+    def run(self):
+        import json
+        import base64
+        from urllib.request import Request, urlopen
+
+        endpoint = f"{self._url}/api/tags"
+
+        def _fetch(headers=None):
+            req = Request(endpoint, headers=headers or {})
+            with urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read())
+                return [m["name"] for m in data.get("models", [])]
+
+        # 1. Ohne Auth
+        try:
+            self.models_ready.emit(_fetch())
+            return
+        except Exception:
+            pass
+
+        if not self._password:
+            self.error.emit("Nicht erreichbar")
+            return
+
+        # 2. Bearer Token
+        try:
+            self.models_ready.emit(_fetch({"Authorization": f"Bearer {self._password}"}))
+            return
+        except Exception:
+            pass
+
+        # 3. Basic Auth (leerer Benutzername)
+        creds = base64.b64encode(f":{self._password}".encode()).decode()
+        try:
+            self.models_ready.emit(_fetch({"Authorization": f"Basic {creds}"}))
+            return
+        except Exception:
+            pass
+
+        self.error.emit("Nicht erreichbar")
+
+
+# ── Einstellungs-Dialog ──────────────────────────────────────────────────────
+
 class SettingsDialog(QDialog):
-    """Einstellungs-Popup mit Editor- und Shell-Optionen."""
+    """Einstellungs-Popup mit Editor-, Shell- und KI-Optionen."""
 
     def __init__(
         self,
@@ -34,11 +95,13 @@ class SettingsDialog(QDialog):
         tutor_url: str = "",
         tutor_model: str = "",
         sketchbook_dir: str = "",
+        theme: str = "modern_dark",
     ):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
         self.setModal(True)
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(440)
+        self._fetcher: _OllamaFetcher | None = None
         self.setStyleSheet(
             f"""
             QDialog {{
@@ -96,7 +159,7 @@ class SettingsDialog(QDialog):
         )
         self._build_ui(font_size, line_numbers, word_wrap, highlight_line,
                        autosave_secs, python_exec, scrollback,
-                       tutor_mode, tutor_url, tutor_model, sketchbook_dir)
+                       tutor_mode, tutor_url, tutor_model, sketchbook_dir, theme)
 
     # ── Hilfsmethode: Abschnittsüberschrift ─────────────────────────────
     @staticmethod
@@ -124,6 +187,7 @@ class SettingsDialog(QDialog):
         tutor_url: str = "",
         tutor_model: str = "",
         sketchbook_dir: str = "",
+        theme: str = "modern_dark",
     ):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -173,7 +237,6 @@ class SettingsDialog(QDialog):
         self._combo_as.setFixedWidth(120)
         for label, secs in _AUTOSAVE_OPTIONS:
             self._combo_as.addItem(label, secs)
-        # Aktuellen Wert vorauswählen
         idx = next((i for i, (_, s) in enumerate(_AUTOSAVE_OPTIONS) if s == autosave_secs), 0)
         self._combo_as.setCurrentIndex(idx)
         form_run.addRow("Auto-Speichern:", self._combo_as)
@@ -201,6 +264,25 @@ class SettingsDialog(QDialog):
         root.addLayout(form_sh)
         root.addSpacing(6)
 
+        # ── Abschnitt: Design ────────────────────────────────────────────
+        title_d, sep_d = self._section("DESIGN")
+        root.addWidget(title_d)
+        root.addWidget(sep_d)
+
+        form_design = QFormLayout()
+        form_design.setSpacing(8)
+        form_design.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._combo_theme = QComboBox()
+        self._combo_theme.addItem("Modernes Dunkel-Design", "modern_dark")
+        self._combo_theme.addItem("Klassisches Hell-Design (Eclipse)", "classic_light")
+        tidx = max(0, self._combo_theme.findData(theme))
+        self._combo_theme.setCurrentIndex(tidx)
+        form_design.addRow("Design:", self._combo_theme)
+
+        root.addLayout(form_design)
+        root.addSpacing(6)
+
         # ── Abschnitt: Python (lokal) ────────────────────────────────────
         title4, sep4 = self._section("PYTHON (LOKAL)")
         root.addWidget(title4)
@@ -226,7 +308,7 @@ class SettingsDialog(QDialog):
         root.addLayout(form_py)
         root.addSpacing(6)
 
-        # ── Abschnitt: Dateisystem ──────────────────────────────────────────
+        # ── Abschnitt: Dateisystem ───────────────────────────────────────
         title_fs, sep_fs = self._section("DATEISYSTEM")
         root.addWidget(title_fs)
         root.addWidget(sep_fs)
@@ -251,7 +333,7 @@ class SettingsDialog(QDialog):
         root.addLayout(form_fs)
         root.addSpacing(6)
 
-        # ── Abschnitt: KI-Tutor ─────────────────────────────────────────────
+        # ── Abschnitt: KI-Tutor ─────────────────────────────────────────
         title5, sep5 = self._section("KI-TUTOR")
         root.addWidget(title5)
         root.addWidget(sep5)
@@ -270,36 +352,55 @@ class SettingsDialog(QDialog):
         form_ai.addRow("Chatbot:", self._combo_tutor_mode)
         root.addLayout(form_ai)
 
-        # Ollama-spezifische Felder – nur sichtbar wenn "ollama" gewählt
+        # Ollama-spezifische Felder (immer sichtbar, wenn Ollama-Modus aktiv)
         self._ollama_container = QWidget()
         form_ollama = QFormLayout(self._ollama_container)
         form_ollama.setSpacing(8)
         form_ollama.setContentsMargins(0, 4, 0, 0)
         form_ollama.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        if is_ollama_available():
-            self._edit_tutor_url = QLineEdit()
-            self._edit_tutor_url.setPlaceholderText(TUTOR_DEFAULT_URL)
-            self._edit_tutor_url.setText(tutor_url)
-            form_ollama.addRow("Ollama-URL:", self._edit_tutor_url)
+        # URL
+        self._edit_tutor_url = QLineEdit()
+        self._edit_tutor_url.setPlaceholderText(TUTOR_DEFAULT_URL)
+        self._edit_tutor_url.setText(tutor_url)
+        form_ollama.addRow("Ollama-URL:", self._edit_tutor_url)
 
-            self._edit_tutor_model = QLineEdit()
-            self._edit_tutor_model.setPlaceholderText(TUTOR_DEFAULT_MODEL)
-            self._edit_tutor_model.setText(tutor_model)
-            form_ollama.addRow("Modell:", self._edit_tutor_model)
-        else:
-            self._edit_tutor_url = None
-            self._edit_tutor_model = None
-            not_found = QLabel(
-                "Ollama ist nicht installiert.\n"
-                "Bitte Ollama installieren, um den lokalen Tutor zu nutzen.\n"
-                "→ https://ollama.com/download"
+        # Modell-Auswahl: editierbare ComboBox + Laden-Schaltfläche
+        model_row_w = QWidget()
+        model_row_lay = QHBoxLayout(model_row_w)
+        model_row_lay.setContentsMargins(0, 0, 0, 0)
+        model_row_lay.setSpacing(4)
+
+        self._combo_tutor_model = QComboBox()
+        self._combo_tutor_model.setEditable(True)
+        self._combo_tutor_model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._combo_tutor_model.lineEdit().setPlaceholderText(TUTOR_DEFAULT_MODEL)
+        if tutor_model:
+            self._combo_tutor_model.addItem(tutor_model)
+            self._combo_tutor_model.setCurrentText(tutor_model)
+        model_row_lay.addWidget(self._combo_tutor_model)
+
+        self._btn_refresh_models = QPushButton("↻")
+        self._btn_refresh_models.setObjectName("browse")
+        self._btn_refresh_models.setFixedWidth(32)
+        self._btn_refresh_models.setToolTip(
+            "Verfügbare Ollama-Modelle von der URL abrufen\n"
+            "(lokal oder Web mit Passwort)"
+        )
+        self._btn_refresh_models.clicked.connect(self._fetch_ollama_models)
+        model_row_lay.addWidget(self._btn_refresh_models)
+        form_ollama.addRow("Modell:", model_row_w)
+
+        if not is_ollama_available():
+            hint = QLabel(
+                "Ollama nicht lokal installiert — "
+                "Web-URL eingeben und ↻ klicken."
             )
-            not_found.setStyleSheet(
+            hint.setStyleSheet(
                 f"color:{THEME['text_dim']}; font-size:11px; padding:2px 0;"
             )
-            not_found.setWordWrap(True)
-            form_ollama.addRow("", not_found)
+            hint.setWordWrap(True)
+            form_ollama.addRow("", hint)
 
         root.addWidget(self._ollama_container)
         self._ollama_container.setVisible(tutor_mode in ("ollama", "coder"))
@@ -323,6 +424,48 @@ class SettingsDialog(QDialog):
 
         root.addLayout(btn_row)
 
+    # ── Ollama-Modelle laden ─────────────────────────────────────────────────
+
+    def _fetch_ollama_models(self):
+        if self._fetcher and self._fetcher.isRunning():
+            return
+        url = self._edit_tutor_url.text().strip() or TUTOR_DEFAULT_URL
+        self._btn_refresh_models.setEnabled(False)
+        self._btn_refresh_models.setText("…")
+        self._fetcher = _OllamaFetcher(url, OLLAMA_WEB_PASSWORD)
+        self._fetcher.models_ready.connect(self._on_models_ready)
+        self._fetcher.error.connect(self._on_models_error)
+        self._fetcher.start()
+
+    def _on_models_ready(self, models: list):
+        current = self._combo_tutor_model.currentText().strip()
+        self._combo_tutor_model.clear()
+        for m in sorted(models):
+            self._combo_tutor_model.addItem(m)
+        if current:
+            idx = self._combo_tutor_model.findText(current)
+            if idx >= 0:
+                self._combo_tutor_model.setCurrentIndex(idx)
+            else:
+                self._combo_tutor_model.setCurrentText(current)
+        self._btn_refresh_models.setEnabled(True)
+        self._btn_refresh_models.setText("↻")
+
+    def _on_models_error(self, msg: str):
+        self._btn_refresh_models.setEnabled(True)
+        self._btn_refresh_models.setText("↻")
+        le = self._combo_tutor_model.lineEdit()
+        if le:
+            le.setPlaceholderText(f"⚠ {msg}")
+
+    def done(self, result: int):
+        if self._fetcher and self._fetcher.isRunning():
+            self._fetcher.quit()
+            self._fetcher.wait(500)
+        super().done(result)
+
+    # ── Hilfsmethoden ───────────────────────────────────────────────────────
+
     def _browse_python(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -342,7 +485,13 @@ class SettingsDialog(QDialog):
         if folder:
             self._edit_sketchbook.setText(folder)
 
-    # ── Ergebnis abrufen ────────────────────────────────────────────────
+    def _on_tutor_mode_changed(self, _index: int):
+        self._ollama_container.setVisible(
+            self._combo_tutor_mode.currentData() in ("ollama", "coder")
+        )
+
+    # ── Properties ──────────────────────────────────────────────────────────
+
     @property
     def font_size(self) -> int:
         return self._spin.value()
@@ -371,10 +520,9 @@ class SettingsDialog(QDialog):
     def scrollback_lines(self) -> int:
         return self._spin_sb.value()
 
-    def _on_tutor_mode_changed(self, _index: int):
-        self._ollama_container.setVisible(
-            self._combo_tutor_mode.currentData() in ("ollama", "coder")
-        )
+    @property
+    def theme(self) -> str:
+        return self._combo_theme.currentData()
 
     @property
     def tutor_mode(self) -> str:
@@ -382,15 +530,11 @@ class SettingsDialog(QDialog):
 
     @property
     def tutor_url(self) -> str:
-        if self._edit_tutor_url is None:
-            return ""
         return self._edit_tutor_url.text().strip()
 
     @property
     def tutor_model(self) -> str:
-        if self._edit_tutor_model is None:
-            return ""
-        return self._edit_tutor_model.text().strip()
+        return self._combo_tutor_model.currentText().strip()
 
     @property
     def sketchbook_dir(self) -> str:

@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QDialog, QPushButton, QTextEdit, QLineEdit, QFormLayout, QGroupBox,
 )
 
-from .config import APP_NAME, APP_VERSION, THEME, SUPPORTED_BOARDS, python_executable, tool_command
+from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, python_executable, tool_command, set_theme
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
@@ -29,19 +29,21 @@ from .tutor_panel import TutorPanel
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Globales Stylesheet
+# Globales Stylesheet (als Funktion, damit Theme-Wechsel möglich ist)
 # ──────────────────────────────────────────────────────────────────────────────
-GLOBAL_STYLE = f"""
+def build_global_style() -> str:
+    t = THEME
+    return f"""
 QMainWindow, QWidget {{
-    background: {THEME['bg_dark']};
-    color: {THEME['text']};
+    background: {t['bg_dark']};
+    color: {t['text']};
     font-family: system-ui, -apple-system, 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
     font-size: 13px;
 }}
 QMenuBar {{
-    background: {THEME['bg_panel']};
-    color: {THEME['text']};
-    border-bottom: 1px solid {THEME['border']};
+    background: {t['bg_panel']};
+    color: {t['text']};
+    border-bottom: 1px solid {t['border']};
     padding: 2px 0;
 }}
 QMenuBar::item {{
@@ -49,13 +51,13 @@ QMenuBar::item {{
     border-radius: 3px;
 }}
 QMenuBar::item:selected {{
-    background: {THEME['accent']};
+    background: {t['accent']};
     color: white;
 }}
 QMenu {{
-    background: {THEME['bg_panel']};
-    color: {THEME['text']};
-    border: 1px solid {THEME['border']};
+    background: {t['bg_panel']};
+    color: {t['text']};
+    border: 1px solid {t['border']};
     border-radius: 6px;
     padding: 4px;
 }}
@@ -64,34 +66,34 @@ QMenu::item {{
     border-radius: 3px;
 }}
 QMenu::item:selected {{
-    background: {THEME['accent']};
+    background: {t['accent']};
     color: white;
 }}
 QMenu::separator {{
     height: 1px;
-    background: {THEME['border']};
+    background: {t['border']};
     margin: 3px 6px;
 }}
 QTabWidget::pane {{
     border: none;
-    background: {THEME['bg_editor']};
+    background: {t['bg_editor']};
 }}
 QTabBar::tab {{
-    background: {THEME['bg_panel']};
-    color: {THEME['text_dim']};
+    background: {t['bg_panel']};
+    color: {t['text_dim']};
     padding: 6px 14px 6px 14px;
     border: none;
-    border-right: 1px solid {THEME['border']};
+    border-right: 1px solid {t['border']};
     min-width: 80px;
 }}
 QTabBar::tab:selected {{
-    background: {THEME['bg_editor']};
-    color: {THEME['text']};
-    border-top: 2px solid {THEME['accent']};
+    background: {t['bg_editor']};
+    color: {t['text']};
+    border-top: 2px solid {t['accent']};
 }}
 QTabBar::tab:hover {{
-    background: {THEME['selection']};
-    color: {THEME['text']};
+    background: {t['selection']};
+    color: {t['text']};
 }}
 QTabBar::close-button {{
     subcontrol-position: right;
@@ -101,64 +103,64 @@ QTabBar::close-button {{
     border-radius: 3px;
 }}
 QTabBar::close-button:hover {{
-    background: {THEME['accent']};
+    background: {t['accent']};
 }}
 QSplitter::handle {{
-    background: {THEME['border']};
+    background: {t['border']};
 }}
 QToolBar {{
-    background: {THEME['bg_panel']};
+    background: {t['bg_panel']};
     border: none;
-    border-bottom: 1px solid {THEME['border']};
+    border-bottom: 1px solid {t['border']};
     spacing: 4px;
     padding: 2px 6px;
 }}
 QToolButton {{
     background: transparent;
-    color: {THEME['text']};
+    color: {t['text']};
     border: none;
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;
 }}
 QToolButton:hover {{
-    background: {THEME['selection']};
-    color: {THEME['accent']};
+    background: {t['selection']};
+    color: {t['accent']};
 }}
 QToolButton:pressed {{
-    background: {THEME['accent']};
+    background: {t['accent']};
     color: white;
 }}
 QStatusBar {{
-    background: {THEME['bg_panel']};
-    color: {THEME['text_dim']};
-    border-top: 1px solid {THEME['border']};
+    background: {t['bg_panel']};
+    color: {t['text_dim']};
+    border-top: 1px solid {t['border']};
     font-size: 11px;
     padding: 0 8px;
 }}
 QScrollBar:vertical {{
-    background: {THEME['bg_dark']};
+    background: {t['bg_dark']};
     width: 8px;
     border-radius: 4px;
 }}
 QScrollBar::handle:vertical {{
-    background: {THEME['border']};
+    background: {t['border']};
     border-radius: 4px;
     min-height: 20px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: {THEME['accent']};
+    background: {t['accent']};
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
 }}
 QScrollBar:horizontal {{
-    background: {THEME['bg_dark']};
+    background: {t['bg_dark']};
     height: 8px;
     border-radius: 4px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {THEME['border']};
+    background: {t['border']};
     border-radius: 4px;
     min-width: 20px;
 }}
@@ -423,6 +425,7 @@ class MainWindow(QMainWindow):
         self._settings_tutor_model: str = ""
         self._settings_sketchbook: str = str(Path.home())
         self._settings_git_repo: str = ""
+        self._settings_theme: str = "modern_dark"
         self._settings_store = QSettings()
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._autosave_all)
@@ -445,7 +448,7 @@ class MainWindow(QMainWindow):
     def _setup_window(self):
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.resize(1280, 780)
-        self.setStyleSheet(GLOBAL_STYLE)
+        self.setStyleSheet(build_global_style())
         # Window-Icon (falls Logo noch nicht per app.setWindowIcon gesetzt)
         from pathlib import Path
         from PyQt6.QtGui import QIcon as _QIcon, QPixmap as _QPixmap
@@ -570,9 +573,9 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
 
         # Modus-Auswahl
-        mode_lbl = QLabel("  Modus: ")
-        mode_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
-        tb.addWidget(mode_lbl)
+        self._mode_lbl = QLabel("  Modus: ")
+        self._mode_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
+        tb.addWidget(self._mode_lbl)
 
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("🐍  Python (lokal)", "python")
@@ -1804,6 +1807,7 @@ class MainWindow(QMainWindow):
             tutor_url=self._settings_tutor_url,
             tutor_model=self._settings_tutor_model,
             sketchbook_dir=self._settings_sketchbook,
+            theme=self._settings_theme,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
             self._settings_font_size = dlg.font_size
@@ -1817,6 +1821,7 @@ class MainWindow(QMainWindow):
             self._settings_tutor_url = dlg.tutor_url
             self._settings_tutor_model = dlg.tutor_model
             self._settings_sketchbook = self._normalize_sketchbook_dir(dlg.sketchbook_dir)
+            self._settings_theme = dlg.theme
             try:
                 self._apply_settings()
                 self._apply_sketchbook_root()
@@ -1863,6 +1868,9 @@ class MainWindow(QMainWindow):
             str(self._settings_store.value("files/sketchbook_dir", self._settings_sketchbook) or "")
         )
         self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
+        self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "modern_dark")
+        # Theme sofort anwenden, damit alle nachfolgenden UI-Elemente korrekte Farben erhalten
+        set_theme(self._settings_theme)
 
     def _save_persistent_settings(self):
         self._settings_store.setValue("editor/font_size", self._settings_font_size)
@@ -1877,6 +1885,7 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("tutor/model", self._settings_tutor_model)
         self._settings_store.setValue("files/sketchbook_dir", self._settings_sketchbook)
         self._settings_store.setValue("git/repo_dir", self._settings_git_repo)
+        self._settings_store.setValue("ui/theme", self._settings_theme)
         self._settings_store.sync()
 
     def _choose_sketchbook_dir(self):
@@ -1949,13 +1958,41 @@ class MainWindow(QMainWindow):
 
         return has_entries
 
+    def _update_widget_styles(self):
+        """Inline-Stylesheets von Toolbar-Widgets und Statusleiste nach Theme-Wechsel neu setzen."""
+        t = THEME
+        combo_style = (
+            f"background:{t['bg_dark']}; color:{t['text']};"
+            f" border:1px solid {t['border']}; border-radius:4px; padding:3px 6px;"
+        )
+        if hasattr(self, "_mode_combo"):
+            self._mode_combo.setStyleSheet(combo_style + " min-width:160px;")
+        if hasattr(self, "_port_combo"):
+            self._port_combo.setStyleSheet(combo_style + " min-width:200px;")
+        if hasattr(self, "_mode_lbl"):
+            self._mode_lbl.setStyleSheet(f"color:{t['text_dim']};")
+        if hasattr(self, "_port_lbl"):
+            self._port_lbl.setStyleSheet(f"color:{t['text_dim']};")
+        if hasattr(self, "_status_mode"):
+            self._status_mode.setStyleSheet(f"color:{t['accent']}; font-weight:bold; padding:0 8px;")
+        if hasattr(self, "_status_git"):
+            self._status_git.setStyleSheet(f"color:{t['text_dim']}; padding:0 8px;")
+        if hasattr(self, "_status_board"):
+            self._status_board.setStyleSheet(f"color:{t['text_dim']}; padding:0 8px;")
+
     def _apply_settings(self):
         """Einstellungen auf alle offenen Tabs + Konsole anwenden."""
+        # Theme zuerst anwenden, damit alle Farben stimmen
+        set_theme(self._settings_theme)
+        self.setStyleSheet(build_global_style())
+        self._update_widget_styles()
+
         for tab in self._tabs:
             tab.editor.set_font_size(self._settings_font_size)
             tab.editor.set_line_numbers_visible(self._settings_line_numbers)
             tab.editor.set_word_wrap(self._settings_word_wrap)
             tab.editor.set_highlight_current_line(self._settings_highlight_line)
+            tab.editor.refresh_theme()
         self._console.set_font_size(self._settings_font_size)
         self._console.set_scrollback_limit(self._settings_scrollback)
         # Auto-Save-Timer

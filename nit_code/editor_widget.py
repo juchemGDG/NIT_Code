@@ -213,6 +213,23 @@ class CodeEditor(QWidget):
         if HAS_QSCI:
             self.sci.setCaretLineVisible(enabled)
 
+    def refresh_theme(self):
+        """Farben nach Theme-Wechsel neu anwenden (ohne Margins neu zu definieren)."""
+        if not HAS_QSCI:
+            return
+        t = THEME
+        self.sci.setPaper(_hex(t["bg_editor"]))
+        self.sci.setColor(_hex(t["text"]))
+        self.sci.setMarginsBackgroundColor(_hex(t["bg_panel"]))
+        self.sci.setMarginsForegroundColor(_hex(t["text_dim"]))
+        self.sci.setCaretLineBackgroundColor(_hex(t["selection"]))
+        self.sci.setCaretForegroundColor(_hex(t["accent"]))
+        self.sci.setIndentationGuidesBackgroundColor(_hex(t["border"]))
+        self.sci.setIndentationGuidesForegroundColor(_hex(t["border"]))
+        self.sci.setMarkerBackgroundColor(_hex(t["error"]), self._error_marker)
+        self.sci.setMarkerForegroundColor(_hex(t["error"]), self._error_marker)
+        self._set_lexer_python()
+
     def set_filepath(self, path: str | None):
         """Aktuellen Dateipfad setzen – verbessert jedi-Projekterkennung."""
         self._filepath = path
