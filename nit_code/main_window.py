@@ -648,8 +648,10 @@ class MainWindow(QMainWindow):
         # Linker Bereich: vertikaler Splitter (lokale Dateien + Controller-Dateien)
         self._left_splitter = QSplitter(Qt.Orientation.Vertical)
         self._left_splitter.setHandleWidth(2)
-        self._left_splitter.setMinimumWidth(150)
-        self._left_splitter.setMaximumWidth(300)
+        # Breit genug, damit der Aktualisieren-Button (↻) der Controller-
+        # Dateiansicht von Anfang an sichtbar ist.
+        self._left_splitter.setMinimumWidth(210)
+        self._left_splitter.setMaximumWidth(340)
 
         self._file_panel = FilePanel()
         self._file_panel.setMinimumWidth(0)
@@ -704,7 +706,7 @@ class MainWindow(QMainWindow):
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
-        self._main_splitter.setSizes([150, 1060, 0])
+        self._main_splitter.setSizes([230, 980, 0])
         # Nur der Editor-Bereich wächst beim Vergrößern des Fensters
         self._main_splitter.setStretchFactor(0, 0)  # Datei-Panel: feste Breite
         self._main_splitter.setStretchFactor(1, 1)  # Editor: nimmt Extra-Platz
@@ -1067,6 +1069,10 @@ class MainWindow(QMainWindow):
             lambda code: self._console.append_success("✓  Upload abgeschlossen.\n")
             if code == 0 else self._console.append_error("✗  Upload fehlgeschlagen.\n")
         )
+        # Nach erfolgreichem Upload die Controller-Dateiansicht aktualisieren
+        self._process.finished_run.connect(
+            lambda code: self._device_panel.refresh(port) if code == 0 else None
+        )
         self._process.start()
 
     def _flash_firmware(self):
@@ -1132,6 +1138,9 @@ class MainWindow(QMainWindow):
         port = self._get_serial_port(silent=True)
         dlg = LibraryManagerDialog(port or "", self)
         dlg.exec()
+        # Eventuell neu installierte Bibliotheken in der Dateiansicht zeigen
+        if port and self._mode == "micropython":
+            self._device_panel.refresh(port)
 
     def _open_pip_manager(self):
         from .micropython_dialogs import PipManagerDialog

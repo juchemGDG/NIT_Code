@@ -112,18 +112,22 @@ class FlashWorker(QThread):
     def run(self):
         import subprocess, sys
         self.log.emit(f"Flashe {self.board} auf {self.port} ...\n")
+        self.log.emit("Der gesamte Flash wird zuerst gelöscht – "
+                      "alle Dateien auf dem Board gehen dabei verloren.\n")
         self.progress.emit(10)
         board_info = SUPPORTED_BOARDS.get(self.board, {})
         flash_cmd = board_info.get("flash_cmd", "esp32")
         baud = board_info.get("baud", 115200)
 
+        # "-e" / --erase-all löscht vor dem Schreiben den kompletten Flash
+        # (inkl. Dateisystem), sodass ein sauberer, leerer Controller entsteht.
         if flash_cmd == "esp32":
             cmd = [
                 *tool_command("esptool"),
                 "--chip", "esp32",
                 "--port", self.port,
                 "--baud", str(baud),
-                "write_flash", "-z", "0x1000",
+                "write_flash", "-e", "-z", "0x1000",
                 self.firmware_path,
             ]
         elif flash_cmd == "rp2":
@@ -134,7 +138,7 @@ class FlashWorker(QThread):
             return
         else:
             cmd = [*tool_command("esptool"), "--port", self.port,
-                   "write_flash", "0x0", self.firmware_path]
+                   "write_flash", "-e", "0x0", self.firmware_path]
 
         try:
             import re
