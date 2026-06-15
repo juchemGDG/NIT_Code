@@ -123,10 +123,25 @@ class SettingsDialog(QDialog):
                 border: none;
                 width: 16px;
             }}
+            QComboBox {{
+                combobox-popup: 0;
+            }}
             QComboBox::drop-down {{
                 border: none;
                 background: {THEME['bg_panel']};
                 width: 20px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: {THEME['bg_dark']};
+                color: {THEME['text']};
+                border: 1px solid {THEME['border']};
+                selection-background-color: {THEME['accent']};
+                selection-color: #fff;
+                outline: none;
+            }}
+            QComboBox QAbstractItemView::item {{
+                min-height: 24px;
+                padding: 2px 6px;
             }}
             QPushButton {{
                 background: {THEME['accent']};

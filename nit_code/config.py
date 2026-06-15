@@ -44,7 +44,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.7"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"
@@ -139,7 +139,7 @@ THEMES: dict[str, dict[str, str]] = {
     "classic_light": _LIGHT_THEME,
 }
 
-THEME: dict[str, str] = dict(_DARK_THEME)  # aktives Theme (veränderlich)
+THEME: dict[str, str] = dict(_LIGHT_THEME)  # aktives Theme (veränderlich), Standard: hell
 
 
 def set_theme(name: str) -> None:

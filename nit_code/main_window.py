@@ -425,7 +425,7 @@ class MainWindow(QMainWindow):
         self._settings_tutor_model: str = ""
         self._settings_sketchbook: str = str(Path.home())
         self._settings_git_repo: str = ""
-        self._settings_theme: str = "modern_dark"
+        self._settings_theme: str = "classic_light"
         self._settings_store = QSettings()
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._autosave_all)
@@ -1868,7 +1868,7 @@ class MainWindow(QMainWindow):
             str(self._settings_store.value("files/sketchbook_dir", self._settings_sketchbook) or "")
         )
         self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
-        self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "modern_dark")
+        self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "classic_light")
         # Theme sofort anwenden, damit alle nachfolgenden UI-Elemente korrekte Farben erhalten
         set_theme(self._settings_theme)
 

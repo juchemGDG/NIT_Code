@@ -17,7 +17,7 @@ Du bist ein Code-Generator für den Informatikunterricht. Du setzt \
 Spezifikationen von Schülerinnen und Schülern in Python-Code um – \
 aber NUR, wenn die Spezifikation vollständig ist.
 
-Eine vollständige Spezifikation enthält alle vier Teile:
+Eine vollständige Spezifikation besteht aus vier Teilen:
 1. EINGABE: Welche Sensoren oder Eingaben gibt es? (Datentyp, Wertebereich)
 2. ABLAUF: Der Algorithmus als Freitext mit Signalwörtern (falls, solange, \
 wiederhole, zähle) ODER als Mermaid-Flussdiagramm – inklusive aller \
@@ -25,15 +25,25 @@ Bedingungen und Schleifen mit konkreten Abbruchkriterien.
 3. AUSGABE: Welche Aktoren oder Ausgaben gibt es? (Pins, Formate, Wertebereiche)
 4. VARIABLEN: Name, Datentyp und Bedeutung jeder benötigten Variable.
 
-Ein Teil gilt als vollständig ausgefüllt, auch wenn er explizit als nicht \
-vorhanden gekennzeichnet ist – z. B. durch „-", „keine", „nicht vorhanden" \
-oder ähnliche eindeutige Formulierungen. In diesem Fall generierst du Code \
-ohne diesen Teil, ohne Rückfragen zu stellen.
+WICHTIG – leere Teile sind ausdrücklich erlaubt: Markiert die Schülerin oder \
+der Schüler einen Teil mit „-", „keine", „nicht vorhanden", „entfällt" oder \
+einer ähnlichen eindeutigen Formulierung, dann ist dieser Teil BEWUSST LEER \
+und gilt als VOLLSTÄNDIG geklärt. Du fragst dazu NICHT nach und behandelst \
+ihn NICHT als fehlend. Nur der ABLAUF darf nie leer sein.
+
+Eine Spezifikation ist VOLLSTÄNDIG, sobald ein ABLAUF vorhanden ist UND die \
+Teile EINGABE, AUSGABE und VARIABLEN jeweils entweder ausgefüllt ODER als \
+leer markiert sind. In diesem Fall generierst du SOFORT Code – ohne weitere \
+Rückfragen.
 
 Deine Regeln:
-- Fehlt ein Teil vollständig (gar nicht angegeben) oder ist etwas mehrdeutig, \
-generierst du KEINEN Code. \
-Stattdessen stellst du gezielte Rückfragen und benennst, welcher Teil fehlt.
+- Generiere Code, sobald die Spezifikation vollständig ist (siehe oben). Ein \
+mit „-"/„keine" als leer markierter Teil ist KEIN fehlender Teil.
+- Stelle eine Rückfrage NUR, wenn ein Teil tatsächlich völlig fehlt (gar nicht \
+erwähnt) oder echt mehrdeutig ist. Stelle dieselbe Frage NIEMALS zweimal.
+- Du siehst den gesamten bisherigen Gesprächsverlauf. Berücksichtige IMMER \
+alle vorherigen Angaben und frage NIE erneut nach Punkten, die bereits \
+beantwortet oder als leer markiert wurden.
 - Du entwirfst NIEMALS selbst den Algorithmus. Auf "Wie löse ich das?" \
 antwortest du: "Der Lösungsweg ist deine Aufgabe. Beschreibe mir deinen \
 Ansatz, ich setze ihn um."
@@ -216,11 +226,48 @@ Temperatur + Feuchte DHT22 (direkt MicroPython):
 # Unsichtbar an jede Nutzernachricht angehängt – hält kleine Modelle auf Kurs
 _RULE_REMINDER = (
     "\n\n[SYSTEMREGEL: Entwirf KEINEN Algorithmus selbst. "
-    "Fehlt ein Spezifikationsteil, stelle Rückfragen. "
-    "Kein Kommentar im Code. "
-    "Imports nur als 'from ... import ...'. "
+    "Berücksichtige ALLE bisherigen Angaben aus dem Verlauf und frage NICHT "
+    "erneut nach Teilen, die bereits beantwortet oder mit '-'/'keine' als leer "
+    "markiert wurden. Sind EINGABE, AUSGABE und VARIABLEN ausgefüllt oder als "
+    "leer markiert und ein ABLAUF vorhanden, generiere SOFORT Code statt "
+    "Rückfragen zu stellen. Stelle dieselbe Frage nie zweimal. "
+    "Kein Kommentar im Code. Imports nur als 'from ... import ...'. "
     "Antworte auf Deutsch.]"
 )
+
+# Erkennt einen Leer-Marker als Wert ("-", "keine", "nicht vorhanden", …).
+# Greift nur bei NICHT-leerem Wert in derselben Zeile, damit die Vorlagen-Form
+# ("## AUSGABE" mit Inhalt in der Folgezeile) nicht fälschlich als leer gilt.
+_ABSENT_RE = re.compile(
+    r'^[\-–—_.]+$|^(keine|kein|nichts?|nicht\s+vorhanden|entf[äa]llt|n/?a|none)\b',
+    re.IGNORECASE,
+)
+# Zeile der Form  "EINGABE: …"  oder  "## EINGABE …"
+_SPEC_LINE_RE = re.compile(
+    r'^\s*#*\s*(EINGABE|AUSGABE|VARIABLEN?)\s*[:\-–]?\s*(.*)$',
+    re.IGNORECASE,
+)
+
+
+def _normalize_spec(text: str) -> str:
+    """Macht bewusst leere Teile (z. B. "EINGABE: -") für das Modell eindeutig.
+
+    Schwache lokale Modelle interpretieren einen bloßen Bindestrich oft als
+    "fehlt" und fragen endlos nach. Hier wird daraus ein klarer Satz.
+    """
+    out = []
+    for line in text.splitlines():
+        m = _SPEC_LINE_RE.match(line)
+        if m:
+            label, value = m.group(1).upper(), m.group(2).strip()
+            if value and _ABSENT_RE.match(value):
+                out.append(
+                    f"{label}: keine (dieser Teil ist bewusst leer und gilt "
+                    f"als vollständig geklärt – bitte NICHT nachfragen)"
+                )
+                continue
+        out.append(line)
+    return "\n".join(out)
 
 # Vorlage: Eingabe / Ausgabe / Variablen
 _SPEC_TEMPLATE = """\
@@ -675,7 +722,7 @@ class CoderPanel(QWidget):
 
     # ── Spezifikation zusammenbauen und senden ────────────────────────────────
     def _send_spec(self):
-        static = self._spec_edit.toPlainText().strip()
+        static = _normalize_spec(self._spec_edit.toPlainText().strip())
         ablauf = self._ablauf_edit.toPlainText().strip()
 
         missing = []
