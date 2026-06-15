@@ -141,12 +141,22 @@ class MicroPythonRunner(QThread):
                 code = f.read()
             ser.write(code + b"\x04")
 
-            # Auf "OK" warten
-            ok = ser.read(2)
+            # Auf "OK" warten. Je nach Skriptgröße (z. B. I2C-Programme mit
+            # mehreren NIT-Bibliotheken) braucht der Controller dafür spürbar
+            # länger als ein einzelner read() – deshalb bis zu 5 s sammeln,
+            # aber genau 2 Bytes lesen, um keine Programmausgabe zu verschlucken.
+            ok       = b""
+            deadline = _t.time() + 5.0
+            while len(ok) < 2 and _t.time() < deadline:
+                ok += ser.read(2 - len(ok))
             if ok != b"OK":
                 extra = ser.read(256)
                 self.output.emit(
-                    f"⚠  REPL Fehler: {(ok + extra)!r}\n", "stderr"
+                    f"⚠  Der Controller hat den Programmstart nicht bestätigt "
+                    f"(Antwort: {(ok + extra)!r}).\n"
+                    f"   Bitte Controller über '↻' neu verbinden oder kurz "
+                    f"aus- und wieder einstecken und erneut starten.\n",
+                    "stderr",
                 )
                 self.finished_run.emit(1)
                 ser.close()
