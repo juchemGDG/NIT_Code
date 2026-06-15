@@ -137,12 +137,20 @@ class FlashWorker(QThread):
                    "write_flash", "0x0", self.firmware_path]
 
         try:
+            import re
             self.progress.emit(30)
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
+            # esptool gibt Zeilen wie "Writing at 0x... ] 31.3% 360448/1152806 bytes..."
+            # aus – den echten Prozentwert auf den Fortschrittsbalken (30–99 %) mappen.
+            pct_re = re.compile(r"(\d+(?:\.\d+)?)\s*%")
             for line in proc.stdout:
                 self.log.emit(line)
+                m = pct_re.search(line)
+                if m:
+                    frac = min(max(float(m.group(1)), 0.0), 100.0) / 100.0
+                    self.progress.emit(30 + int(frac * 69))
             proc.wait()
             self.progress.emit(100)
             if proc.returncode == 0:
@@ -433,6 +441,7 @@ class FlashDialog(QDialog):
         self._firmware_path: str | None = None
         self._worker: FlashWorker | None = None
         self._downloader: FirmwareDownloader | None = None
+        self._flashing = False
         self._setup_ui()
 
     def _setup_ui(self):
@@ -520,12 +529,38 @@ class FlashDialog(QDialog):
         self._btn_flash.clicked.connect(self._start_flash)
         btn_row.addWidget(self._btn_flash)
         btn_close = QPushButton("Schließen")
-        btn_close.clicked.connect(self.accept)
+        btn_close.clicked.connect(self._on_close_clicked)
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
 
         # Initiales UI-Update
         self._update_board_ui()
+
+    def _confirm_abort_if_flashing(self) -> bool:
+        """True, wenn geschlossen werden darf (kein Flash läuft oder Nutzer bestätigt)."""
+        if not self._flashing:
+            return True
+        reply = QMessageBox.question(
+            self, "Flashvorgang läuft",
+            "Es wird gerade Firmware auf das Gerät geschrieben.\n\n"
+            "Wenn du jetzt abbrichst, kann das Gerät in einem unbrauchbaren "
+            "Zustand zurückbleiben und muss neu geflasht werden.\n\n"
+            "Trotzdem schließen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _on_close_clicked(self):
+        if self._confirm_abort_if_flashing():
+            self.accept()
+
+    def closeEvent(self, event):
+        # Fenster-X / Esc ebenfalls absichern, solange ein Flash läuft.
+        if self._confirm_abort_if_flashing():
+            event.accept()
+        else:
+            event.ignore()
 
     def _on_board_changed(self, index: int):
         self._board = self._board_combo_dlg.itemData(index)
@@ -638,9 +673,11 @@ class FlashDialog(QDialog):
         self._worker.done.connect(self._on_flash_done)
         self._btn_flash.setEnabled(False)
         self._btn_flash.setText("Flashe …")
+        self._flashing = True
         self._worker.start()
 
     def _on_flash_done(self, ok: bool, msg: str):
+        self._flashing = False
         self._btn_flash.setEnabled(True)
         self._btn_flash.setText("Jetzt flashen")
         self._log_append(f"\n{'✓ ' if ok else '✗ '}{msg}\n")
