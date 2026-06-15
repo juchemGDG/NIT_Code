@@ -265,6 +265,19 @@ class _DeviceListWorker(QThread):
         super().__init__()
         self._port = port
 
+    @staticmethod
+    def _friendly_error(raw: str) -> str:
+        """Macht aus einem mpremote-Traceback eine kurze, verständliche Meldung."""
+        low = raw.lower()
+        if "could not enter raw repl" in low or "raw repl" in low:
+            return ("Controller gerade beschäftigt – bitte ↻ erneut versuchen "
+                    "(läuft noch ein Programm?).")
+        if "no device" in low or "failed to access" in low or "could not open" in low:
+            return "Kein Controller gefunden. Ist das Gerät angeschlossen?"
+        # Nur die letzte, aussagekräftige Zeile zeigen statt des ganzen Tracebacks
+        last = next((ln.strip() for ln in reversed(raw.splitlines()) if ln.strip()), raw)
+        return last[:200]
+
     def run(self):
         code = (
             "import os, sys\n"
@@ -276,16 +289,33 @@ class _DeviceListWorker(QThread):
             "    except:\n"
             "        print('?|' + f)\n"
         )
-        try:
-            r = subprocess.run(
-                [*tool_command("mpremote"), "connect", self._port, "exec", code],
-                capture_output=True, text=True, timeout=12,
-            )
-        except Exception as e:
-            self.error.emit(str(e))
-            return
-        if r.returncode != 0:
-            self.error.emit(r.stderr.strip() or "Verbindung fehlgeschlagen")
+        # Der serielle Port kann kurzzeitig belegt sein (REPL-Shell, laufendes
+        # Programm). Das äußert sich in "could not enter raw repl" – in dem Fall
+        # ein paar Mal mit kurzer Pause erneut versuchen, statt sofort zu scheitern.
+        import time
+        r = None
+        last_err = ""
+        for attempt in range(3):
+            try:
+                r = subprocess.run(
+                    [*tool_command("mpremote"), "connect", self._port, "exec", code],
+                    capture_output=True, text=True, timeout=12,
+                )
+            except Exception as e:
+                last_err = str(e)
+                r = None
+            else:
+                if r.returncode == 0:
+                    break
+                last_err = r.stderr.strip() or "Verbindung fehlgeschlagen"
+            if "raw repl" in last_err.lower() or "could not enter" in last_err.lower() \
+                    or (r is None):
+                time.sleep(0.4)
+                continue
+            break
+
+        if r is None or r.returncode != 0:
+            self.error.emit(self._friendly_error(last_err))
             return
         files = []
         for line in r.stdout.splitlines():
@@ -388,12 +418,14 @@ class DeviceFilePanel(QWidget):
 
     def refresh(self, port: str):
         self._port = port
-        self._list.clear()
-        self._list.setVisible(False)
         if not port:
+            self._list.clear()
+            self._list.setVisible(False)
             self._status_lbl.setText("(kein Gerät verbunden)")
             self._status_lbl.setVisible(True)
             return
+        # Bereits angezeigte Dateien NICHT sofort löschen – erst beim Ergebnis
+        # ersetzen. So bleibt die Liste bei einer kurzen Störung erhalten.
 
         # Keep a reference to the old worker until its thread has stopped so
         # QThread::~QThread() is never called while the thread is still running.
@@ -405,8 +437,11 @@ class DeviceFilePanel(QWidget):
                 if t in self._retired_workers else None
             )
 
-        self._status_lbl.setText(f"⏳ Lade {port} …")
-        self._status_lbl.setVisible(True)
+        # Ladehinweis nur zeigen, wenn noch keine Dateien sichtbar sind –
+        # sonst bleibt die bestehende Liste ruhig stehen.
+        if self._list.count() == 0:
+            self._status_lbl.setText(f"⏳ Lade {port} …")
+            self._status_lbl.setVisible(True)
         self._btn_refresh.setEnabled(False)
 
         worker = _DeviceListWorker(port)
@@ -435,6 +470,12 @@ class DeviceFilePanel(QWidget):
         self._list.setVisible(True)
 
     def _on_error(self, msg: str):
+        # Sind bereits Dateien sichtbar, NICHT die Liste leeren – die Anzeige
+        # bleibt erhalten, der Fehler war vermutlich nur vorübergehend.
+        if self._list.count() > 0:
+            self._status_lbl.setVisible(False)
+            self._list.setVisible(True)
+            return
         self._status_lbl.setText(f"⚠ {msg}")
         self._status_lbl.setVisible(True)
         self._list.setVisible(False)
