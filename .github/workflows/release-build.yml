@@ -15,7 +15,15 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,7 +39,7 @@ jobs:
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nit-code-linux
+          name: nit-code-linux-${{ matrix.arch }}
           path: release/downloads/linux/*
 
   build-macos:
@@ -82,10 +90,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download Linux artifact
+      - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: nit-code-linux
+          pattern: nit-code-linux-*
+          merge-multiple: true
           path: release-assets
 
       - name: Download macOS artifact
