@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QStackedWidget, QTabWidget, QLabel, QStatusBar, QToolBar, QToolButton,
     QComboBox, QFileDialog, QMessageBox, QInputDialog, QMenu,
     QDialog, QPushButton, QTextEdit, QLineEdit, QFormLayout, QGroupBox,
+    QListWidget, QListWidgetItem,
 )
 
 from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, python_executable, tool_command, set_theme
@@ -386,6 +387,186 @@ class GitCloneDialog(QDialog):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Git-Konflikt-Dialog
+# ──────────────────────────────────────────────────────────────────────────────
+class GitConflictDialog(QDialog):
+    """Löst Merge-Konflikte ohne Terminal: pro Datei eine Version wählen,
+    im Editor von Hand lösen, den Merge abschließen oder abbrechen."""
+
+    def __init__(self, main_window, repo: str):
+        super().__init__(main_window)
+        self._main = main_window
+        self._repo = repo
+
+        self.setWindowTitle("Git: Merge-Konflikte lösen")
+        self.resize(640, 460)
+
+        layout = QVBoxLayout(self)
+
+        intro = QLabel(
+            "Bei diesen Dateien wurde an beiden Stellen unterschiedlich geändert.\n"
+            "Wähle pro Datei eine Lösung – oder öffne sie zum Bearbeiten im Editor.",
+            self,
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self._list = QListWidget(self)
+        self._list.currentItemChanged.connect(lambda *_: self._update_buttons())
+        layout.addWidget(self._list, 1)
+
+        # Aktionen pro Datei
+        file_row = QHBoxLayout()
+        self._btn_ours = QPushButton("Meine Version behalten", self)
+        self._btn_theirs = QPushButton("Andere Version übernehmen", self)
+        self._btn_open = QPushButton("Im Editor öffnen", self)
+        self._btn_mark = QPushButton("Als gelöst markieren", self)
+        self._btn_ours.clicked.connect(lambda: self._resolve_with_side("ours"))
+        self._btn_theirs.clicked.connect(lambda: self._resolve_with_side("theirs"))
+        self._btn_open.clicked.connect(self._open_in_editor)
+        self._btn_mark.clicked.connect(self._mark_resolved)
+        for b in (self._btn_ours, self._btn_theirs, self._btn_open, self._btn_mark):
+            file_row.addWidget(b)
+        layout.addLayout(file_row)
+
+        self._status = QLabel("", self)
+        self._status.setWordWrap(True)
+        layout.addWidget(self._status)
+
+        # Abschluss-Aktionen
+        bottom = QHBoxLayout()
+        self._btn_abort = QPushButton("Merge abbrechen", self)
+        self._btn_abort.clicked.connect(self._abort_merge)
+        bottom.addWidget(self._btn_abort)
+        bottom.addStretch()
+        self._btn_finish = QPushButton("Merge abschließen", self)
+        self._btn_finish.clicked.connect(self._finish_merge)
+        bottom.addWidget(self._btn_finish)
+        close_btn = QPushButton("Schließen", self)
+        close_btn.clicked.connect(self.reject)
+        bottom.addWidget(close_btn)
+        layout.addLayout(bottom)
+
+        self._refresh()
+
+    # ── Git-Hilfen ──────────────────────────────────────────────────────────
+    def _run(self, args: list[str], label: str) -> bool:
+        res = subprocess.run(
+            ["git", "-C", self._repo, *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self._main._console.append_info(f"[Git] {label}\n")
+        if res.stdout.strip():
+            self._main._console.append_output(res.stdout)
+        if res.returncode == 0:
+            return True
+        self._main._console.append_error(res.stderr or f"[Git] '{label}' fehlgeschlagen.\n")
+        return False
+
+    def _current_file(self) -> str | None:
+        item = self._list.currentItem()
+        return item.text() if item else None
+
+    def _refresh(self):
+        files = self._main._get_conflicted_files(self._repo)
+        self._list.clear()
+        for f in files:
+            self._list.addItem(QListWidgetItem(f))
+        if files:
+            self._list.setCurrentRow(0)
+
+        merge_open = self._main._merge_in_progress(self._repo)
+        if files:
+            self._status.setText(f"Noch {len(files)} Datei(en) mit Konflikten.")
+        elif merge_open:
+            self._status.setText(
+                "Alle Konflikte gelöst – jetzt kannst du den Merge abschließen."
+            )
+        else:
+            self._status.setText("Kein offener Merge – nichts zu tun.")
+
+        self._btn_finish.setEnabled(merge_open and not files)
+        self._btn_abort.setEnabled(merge_open)
+        self._update_buttons()
+
+    def _update_buttons(self):
+        has_file = self._current_file() is not None
+        for b in (self._btn_ours, self._btn_theirs, self._btn_open, self._btn_mark):
+            b.setEnabled(has_file)
+
+    # ── Aktionen ────────────────────────────────────────────────────────────
+    def _resolve_with_side(self, side: str):
+        rel = self._current_file()
+        if not rel:
+            return
+        label = "Meine Version" if side == "ours" else "Andere Version"
+        if self._run(["checkout", f"--{side}", "--", rel], f"{label} für '{rel}' wählen"):
+            self._run(["add", "--", rel], f"'{rel}' als gelöst markieren")
+        self._refresh()
+
+    def _mark_resolved(self):
+        rel = self._current_file()
+        if not rel:
+            return
+        # Sicherheitsnetz: Datei darf keine Konfliktmarker mehr enthalten.
+        abs_path = os.path.join(self._repo, rel)
+        try:
+            with open(abs_path, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except OSError:
+            content = ""
+        if any(marker in content for marker in ("<<<<<<<", "=======", ">>>>>>>")):
+            QMessageBox.warning(
+                self,
+                "Git",
+                f"In '{rel}' sind noch Konfliktmarker (<<<<<<<, =======, >>>>>>>) "
+                "enthalten.\nBitte zuerst im Editor entfernen und die Datei speichern.",
+            )
+            return
+        self._run(["add", "--", rel], f"'{rel}' als gelöst markieren")
+        self._refresh()
+
+    def _open_in_editor(self):
+        rel = self._current_file()
+        if not rel:
+            return
+        abs_path = os.path.join(self._repo, rel)
+        self._main._open_file_path(abs_path)
+        QMessageBox.information(
+            self,
+            "Git",
+            f"'{rel}' wurde im Editor geöffnet.\n\n"
+            "Entferne die Konfliktmarker (<<<<<<<, =======, >>>>>>>), speichere die "
+            "Datei und öffne dann wieder „Git → Merge-Konflikte lösen“, um sie als "
+            "gelöst zu markieren.",
+        )
+        self.reject()
+
+    def _abort_merge(self):
+        reply = QMessageBox.question(
+            self,
+            "Git: Merge abbrechen",
+            "Den laufenden Merge komplett abbrechen?\n"
+            "Der Zustand vor dem Merge wird wiederhergestellt.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if self._run(["merge", "--abort"], "Merge abbrechen"):
+            self._main._console.append_success("[Git] Merge wurde abgebrochen.\n")
+            self.accept()
+
+    def _finish_merge(self):
+        if self._run(["commit", "--no-edit"], "Merge abschließen (Commit)"):
+            self._main._console.append_success("[Git] Merge erfolgreich abgeschlossen.\n")
+            self.accept()
+        else:
+            self._refresh()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Tab-Daten
 # ──────────────────────────────────────────────────────────────────────────────
 class EditorTab:
@@ -538,6 +719,10 @@ class MainWindow(QMainWindow):
         m_git.addSeparator()
         self._add_action(m_git, "Aktuellen Branch anzeigen", self._git_show_branch)
         self._add_action(m_git, "Branch wechseln …", self._git_switch_branch)
+        self._add_action(m_git, "Neuen Branch anlegen …", self._git_create_branch)
+        self._add_action(m_git, "Branch mergen …", self._git_merge_branch)
+        self._add_action(m_git, "Merge-Konflikte lösen …", self._git_resolve_conflicts)
+        self._add_action(m_git, "Vergleichen (Diff) …", self._git_diff)
         self._add_action(m_git, "Historie anzeigen …", self._git_show_history)
         m_git.addSeparator()
         self._add_action(m_git, "Commit …", self._git_commit)
@@ -1294,6 +1479,7 @@ class MainWindow(QMainWindow):
         label: str,
         on_success=None,
         display_cmd: list[str] | None = None,
+        on_finish=None,
     ):
         if shutil.which("git") is None:
             QMessageBox.critical(self, "Git", "Git wurde auf diesem System nicht gefunden.")
@@ -1326,6 +1512,8 @@ class MainWindow(QMainWindow):
                     on_success()
             else:
                 self._console.append_error(f"[Git] Fehler (Code {code})\n")
+            if on_finish is not None:
+                on_finish(code)
 
         proc.finished_run.connect(_on_finish)
         self._retire_process()
@@ -1549,6 +1737,254 @@ class MainWindow(QMainWindow):
 
         self._run_git_process(["git", "switch", target], cwd=repo, label=f"Branch wechseln zu {target}")
 
+    def _get_local_branches(self, repo: str) -> list[str]:
+        res = subprocess.run(
+            ["git", "-C", repo, "branch", "--format", "%(refname:short)"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            return []
+        return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+    def _git_create_branch(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+
+        current = self._get_current_branch(repo) or "HEAD"
+        name, ok = self._ask_text_input(
+            "Git: Neuen Branch anlegen",
+            f"Name des neuen Branches\n(wird ausgehend von '{current}' erstellt):",
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        if name in self._get_local_branches(repo):
+            QMessageBox.warning(self, "Git", f"Ein Branch mit dem Namen '{name}' existiert bereits.")
+            return
+
+        # git switch -c legt den Branch an und wechselt direkt dorthin.
+        self._run_git_process(
+            ["git", "switch", "-c", name],
+            cwd=repo,
+            label=f"Neuen Branch '{name}' anlegen",
+        )
+
+    def _git_merge_branch(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+
+        current = self._get_current_branch(repo)
+        if not current or current == "HEAD":
+            QMessageBox.warning(
+                self,
+                "Git",
+                "Es ist kein Branch aktiv (losgelöster HEAD). Bitte zuerst einen Branch auswählen.",
+            )
+            return
+
+        # Aktuellen Fetch ausführen, damit Remote-Branches aktuell sind.
+        subprocess.run(
+            ["git", "-C", repo, "fetch", "--all", "--prune"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        local = [b for b in self._get_local_branches(repo) if b != current]
+        remote = self._get_remote_origin_branches(repo)
+        candidates = local + remote
+        if not candidates:
+            QMessageBox.warning(self, "Git", "Es wurde kein anderer Branch zum Mergen gefunden.")
+            return
+
+        # Upstream (z. B. origin/<current>) als Vorauswahl, falls vorhanden –
+        # das ist der typische Fall „den Remote-Stand in meinen Branch holen".
+        upstream = self._get_upstream_branch(repo)
+        default_idx = candidates.index(upstream) if upstream in candidates else 0
+
+        source, ok = self._ask_item_input(
+            "Git: Branch mergen",
+            f"Welcher Branch soll in '{current}' gemergt werden?",
+            candidates,
+            default_idx,
+            False,
+        )
+        if not ok or not source.strip():
+            return
+        source = source.strip()
+
+        self._run_git_process(
+            ["git", "merge", source],
+            cwd=repo,
+            label=f"'{source}' in '{current}' mergen",
+            on_finish=lambda code: self._offer_conflict_resolution(repo),
+        )
+
+    def _get_conflicted_files(self, repo: str) -> list[str]:
+        res = subprocess.run(
+            ["git", "-C", repo, "diff", "--name-only", "--diff-filter=U"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            return []
+        return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+    def _merge_in_progress(self, repo: str) -> bool:
+        res = subprocess.run(
+            ["git", "-C", repo, "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return res.returncode == 0
+
+    def _offer_conflict_resolution(self, repo: str):
+        """Nach einem Merge/Pull mit Konflikten anbieten, den Konflikt-Dialog zu öffnen."""
+        if not self._get_conflicted_files(repo):
+            return
+        reply = QMessageBox.warning(
+            self,
+            "Git: Merge-Konflikt",
+            "Beim Mergen sind Konflikte aufgetreten – derselbe Code wurde an beiden "
+            "Stellen unterschiedlich geändert.\n\n"
+            "Möchtest du sie jetzt im Konflikt-Helfer lösen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._git_resolve_conflicts()
+
+    def _git_resolve_conflicts(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+
+        if not self._merge_in_progress(repo) and not self._get_conflicted_files(repo):
+            QMessageBox.information(
+                self,
+                "Git",
+                "Aktuell ist kein Merge mit Konflikten offen – es gibt nichts zu lösen.",
+            )
+            return
+
+        dlg = GitConflictDialog(self, repo)
+        dlg.exec()
+        self._update_git_status_label()
+
+    def _git_diff(self):
+        repo = self._require_git_repo()
+        if not repo:
+            return
+
+        # Fetch, damit der Vergleich gegen den Remote-Stand aktuell ist.
+        subprocess.run(
+            ["git", "-C", repo, "fetch", "--all", "--prune"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        current = self._get_current_branch(repo)
+        working = "Eigene Änderungen (noch nicht committet)"
+        options = [working]
+
+        upstream = self._get_upstream_branch(repo)
+        remote = self._get_remote_origin_branches(repo)
+        local = [b for b in self._get_local_branches(repo) if b != current]
+
+        # Upstream nach vorne ziehen – der häufigste Vergleich.
+        ordered_remote = []
+        if upstream and upstream in remote:
+            ordered_remote.append(upstream)
+        ordered_remote += [b for b in remote if b != upstream]
+
+        ref_map: dict[str, list[str]] = {working: ["git", "-C", repo, "--no-pager", "diff"]}
+        for ref in ordered_remote + local:
+            label = f"Aktueller Branch  ↔  {ref}"
+            options.append(label)
+            # HEAD..ref zeigt, was auf 'ref' enthalten ist, das hier (noch) fehlt.
+            ref_map[label] = ["git", "-C", repo, "--no-pager", "diff", f"HEAD..{ref}"]
+
+        choice, ok = self._ask_item_input(
+            "Git: Vergleichen (Diff)",
+            "Was soll verglichen werden?",
+            options,
+            0,
+            False,
+        )
+        if not ok or not choice:
+            return
+
+        res = subprocess.run(
+            ref_map[choice],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            self._console.append_error(res.stderr or "[Git] Vergleich konnte nicht erstellt werden.\n")
+            return
+
+        self._show_git_diff_dialog(f"Git: Vergleich – {choice}", res.stdout)
+
+    def _show_git_diff_dialog(self, title: str, diff_text: str):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(820, 560)
+
+        layout = QVBoxLayout(dialog)
+        view = QTextEdit(dialog)
+        view.setReadOnly(True)
+        view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        view.setFont(QFont("JetBrains Mono, Fira Code, Consolas, monospace", 10))
+
+        if not diff_text.strip():
+            view.setPlainText("(Keine Unterschiede – alles auf dem gleichen Stand.)")
+        else:
+            view.setHtml(self._diff_to_html(diff_text))
+        layout.addWidget(view)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Schließen")
+        close_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec()
+
+    def _diff_to_html(self, diff_text: str) -> str:
+        from html import escape
+
+        add_color = "#22c55e"   # hinzugefügte Zeilen
+        del_color = "#ef4444"   # entfernte Zeilen
+        meta_color = "#60a5fa"  # Datei-/Hunk-Köpfe
+        lines = []
+        for raw in diff_text.splitlines():
+            safe = escape(raw)
+            if raw.startswith(("+++", "---", "@@", "diff ", "index ")):
+                color = meta_color
+            elif raw.startswith("+"):
+                color = add_color
+            elif raw.startswith("-"):
+                color = del_color
+            else:
+                color = None
+            if color:
+                lines.append(f'<span style="color:{color};">{safe}</span>')
+            else:
+                lines.append(safe)
+        # Innerhalb von <pre> bleiben Zeilenumbrüche und Einrückungen erhalten.
+        body = "\n".join(lines)
+        return f'<pre style="margin:0; white-space:pre; font-family:inherit;">{body}</pre>'
+
     def _git_show_history(self):
         repo = self._require_git_repo()
         if not repo:
@@ -1602,9 +2038,19 @@ class MainWindow(QMainWindow):
             return
         branch = self._get_current_branch(repo)
         if branch and branch != "HEAD":
-            self._run_git_process(["git", "pull", "origin", branch], cwd=repo, label="Pull")
+            self._run_git_process(
+                ["git", "pull", "origin", branch],
+                cwd=repo,
+                label="Pull",
+                on_finish=lambda code: self._offer_conflict_resolution(repo),
+            )
         else:
-            self._run_git_process(["git", "pull"], cwd=repo, label="Pull")
+            self._run_git_process(
+                ["git", "pull"],
+                cwd=repo,
+                label="Pull",
+                on_finish=lambda code: self._offer_conflict_resolution(repo),
+            )
 
     def _ensure_pull_upstream(self, repo: str) -> bool:
         subprocess.run(
@@ -1652,7 +2098,10 @@ class MainWindow(QMainWindow):
             cwd=repo,
             label=f"Upstream setzen ({current} -> {selected})",
             on_success=lambda: self._run_git_process(
-                ["git", "pull", "origin", current], cwd=repo, label="Pull"
+                ["git", "pull", "origin", current],
+                cwd=repo,
+                label="Pull",
+                on_finish=lambda code: self._offer_conflict_resolution(repo),
             ),
         )
         return False

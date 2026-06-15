@@ -201,7 +201,7 @@ OLED-Display (SSD1306 / SH1106, I2C):
   oled.print("Text", x, y)           # font='sans' unterstuetzt Umlaute
   oled.hline(x,y,l) / oled.vline(x,y,l) / oled.line(x1,y1,x2,y2)
   oled.rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
-  oled.circle(x,y,r) / oled.fill_circle(x,y,r)
+  oled.draw_circle(x,y,r) / oled.fill_circle(x,y,r)
   oled.show()   # nach jeder Zeichenoperation aufrufen
   oled.clear()
 
