@@ -38,6 +38,11 @@ datas = []
 if os.path.exists(logo_path):
     datas.append((logo_path, 'nit_code'))
 
+# Offline-Assets (z. B. mermaid.min.js für die Ablauf-Vorschau) mitnehmen.
+assets_dir = os.path.join(project_root, 'nit_code', 'assets')
+if os.path.isdir(assets_dir):
+    datas.append((assets_dir, os.path.join('nit_code', 'assets')))
+
 icon_file = None
 if sys.platform == 'win32' and os.path.exists(logo_path):
     from PIL import Image

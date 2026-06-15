@@ -1,15 +1,136 @@
 """Code-Generator-Panel – Schüler spezifizieren, die KI setzt um."""
 import json
+import os
 import re
+import sys
+from pathlib import Path
 
 import requests
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QRect, QPoint, QUrl
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTextEdit, QPushButton, QFrame,
+    QTextEdit, QPushButton, QFrame, QLayout, QSizePolicy,
 )
 
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    _WEBENGINE_AVAILABLE = True
+except ImportError:
+    _WEBENGINE_AVAILABLE = False
+
 from .config import THEME, TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL
+
+
+# ── Offline-Asset-Pfad (mermaid.min.js) ──────────────────────────────────────
+def _asset_path(name: str):
+    """Findet eine Datei im assets-Ordner – im Dev- wie im PyInstaller-Bundle."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(Path(sys._MEIPASS) / "nit_code" / "assets" / name)
+        candidates.append(Path(sys.executable).parent / "nit_code" / "assets" / name)
+    candidates.append(Path(__file__).resolve().parent / "assets" / name)
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+# ── FlowLayout: Buttons brechen automatisch in die nächste Zeile um ──────────
+class FlowLayout(QLayout):
+    """Anordnung, die Kinder zeilenweise umbricht (wie Wörter im Fließtext)."""
+
+    def __init__(self, parent=None, margin=0, spacing=4):
+        super().__init__(parent)
+        if parent is not None:
+            self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+        self._items = []
+
+    def __del__(self):
+        while self.count():
+            self.takeAt(0)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect, test_only):
+        m = self.contentsMargins()
+        x = rect.x() + m.left()
+        y = rect.y() + m.top()
+        line_height = 0
+        spacing = self.spacing()
+        right = rect.right() - m.right()
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + spacing
+            if next_x - spacing > right and line_height > 0:
+                x = rect.x() + m.left()
+                y = y + line_height + spacing
+                next_x = x + hint.width() + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y() + m.bottom()
+
+
+class _FlowWidget(QWidget):
+    """Container, der eine FlowLayout korrekt in vertikale Layouts einbettet."""
+
+    def __init__(self, parent=None, spacing=4):
+        super().__init__(parent)
+        self._flow = FlowLayout(self, margin=0, spacing=spacing)
+        sp = self.sizePolicy()
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
+
+    def add_widget(self, w):
+        self._flow.addWidget(w)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._flow.heightForWidth(width)
 
 # ── System-Prompt: Auftragnehmer-Modus ───────────────────────────────────────
 CODER_SYSTEM_PROMPT = """\
@@ -330,6 +451,16 @@ _SIGNAL_SNIPPETS = [
     ("warte bis",      "warte bis BEDINGUNG\n"),
 ]
 
+# Mermaid-Bausteine: (Beschriftung, einzufügender Text)
+_MERMAID_SNIPPETS = [
+    ("▶ Start",        "flowchart TD\n    A([Start]) --> B[ ]\n"),
+    ("▭ Aktion",       "    B[Aktion beschreiben]\n"),
+    ("◇ Verzweigung",  "    C{Bedingung?}\n    C -- Ja --> D[ ]\n    C -- Nein --> E[ ]\n"),
+    ("↻ Schleife",     "    F{Weiter?}\n    F -- Ja --> G[Aktion] --> F\n"),
+    ("⏹ Ende",         "    Z([Ende])\n"),
+    ("→ Pfeil",        "    X --> Y\n"),
+]
+
 _BTN_ACTIVE = (
     f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
     f"border:none; border-radius:4px; padding:3px 8px; font-size:11px;"
@@ -342,9 +473,123 @@ _BTN_INACTIVE = (
 _BTN_SIGNAL = (
     f"background:{THEME['bg_mid'] if 'bg_mid' in THEME else THEME['bg_dark']};"
     f"color:{THEME['info']};"
-    f"border:1px solid {THEME['border']}; border-radius:3px;"
-    f"padding:2px 6px; font-size:10px;"
+    f"border:1px solid {THEME['border']}; border-radius:4px;"
+    f"padding:4px 9px; font-size:11px;"
 )
+
+
+def _btn_signal_style() -> str:
+    """Stil der Baustein-Buttons (aus aktuellem THEME)."""
+    return (
+        f"QPushButton {{ background:{THEME.get('bg_mid', THEME['bg_dark'])};"
+        f" color:{THEME['info']}; border:1px solid {THEME['border']};"
+        f" border-radius:4px; padding:4px 9px; font-size:11px; }}"
+        f"QPushButton:hover {{ background:{THEME['selection']}; }}"
+    )
+
+
+# ── Mermaid-Live-Vorschau (offline via mermaid.min.js) ───────────────────────
+_MERMAID_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  html,body {{ margin:0; padding:6px; background:{bg}; color:{fg};
+               font-family:system-ui,-apple-system,'Segoe UI',sans-serif; }}
+  #diagram {{ display:flex; justify-content:center; align-items:flex-start; }}
+  #diagram svg {{ max-width:100%; height:auto; }}
+  pre.err {{ color:#cc0000; white-space:pre-wrap; font-size:12px; padding:6px; }}
+  .hint {{ color:{dim}; font-size:12px; text-align:center; margin-top:24px; }}
+</style>
+<script src="mermaid.min.js"></script>
+</head><body>
+<div id="diagram"><div class="hint">Diagramm erscheint hier …</div></div>
+<script>
+  mermaid.initialize({{ startOnLoad:false, theme:'{theme}',
+                        securityLevel:'loose', flowchart:{{useMaxWidth:true}} }});
+  async function renderMermaid(code) {{
+    const el = document.getElementById('diagram');
+    code = (code || '').trim();
+    if (!code) {{ el.innerHTML = '<div class="hint">Diagramm erscheint hier …</div>'; return; }}
+    try {{
+      const {{ svg }} = await mermaid.render('g' + Date.now(), code);
+      el.innerHTML = svg;
+    }} catch (e) {{
+      el.innerHTML = '<pre class="err">⚠ ' + ((e && e.message) || e) + '</pre>';
+    }}
+  }}
+</script>
+</body></html>"""
+
+
+class MermaidPreview(QWidget):
+    """Rendert Mermaid-Diagramme live über mermaid.js in einer Webansicht."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._ready    = False
+        self._pending  = None
+        self._asset    = _asset_path("mermaid.min.js")
+        self._available = _WEBENGINE_AVAILABLE and self._asset is not None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        if self._available:
+            self._view = QWebEngineView(self)
+            self._view.setMinimumHeight(160)
+            self._view.loadFinished.connect(self._on_load)
+            layout.addWidget(self._view)
+            self._reload_shell()
+        else:
+            self._view = None
+            self._fallback = QLabel(
+                "Mermaid-Vorschau nicht verfügbar.\n"
+                "(PyQt6-WebEngine oder mermaid.min.js fehlt.)"
+            )
+            self._fallback.setWordWrap(True)
+            self._fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(self._fallback)
+
+    def _reload_shell(self):
+        if not self._available:
+            return
+        self._ready = False
+        dark = self._is_dark()
+        html = _MERMAID_HTML.format(
+            bg=THEME["bg_editor"], fg=THEME["text"], dim=THEME["text_dim"],
+            theme="dark" if dark else "default",
+        )
+        base = QUrl.fromLocalFile(str(self._asset.parent) + os.sep)
+        self._view.setHtml(html, base)
+
+    @staticmethod
+    def _is_dark() -> bool:
+        bg = THEME.get("bg_editor", "#ffffff").lstrip("#")
+        try:
+            r, g, b = int(bg[0:2], 16), int(bg[2:4], 16), int(bg[4:6], 16)
+            return (r + g + b) / 3 < 128
+        except Exception:
+            return False
+
+    def _on_load(self, _ok):
+        self._ready = True
+        if self._pending is not None:
+            self.render(self._pending)
+            self._pending = None
+
+    def apply_theme(self):
+        """Vorschau mit aktuellen Theme-Farben neu laden (behält Inhalt bei)."""
+        if self._available:
+            self._reload_shell()
+
+    def render(self, code: str):
+        if not self._available:
+            return
+        self._pending = code
+        if not self._ready:
+            return
+        self._pending = None
+        self._view.page().runJavaScript("renderMermaid(%s);" % json.dumps(code))
 
 
 # ── Ollama-Worker ─────────────────────────────────────────────────────────────
@@ -517,23 +762,46 @@ class CoderPanel(QWidget):
         )
         ablauf_layout.addWidget(self._ablauf_edit)
 
-        # Signalwort-Bausteine (nur im Freitext-Modus sichtbar)
-        self._signal_row = QWidget()
+        # Signalwort-Bausteine (Freitext-Modus) – umbrechende Leiste
+        self._signal_row = _FlowWidget(spacing=4)
         self._signal_btns: list = []
-        signal_layout = QHBoxLayout(self._signal_row)
-        signal_layout.setContentsMargins(0, 0, 0, 0)
-        signal_layout.setSpacing(3)
         for label, snippet in _SIGNAL_SNIPPETS:
             btn = QPushButton(label)
-            btn.setStyleSheet(_BTN_SIGNAL)
+            btn.setStyleSheet(_btn_signal_style())
             btn.setToolTip(f"Einfügen:\n{snippet}")
             btn.clicked.connect(
                 lambda _checked=False, s=snippet: self._insert_signal_snippet(s)
             )
-            signal_layout.addWidget(btn)
+            self._signal_row.add_widget(btn)
             self._signal_btns.append(btn)
-        signal_layout.addStretch()
         ablauf_layout.addWidget(self._signal_row)
+
+        # Mermaid-Bausteine (Mermaid-Modus) – umbrechende Leiste
+        self._mermaid_row = _FlowWidget(spacing=4)
+        self._mermaid_btns: list = []
+        for label, snippet in _MERMAID_SNIPPETS:
+            btn = QPushButton(label)
+            btn.setStyleSheet(_btn_signal_style())
+            btn.setToolTip(f"Einfügen:\n{snippet}")
+            btn.clicked.connect(
+                lambda _checked=False, s=snippet: self._insert_signal_snippet(s)
+            )
+            self._mermaid_row.add_widget(btn)
+            self._mermaid_btns.append(btn)
+        self._mermaid_row.setVisible(False)
+        ablauf_layout.addWidget(self._mermaid_row)
+
+        # Mermaid-Live-Vorschau (nur im Mermaid-Modus sichtbar)
+        self._mermaid_preview = MermaidPreview()
+        self._mermaid_preview.setVisible(False)
+        ablauf_layout.addWidget(self._mermaid_preview)
+
+        # Entprellte Aktualisierung der Vorschau beim Tippen
+        self._mermaid_timer = QTimer(self)
+        self._mermaid_timer.setSingleShot(True)
+        self._mermaid_timer.setInterval(450)
+        self._mermaid_timer.timeout.connect(self._render_mermaid_preview)
+        self._ablauf_edit.textChanged.connect(self._on_ablauf_changed)
 
         sb_layout.addWidget(ablauf_section)
 
@@ -685,19 +953,16 @@ class CoderPanel(QWidget):
             f"border:1px solid {THEME['border']}; border-radius:4px;"
             f"padding:3px 8px; font-size:11px;"
         )
-        btn_signal = (
-            f"background:{THEME['bg_mid']}; color:{THEME['info']};"
-            f"border:1px solid {THEME['border']}; border-radius:3px;"
-            f"padding:2px 6px; font-size:10px;"
-        )
+        btn_signal = _btn_signal_style()
         if self._ablauf_mode == "freitext":
             self._btn_freitext.setStyleSheet(btn_active)
             self._btn_mermaid.setStyleSheet(btn_inactive)
         else:
             self._btn_freitext.setStyleSheet(btn_inactive)
             self._btn_mermaid.setStyleSheet(btn_active)
-        for btn in self._signal_btns:
+        for btn in self._signal_btns + self._mermaid_btns:
             btn.setStyleSheet(btn_signal)
+        self._mermaid_preview.apply_theme()
 
     # ── Ablauf-Modus umschalten ───────────────────────────────────────────────
     def _set_ablauf_mode(self, mode: str):
@@ -707,11 +972,16 @@ class CoderPanel(QWidget):
             self._btn_mermaid.setStyleSheet(_BTN_INACTIVE)
             self._ablauf_edit.setPlaceholderText(_ABLAUF_FREITEXT_PLACEHOLDER)
             self._signal_row.setVisible(True)
+            self._mermaid_row.setVisible(False)
+            self._mermaid_preview.setVisible(False)
         else:
             self._btn_freitext.setStyleSheet(_BTN_INACTIVE)
             self._btn_mermaid.setStyleSheet(_BTN_ACTIVE)
             self._ablauf_edit.setPlaceholderText(_ABLAUF_MERMAID_PLACEHOLDER)
             self._signal_row.setVisible(False)
+            self._mermaid_row.setVisible(True)
+            self._mermaid_preview.setVisible(True)
+            self._render_mermaid_preview()
 
     # ── Signalwort-Baustein einfügen ──────────────────────────────────────────
     def _insert_signal_snippet(self, snippet: str):
@@ -719,6 +989,15 @@ class CoderPanel(QWidget):
         cursor.insertText(snippet)
         self._ablauf_edit.setTextCursor(cursor)
         self._ablauf_edit.setFocus()
+
+    # ── Mermaid-Live-Vorschau ──────────────────────────────────────────────────
+    def _on_ablauf_changed(self):
+        """Tippen im Ablauf-Feld → Vorschau entprellt neu rendern (nur Mermaid)."""
+        if self._ablauf_mode == "mermaid":
+            self._mermaid_timer.start()
+
+    def _render_mermaid_preview(self):
+        self._mermaid_preview.render(self._ablauf_edit.toPlainText())
 
     # ── Spezifikation zusammenbauen und senden ────────────────────────────────
     def _send_spec(self):
