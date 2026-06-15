@@ -176,6 +176,9 @@ Prüfe das."
 - Kein Kommentar im generierten Code. Kommentieren ist ausschließlich \
 Aufgabe der Schülerinnen und Schüler (Verifikation).
 - Importe immer als "from ... import ..." schreiben, niemals "import modul".
+- Funktionen werden am Ende DIREKT aufgerufen (z. B. einfach "main()"). \
+Verwende NIEMALS die Konstruktion "if __name__ == \"__main__\":". Das ist für \
+Schülerinnen und Schüler leichter zu verstehen.
 - Warten: ausschließlich "from time import sleep" oder \
 "from time import sleep_ms" verwenden.
 - Analoge Eingänge (ADC): immer 10-Bit-Auflösung \
@@ -353,6 +356,8 @@ _RULE_REMINDER = (
     "leer markiert und ein ABLAUF vorhanden, generiere SOFORT Code statt "
     "Rückfragen zu stellen. Stelle dieselbe Frage nie zweimal. "
     "Kein Kommentar im Code. Imports nur als 'from ... import ...'. "
+    "Rufe Funktionen am Ende direkt auf (z. B. 'main()'), NIEMALS über "
+    "'if __name__ == \"__main__\":'. "
     "Antworte auf Deutsch.]"
 )
 
