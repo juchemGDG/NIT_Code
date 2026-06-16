@@ -110,19 +110,40 @@ class AisChatPanel(QWidget):
                 }}
                 meta.content = 'width={_VIEWPORT_WIDTH}, initial-scale=1.0';
 
-                // Querscrollen der GESAMTEN Seite verhindern: Code-Blöcke dürfen
-                // nicht breiter werden als das mobile Viewport. Lange Code-Zeilen
-                // scrollen stattdessen nur innerhalb ihres eigenen Codeblocks.
+                // Querscrollen der GESAMTEN Seite verhindern. Ursache in Chat-SPAs:
+                // Flex-/Grid-Kinder haben standardmäßig min-width:auto und weigern
+                // sich, schmaler als ihr Inhalt zu werden – ein breiter Code-Block
+                // bläht so ALLE Eltern-Container auf. 'min-width:0' erlaubt ihnen
+                // zu schrumpfen; der Code-Block scrollt dann nur in sich selbst.
                 var STYLE_ID = 'nit-code-overflow-fix';
-                if (!document.getElementById(STYLE_ID)) {{
-                    var style = document.createElement('style');
-                    style.id = STYLE_ID;
-                    style.textContent = [
-                        'html, body {{ max-width: 100%; overflow-x: hidden; }}',
-                        'pre {{ max-width: 100%; overflow-x: auto; }}',
-                        'pre code {{ white-space: pre; }}'
-                    ].join('\\n');
-                    document.head.appendChild(style);
+                var CSS = [
+                    'html, body {{ max-width: 100% !important; overflow-x: hidden !important; }}',
+                    '* {{ min-width: 0 !important; }}',
+                    'pre {{ max-width: 100% !important; overflow-x: auto !important; box-sizing: border-box; }}',
+                    'pre code {{ white-space: pre; }}'
+                ].join('\\n');
+
+                function applyStyle() {{
+                    if (!document.head) return;
+                    var style = document.getElementById(STYLE_ID);
+                    if (!style) {{
+                        style = document.createElement('style');
+                        style.id = STYLE_ID;
+                        document.head.appendChild(style);
+                    }}
+                    if (style.textContent !== CSS) style.textContent = CSS;
+                }}
+
+                applyStyle();
+
+                // Die Seite ist eine SPA: Inhalte (und ggf. der <head>) werden nach
+                // dem Laden per JavaScript erneuert. Ein MutationObserver sorgt dafür,
+                // dass unser Style erhalten bleibt bzw. wieder eingefügt wird.
+                if (!window.__nitOverflowObserver) {{
+                    window.__nitOverflowObserver = new MutationObserver(applyStyle);
+                    window.__nitOverflowObserver.observe(
+                        document.documentElement, {{ childList: true, subtree: true }}
+                    );
                 }}
             }})();
         """)
