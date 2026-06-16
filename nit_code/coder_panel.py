@@ -774,6 +774,20 @@ class CoderPanel(QWidget):
         # Signalwort-Bausteine (Freitext-Modus) – umbrechende Leiste
         self._signal_row = _FlowWidget(spacing=4)
         self._signal_btns: list = []
+
+        # Ein-/Ausrücken um 4 Leerzeichen
+        self._indent_btn = QPushButton("→ einrücken")
+        self._indent_btn.setToolTip("Markierte Zeilen um 4 Leerzeichen nach rechts")
+        self._indent_btn.clicked.connect(lambda: self._shift_ablauf(outdent=False))
+        self._signal_row.add_widget(self._indent_btn)
+        self._signal_btns.append(self._indent_btn)
+
+        self._outdent_btn = QPushButton("← ausrücken")
+        self._outdent_btn.setToolTip("Markierte Zeilen um 4 Leerzeichen nach links")
+        self._outdent_btn.clicked.connect(lambda: self._shift_ablauf(outdent=True))
+        self._signal_row.add_widget(self._outdent_btn)
+        self._signal_btns.append(self._outdent_btn)
+
         for label, snippet in _SIGNAL_SNIPPETS:
             btn = QPushButton(label)
             btn.setStyleSheet(_btn_signal_style())
@@ -861,17 +875,11 @@ class CoderPanel(QWidget):
         self._clear_btn.clicked.connect(self._clear_history)
         btn_row.addWidget(self._clear_btn)
 
-        self._insert_btn = QPushButton("→ Editor")
-        self._insert_btn.setToolTip("Letzten Code-Block in neuen Tab einfügen")
+        self._insert_btn = QPushButton("→  Code in Editor schreiben")
+        self._insert_btn.setToolTip("Generierten Code in einen neuen Editor-Tab übertragen")
         self._insert_btn.setEnabled(False)
         self._insert_btn.clicked.connect(self._on_insert_code)
         btn_row.addWidget(self._insert_btn)
-
-        self._copy_btn = QPushButton("📋 Kopieren")
-        self._copy_btn.setToolTip("Letzten Code-Block in die Zwischenablage kopieren")
-        self._copy_btn.setEnabled(False)
-        self._copy_btn.clicked.connect(self._on_copy_code)
-        btn_row.addWidget(self._copy_btn)
 
         btn_row.addStretch()
 
@@ -952,12 +960,12 @@ class CoderPanel(QWidget):
             f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
         )
         self._insert_btn.setStyleSheet(
-            f"background:{THEME['success']}; color:#1e1e2e; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:4px 10px;"
-        )
-        self._copy_btn.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+            f"QPushButton {{ background:transparent; color:{THEME['accent']};"
+            f" border:1px solid {THEME['accent']}; border-radius:4px;"
+            f" font-weight:bold; padding:5px 22px; }}"
+            f"QPushButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
+            f"QPushButton:disabled {{ background:transparent;"
+            f" color:{THEME['text_dim']}; border:1px solid {THEME['border']}; }}"
         )
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
@@ -1008,6 +1016,42 @@ class CoderPanel(QWidget):
         cursor.insertText(snippet)
         self._ablauf_edit.setTextCursor(cursor)
         self._ablauf_edit.setFocus()
+
+    # ── Zeilen ein-/ausrücken (4 Leerzeichen) ─────────────────────────────────
+    def _shift_ablauf(self, outdent: bool):
+        from PyQt6.QtGui import QTextCursor
+        INDENT = "    "
+        edit = self._ablauf_edit
+        doc = edit.document()
+        cursor = edit.textCursor()
+        start_block = doc.findBlock(cursor.selectionStart())
+        end_block = doc.findBlock(cursor.selectionEnd())
+
+        cursor.beginEditBlock()
+        block = start_block
+        while block.isValid():
+            bcur = QTextCursor(block)
+            bcur.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            if outdent:
+                text = block.text()
+                removed = 0
+                while removed < 4 and removed < len(text) and text[removed] == " ":
+                    removed += 1
+                if removed == 0 and text.startswith("\t"):
+                    removed = 1
+                if removed:
+                    bcur.movePosition(
+                        QTextCursor.MoveOperation.Right,
+                        QTextCursor.MoveMode.KeepAnchor, removed,
+                    )
+                    bcur.removeSelectedText()
+            else:
+                bcur.insertText(INDENT)
+            if block == end_block:
+                break
+            block = block.next()
+        cursor.endEditBlock()
+        edit.setFocus()
 
     # ── Mermaid-Live-Vorschau ──────────────────────────────────────────────────
     def _on_ablauf_changed(self):
@@ -1112,7 +1156,6 @@ class CoderPanel(QWidget):
             if code:
                 self._last_code_block = code
                 self._insert_btn.setEnabled(True)
-                self._copy_btn.setEnabled(True)
             # Gestreamten Rohtext durch formatiertes HTML ersetzen
             # (Prosa + farbiger Python-Codeblock).
             cursor = self._chat_view.textCursor()
@@ -1153,17 +1196,6 @@ class CoderPanel(QWidget):
         if self._last_code_block:
             self.insert_code_requested.emit(self._last_code_block)
 
-    # ── Code in die Zwischenablage kopieren ────────────────────────────────────
-    def _on_copy_code(self):
-        if not self._last_code_block:
-            return
-        from PyQt6.QtWidgets import QApplication
-        QApplication.clipboard().setText(self._last_code_block)
-        self._copy_btn.setText("✓ Kopiert")
-        QTimer.singleShot(
-            1500, lambda: self._copy_btn.setText("📋 Kopieren")
-        )
-
     # ── Verlauf zurücksetzen ──────────────────────────────────────────────────
     def _clear_history(self):
         self._history         = [{"role": "system", "content": CODER_SYSTEM_PROMPT}]
@@ -1171,7 +1203,6 @@ class CoderPanel(QWidget):
         self._iteration       = 0
         self._iter_lbl.setText("Iteration 0")
         self._insert_btn.setEnabled(False)
-        self._copy_btn.setEnabled(False)
         self._chat_view.clear()
         self._spec_edit.clear()
         self._ablauf_edit.clear()
