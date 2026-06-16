@@ -453,6 +453,7 @@ _SIGNAL_SNIPPETS = [
     ("falls … dann",   "falls BEDINGUNG:\n    AKTION\n"),
     ("sonst",          "sonst:\n    AKTION\n"),
     ("solange … tue",  "solange BEDINGUNG:\n    AKTION\n"),
+    ("wiederhole fortlaufend", "wiederhole fortlaufend:\n    AKTION\n"),
     ("wiederhole … bis", "wiederhole:\n    AKTION\nbis BEDINGUNG\n"),
     ("zähle … bis",    "zähle i von 0 bis ZAHL:\n    AKTION\n"),
     ("warte bis",      "warte bis BEDINGUNG\n"),
@@ -669,6 +670,7 @@ class CoderPanel(QWidget):
         self._retired_workers: list = []
         self._pending_response = ""
         self._last_code_block  = ""
+        self._response_start   = 0
         self._iteration        = 0
         self._ablauf_mode      = "freitext"   # "freitext" | "mermaid"
         self._build_ui()
@@ -865,6 +867,12 @@ class CoderPanel(QWidget):
         self._insert_btn.clicked.connect(self._on_insert_code)
         btn_row.addWidget(self._insert_btn)
 
+        self._copy_btn = QPushButton("📋 Code kopieren")
+        self._copy_btn.setToolTip("Letzten Code-Block in die Zwischenablage kopieren")
+        self._copy_btn.setEnabled(False)
+        self._copy_btn.clicked.connect(self._on_copy_code)
+        btn_row.addWidget(self._copy_btn)
+
         btn_row.addStretch()
 
         self._send_btn = QPushButton("Senden")
@@ -946,6 +954,10 @@ class CoderPanel(QWidget):
         self._insert_btn.setStyleSheet(
             f"background:{THEME['success']}; color:#1e1e2e; font-weight:bold;"
             f"border:none; border-radius:4px; padding:4px 10px;"
+        )
+        self._copy_btn.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
         )
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
@@ -1075,6 +1087,9 @@ class CoderPanel(QWidget):
         self._chat_view.append(
             f"<b style='color:{THEME['accent']}'>Generator:</b> "
         )
+        cursor = self._chat_view.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self._response_start = cursor.position()
 
     # ── Streaming-Callbacks ───────────────────────────────────────────────────
     def _on_token(self, token: str):
@@ -1097,6 +1112,16 @@ class CoderPanel(QWidget):
             if code:
                 self._last_code_block = code
                 self._insert_btn.setEnabled(True)
+                self._copy_btn.setEnabled(True)
+            # Gestreamten Rohtext durch formatiertes HTML ersetzen
+            # (Prosa + farbiger Python-Codeblock).
+            cursor = self._chat_view.textCursor()
+            cursor.setPosition(self._response_start)
+            cursor.movePosition(
+                cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor
+            )
+            cursor.removeSelectedText()
+            cursor.insertHtml(_format_response_html(self._pending_response))
         self._chat_view.append("")
         self._pending_response = ""
         self._send_btn.setEnabled(True)
@@ -1128,6 +1153,17 @@ class CoderPanel(QWidget):
         if self._last_code_block:
             self.insert_code_requested.emit(self._last_code_block)
 
+    # ── Code in die Zwischenablage kopieren ────────────────────────────────────
+    def _on_copy_code(self):
+        if not self._last_code_block:
+            return
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self._last_code_block)
+        self._copy_btn.setText("✓ Kopiert")
+        QTimer.singleShot(
+            1500, lambda: self._copy_btn.setText("📋 Code kopieren")
+        )
+
     # ── Verlauf zurücksetzen ──────────────────────────────────────────────────
     def _clear_history(self):
         self._history         = [{"role": "system", "content": CODER_SYSTEM_PROMPT}]
@@ -1135,6 +1171,7 @@ class CoderPanel(QWidget):
         self._iteration       = 0
         self._iter_lbl.setText("Iteration 0")
         self._insert_btn.setEnabled(False)
+        self._copy_btn.setEnabled(False)
         self._chat_view.clear()
         self._spec_edit.clear()
         self._ablauf_edit.clear()
@@ -1183,3 +1220,77 @@ class CoderPanel(QWidget):
 def _extract_code_block(text: str) -> str:
     match = re.search(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
     return match.group(1).rstrip() if match else ""
+
+
+# ── Antwort als formatiertes HTML (Prosa + Python-Codeblock) ──────────────────
+def _esc(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+_PY_KEYWORDS = frozenset(
+    "False None True and as assert async await break class continue def del "
+    "elif else except finally for from global if import in is lambda nonlocal "
+    "not or pass raise return try while with yield".split()
+)
+_PY_BUILTINS = frozenset(
+    "print range len int float str bool list dict tuple set input abs min max "
+    "sum round sorted enumerate zip map filter open type isinstance".split()
+)
+
+# Reihenfolge wichtig: Kommentar/String vor Zahl/Name.
+_PY_TOKEN_RE = re.compile(
+    r"(?P<comment>#[^\n]*)"
+    r"|(?P<string>'''[\s\S]*?'''|\"\"\"[\s\S]*?\"\"\""
+    r"|'(?:\\.|[^'\\\n])*'|\"(?:\\.|[^\"\\\n])*\")"
+    r"|(?P<number>\b\d+\.?\d*\b)"
+    r"|(?P<name>\b[A-Za-z_]\w*\b)"
+)
+
+
+def _highlight_python_html(code: str) -> str:
+    """Färbt Python-Code für die Chat-Ansicht ein (Farben aus dem Theme)."""
+    out, pos = [], 0
+    for m in _PY_TOKEN_RE.finditer(code):
+        if m.start() > pos:
+            out.append(_esc(code[pos:m.start()]))
+        kind, tok = m.lastgroup, m.group()
+        if kind == "comment":
+            out.append(f"<span style='color:{THEME['text_dim']}'>{_esc(tok)}</span>")
+        elif kind == "string":
+            out.append(f"<span style='color:{THEME['success']}'>{_esc(tok)}</span>")
+        elif kind == "number":
+            out.append(f"<span style='color:{THEME['warning']}'>{_esc(tok)}</span>")
+        elif tok in _PY_KEYWORDS:
+            out.append(
+                f"<span style='color:{THEME['accent_hover']}; font-weight:bold'>"
+                f"{_esc(tok)}</span>"
+            )
+        elif tok in _PY_BUILTINS:
+            out.append(f"<span style='color:{THEME['info']}'>{_esc(tok)}</span>")
+        else:
+            out.append(_esc(tok))
+        pos = m.end()
+    if pos < len(code):
+        out.append(_esc(code[pos:]))
+    body = "".join(out)
+    return (
+        f"<pre style=\"background:{THEME['bg_editor']}; color:{THEME['text']};"
+        f" border:1px solid {THEME['border']}; border-radius:5px;"
+        f" padding:8px; margin:6px 0;"
+        f" font-family:'JetBrains Mono','Fira Code','Consolas',monospace;"
+        f" font-size:11px; white-space:pre-wrap;\">{body}</pre>"
+    )
+
+
+def _format_response_html(text: str) -> str:
+    """Wandelt eine Bot-Antwort in HTML: Prosa als Text, ```python``` als Codebox."""
+    parts = re.split(r"```(?:python)?[ \t]*\n?([\s\S]*?)```", text)
+    html_parts = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            prose = part.strip("\n")
+            if prose.strip():
+                html_parts.append(_esc(prose).replace("\n", "<br>"))
+        else:
+            html_parts.append(_highlight_python_html(part.rstrip("\n")))
+    return "".join(html_parts)
