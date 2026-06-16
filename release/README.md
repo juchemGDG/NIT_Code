@@ -2,6 +2,36 @@
 
 Dieser Ordner enthaelt alles, um automatisch downloadbare Pakete zu bauen.
 
+## Neue Version veroeffentlichen (Schnellanleitung)
+
+Beispiel: Version `1.3.2`. Im Terminal des Codespace (Ordner `/workspaces/NIT_PyEd`):
+
+1. Versionsnummer aendern in `nit_code/config.py` (einzige Quelle der Wahrheit):
+   `APP_VERSION = "1.3.2"`
+2. Committen:
+   ```bash
+   git add nit_code/config.py
+   git commit -m "chore: Version 1.3.2"
+   ```
+3. Tag setzen (Name MUSS mit `v` beginnen und zur Version passen):
+   ```bash
+   git tag v1.3.2
+   ```
+4. Commit und Tag hochladen (zwei getrennte Pushes):
+   ```bash
+   git push origin main
+   git push origin v1.3.2
+   ```
+
+Der Tag-Push startet GitHub Actions. Fortschritt: GitHub -> Reiter **Actions**.
+Das fertige Release mit allen Download-Paketen erscheint unter GitHub -> **Releases**.
+
+Hinweise:
+- Tag-Name (`v1.3.2`) und `APP_VERSION` (`1.3.2`) muessen uebereinstimmen.
+- Builds laufen in der Cloud, nicht im Codespace -- der darf danach geschlossen werden.
+- Tag versehentlich falsch? Loeschen mit
+  `git tag -d v1.3.2 && git push origin :refs/tags/v1.3.2`, dann neu setzen.
+
 ## Zielartefakte
 
 - macOS: `NIT_Code-macos.dmg`
