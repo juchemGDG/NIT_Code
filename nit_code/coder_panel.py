@@ -867,7 +867,7 @@ class CoderPanel(QWidget):
         self._insert_btn.clicked.connect(self._on_insert_code)
         btn_row.addWidget(self._insert_btn)
 
-        self._copy_btn = QPushButton("📋 Code kopieren")
+        self._copy_btn = QPushButton("📋 Kopieren")
         self._copy_btn.setToolTip("Letzten Code-Block in die Zwischenablage kopieren")
         self._copy_btn.setEnabled(False)
         self._copy_btn.clicked.connect(self._on_copy_code)
@@ -1161,7 +1161,7 @@ class CoderPanel(QWidget):
         QApplication.clipboard().setText(self._last_code_block)
         self._copy_btn.setText("✓ Kopiert")
         QTimer.singleShot(
-            1500, lambda: self._copy_btn.setText("📋 Code kopieren")
+            1500, lambda: self._copy_btn.setText("📋 Kopieren")
         )
 
     # ── Verlauf zurücksetzen ──────────────────────────────────────────────────
@@ -1292,5 +1292,6 @@ def _format_response_html(text: str) -> str:
             if prose.strip():
                 html_parts.append(_esc(prose).replace("\n", "<br>"))
         else:
-            html_parts.append(_highlight_python_html(part.rstrip("\n")))
+            # Codeblock immer auf eigener Zeile beginnen lassen.
+            html_parts.append("<br>" + _highlight_python_html(part.rstrip("\n")))
     return "".join(html_parts)
