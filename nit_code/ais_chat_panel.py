@@ -1,7 +1,11 @@
 """AIS-Chat-Panel – eingebettete Web-Ansicht von app.ais-chat.schule."""
 try:
     from PyQt6.QtCore import QUrl
-    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+    from PyQt6.QtWebEngineCore import (
+        QWebEnginePage,
+        QWebEngineProfile,
+        QWebEngineSettings,
+    )
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     _WEBENGINE_AVAILABLE = True
 except ImportError:
@@ -56,6 +60,15 @@ class AisChatPanel(QWidget):
 
             self._view = QWebEngineView(self)
             page = QWebEnginePage(self._profile, self._view)
+            # Zwischenablage für JavaScript freigeben, damit die Copy-Buttons
+            # der Webseite (navigator.clipboard / execCommand('copy')) funktionieren.
+            settings = page.settings()
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True
+            )
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.JavascriptCanPaste, True
+            )
             self._view.setPage(page)
             self._view.loadFinished.connect(self._inject_viewport)
             self._view.setUrl(QUrl(AIS_CHAT_URL))
@@ -96,5 +109,20 @@ class AisChatPanel(QWidget):
                     document.head.appendChild(meta);
                 }}
                 meta.content = 'width={_VIEWPORT_WIDTH}, initial-scale=1.0';
+
+                // Querscrollen der GESAMTEN Seite verhindern: Code-Blöcke dürfen
+                // nicht breiter werden als das mobile Viewport. Lange Code-Zeilen
+                // scrollen stattdessen nur innerhalb ihres eigenen Codeblocks.
+                var STYLE_ID = 'nit-code-overflow-fix';
+                if (!document.getElementById(STYLE_ID)) {{
+                    var style = document.createElement('style');
+                    style.id = STYLE_ID;
+                    style.textContent = [
+                        'html, body {{ max-width: 100%; overflow-x: hidden; }}',
+                        'pre {{ max-width: 100%; overflow-x: auto; }}',
+                        'pre code {{ white-space: pre; }}'
+                    ].join('\\n');
+                    document.head.appendChild(style);
+                }}
             }})();
         """)
