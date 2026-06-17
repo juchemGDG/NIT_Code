@@ -594,6 +594,7 @@ class DeviceFilePanel(QWidget):
         elif item:
             name = item.data(self._ROLE_NAME)
             menu.addAction("📂 Öffnen (herunterladen)", lambda: self._open_file(name))
+            menu.addAction("📦 In Ordner verschieben …", lambda: self._move_file(name))
             menu.addSeparator()
             menu.addAction("🗑 Vom Controller löschen", lambda: self._delete_file(name))
         menu.addSeparator()
@@ -637,4 +638,75 @@ class DeviceFilePanel(QWidget):
                 QMessageBox.critical(self, "Fehler", r.stderr.strip() or "Löschen fehlgeschlagen")
         except Exception as e:
             QMessageBox.critical(self, "Fehler", str(e))
+
+    def _visible_subdirs(self) -> list[str]:
+        """Ordner im aktuell angezeigten Verzeichnis (aus der Liste gelesen)."""
+        dirs = []
+        for i in range(self._list.count()):
+            it = self._list.item(i)
+            if it.data(self._ROLE_IS_DIR):
+                dirs.append(it.data(self._ROLE_NAME))
+        return dirs
+
+    def _move_file(self, name: str):
+        """Verschiebt eine Datei in einen (auch neuen) Ordner – per os.rename."""
+        if not self._port or not name:
+            return
+        ROOT = "⬆  Hauptebene (Wurzel)"
+        NEW  = "➕  Neuer Ordner …"
+        label_to_dir: dict[str, str] = {}
+        options: list[str] = []
+        if self._cwd:
+            options.append(ROOT)
+            label_to_dir[ROOT] = ""
+        for d in self._visible_subdirs():
+            lab = f"📁  {d}"
+            options.append(lab)
+            label_to_dir[lab] = self._remote_path(d)
+        options.append(NEW)
+
+        choice, ok = QInputDialog.getItem(
+            self, "Verschieben", f'"{name}" verschieben nach:', options, 0, False
+        )
+        if not ok:
+            return
+
+        if choice == NEW:
+            new, ok2 = QInputDialog.getText(self, "Neuer Ordner", "Name des Ordners:")
+            new = new.strip().strip("/")
+            if not ok2 or not new:
+                return
+            target_dir = f"{self._cwd}/{new}" if self._cwd else new
+        else:
+            target_dir = label_to_dir.get(choice, "")
+
+        src = self._remote_path(name)
+        dst = f"{target_dir}/{name}" if target_dir else name
+        if src == dst:
+            return
+
+        # Zielordner ggf. anlegen, dann auf dem Controller umbenennen/verschieben.
+        code = "import os\n"
+        if target_dir:
+            code += f"try:\n os.mkdir({target_dir!r})\nexcept OSError: pass\n"
+        code += f"os.rename({src!r}, {dst!r})\n"
+        try:
+            r = subprocess.run(
+                [*tool_command("mpremote"), "connect", self._port, "exec", code],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode == 0:
+                self.refresh(self._port)
+            else:
+                QMessageBox.critical(
+                    self, "Fehler", r.stderr.strip() or "Verschieben fehlgeschlagen"
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", str(e))
+
+    def show_folder(self, port: str, folder: str = ""):
+        """Öffnet das Geräte-Panel direkt in einem bestimmten Ordner."""
+        self._port = port
+        self._cwd = folder or ""
+        self.refresh(port)
 

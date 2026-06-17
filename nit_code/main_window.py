@@ -1243,10 +1243,27 @@ class MainWindow(QMainWindow):
         if not port:
             return
 
+        folder = self._choose_device_folder(port)
+        if folder is None:   # abgebrochen
+            return
+
         remote_name = os.path.basename(tab.filepath)
-        self._console.append_info(f"↑  Lade {remote_name} auf {port} hoch ...\n")
+        remote_path = f"{folder}/{remote_name}" if folder else remote_name
+        ziel = f"{folder}/" if folder else "Hauptebene"
+        self._console.append_info(f"↑  Lade {remote_name} nach {ziel} auf {port} hoch ...\n")
+
+        # Zielordner ggf. anlegen (EEXIST wird ignoriert), dann kopieren.
+        if folder:
+            try:
+                subprocess.run(
+                    [*tool_command("mpremote"), "connect", port, "mkdir", f":{folder}"],
+                    capture_output=True, text=True, timeout=10,
+                )
+            except Exception:
+                pass
+
         cmd = [*tool_command("mpremote"), "connect", port,
-               "cp", tab.filepath, f":{remote_name}"]
+               "cp", tab.filepath, f":{remote_path}"]
         self._retire_process()
         self._process = ProcessRunner(cmd)
         self._process.output.connect(self._on_process_output)
@@ -1254,11 +1271,56 @@ class MainWindow(QMainWindow):
             lambda code: self._console.append_success("✓  Upload abgeschlossen.\n")
             if code == 0 else self._console.append_error("✗  Upload fehlgeschlagen.\n")
         )
-        # Nach erfolgreichem Upload die Controller-Dateiansicht aktualisieren
+        # Nach erfolgreichem Upload die Controller-Dateiansicht im Zielordner zeigen
         self._process.finished_run.connect(
-            lambda code: self._device_panel.refresh(port) if code == 0 else None
+            lambda code: self._device_panel.show_folder(port, folder) if code == 0 else None
         )
         self._process.start()
+
+    def _list_device_dirs(self, port: str) -> list[str]:
+        """Liest die Ordner im Wurzelverzeichnis des Controllers (best effort)."""
+        code = (
+            "import os\n"
+            "for f in os.listdir():\n"
+            "    try:\n"
+            "        if os.stat(f)[0] & 0x4000: print('D:' + f)\n"
+            "    except: pass\n"
+        )
+        try:
+            r = subprocess.run(
+                [*tool_command("mpremote"), "connect", port, "exec", code],
+                capture_output=True, text=True, timeout=8,
+            )
+        except Exception:
+            return []
+        if r.returncode != 0:
+            return []
+        return [ln.strip()[2:] for ln in r.stdout.splitlines()
+                if ln.strip().startswith("D:")]
+
+    def _choose_device_folder(self, port: str) -> str | None:
+        """Lässt den Zielordner für den Upload wählen.
+
+        Rückgabe: "" für die Hauptebene, ein Ordnername, oder None bei Abbruch.
+        """
+        ROOT = "/ (Hauptebene)"
+        NEW = "➕ Neuer Ordner …"
+        dirs = sorted(self._list_device_dirs(port))
+        items = [ROOT] + [f"📁 {d}" for d in dirs] + [NEW]
+        choice, ok = self._ask_item_input(
+            "Zielordner wählen",
+            "In welchen Ordner auf dem Controller hochladen?",
+            items, 0, editable=False,
+        )
+        if not ok:
+            return None
+        if choice == ROOT:
+            return ""
+        if choice == NEW:
+            name, ok2 = self._ask_text_input("Neuer Ordner", "Name des neuen Ordners:")
+            name = name.strip().strip("/")
+            return name if (ok2 and name) else None
+        return choice[len("📁 "):]   # Emoji-Präfix entfernen
 
     def _flash_firmware(self):
         from .micropython_dialogs import FlashDialog
