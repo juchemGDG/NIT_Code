@@ -257,13 +257,14 @@ class FilePanel(QWidget):
 # ──────────────────────────────────────────────────────────────────────────────
 
 class _DeviceListWorker(QThread):
-    result       = pyqtSignal(list)   # [(name, size_str), ...]
+    result       = pyqtSignal(list)   # [(name, size_str, is_dir), ...]
     firmware_info = pyqtSignal(str)   # Firmware-Version-String
     error        = pyqtSignal(str)
 
-    def __init__(self, port: str):
+    def __init__(self, port: str, subdir: str = ""):
         super().__init__()
         self._port = port
+        self._subdir = subdir   # "" = Wurzelverzeichnis, sonst z. B. "lib"
 
     @staticmethod
     def _friendly_error(raw: str) -> str:
@@ -279,15 +280,21 @@ class _DeviceListWorker(QThread):
         return last[:200]
 
     def run(self):
+        # Verzeichnis, das gelistet werden soll (als Python-Literal eingebettet).
         code = (
             "import os, sys\n"
             "v = sys.implementation\n"
             "print('FIRMWARE:' + sys.version + ' auf ' + sys.platform)\n"
-            "for f in sorted(os.listdir()):\n"
+            f"p = {self._subdir!r}\n"
+            "entries = os.listdir(p) if p else os.listdir()\n"
+            "for f in sorted(entries):\n"
+            "    full = (p + '/' + f) if p else f\n"
             "    try:\n"
-            "        print(str(os.stat(f)[6]) + '|' + f)\n"
+            "        st = os.stat(full)\n"
+            "        d = '1' if (st[0] & 0x4000) else '0'\n"
+            "        print(d + '|' + str(st[6]) + '|' + f)\n"
             "    except:\n"
-            "        print('?|' + f)\n"
+            "        print('0|?|' + f)\n"
         )
         # Der serielle Port kann kurzzeitig belegt sein (REPL-Shell, laufendes
         # Programm). Das äußert sich in "could not enter raw repl" – in dem Fall
@@ -322,9 +329,9 @@ class _DeviceListWorker(QThread):
             line = line.strip()
             if line.startswith("FIRMWARE:"):
                 self.firmware_info.emit(line[len("FIRMWARE:"):])
-            elif "|" in line:
-                size_str, name = line.split("|", 1)
-                files.append((name.strip(), size_str.strip()))
+            elif line.count("|") >= 2:
+                dir_flag, size_str, name = line.split("|", 2)
+                files.append((name.strip(), size_str.strip(), dir_flag.strip() == "1"))
         self.result.emit(files)
 
 
@@ -336,9 +343,15 @@ class DeviceFilePanel(QWidget):
     refresh_done        = pyqtSignal()
     firmware_info       = pyqtSignal(str)   # Firmware-Version an main_window weiterleiten
 
+    # Zusätzliche Datenrollen für Listeneinträge
+    _ROLE_NAME   = Qt.ItemDataRole.UserRole
+    _ROLE_IS_DIR = Qt.ItemDataRole.UserRole + 1
+    _ROLE_IS_UP  = Qt.ItemDataRole.UserRole + 2
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._port = ""
+        self._cwd = ""   # aktuell angezeigtes Verzeichnis ("" = Wurzel)
         self._worker: _DeviceListWorker | None = None
         self._retired_workers: list = []
         self._setup_ui()
@@ -417,8 +430,13 @@ class DeviceFilePanel(QWidget):
         )
 
     def refresh(self, port: str):
+        # Bei einem anderen/getrennten Gerät zurück in die Wurzel springen –
+        # der Pfad eines vorigen Controllers ist sonst evtl. ungültig.
+        if port != self._port:
+            self._cwd = ""
         self._port = port
         if not port:
+            self._cwd = ""
             self._list.clear()
             self._list.setVisible(False)
             self._status_lbl.setText("(kein Gerät verbunden)")
@@ -431,6 +449,15 @@ class DeviceFilePanel(QWidget):
         # QThread::~QThread() is never called while the thread is still running.
         old = self._worker
         if old is not None and old.isRunning():
+            # Ergebnis-/Fehler-Signale trennen, damit ein verspätetes Resultat
+            # des alten Workers (z. B. beim Wechsel in einen Unterordner) die
+            # neue Ansicht nicht überschreibt.
+            try:
+                old.result.disconnect(self._on_result)
+                old.error.disconnect(self._on_error)
+                old.firmware_info.disconnect(self.firmware_info)
+            except TypeError:
+                pass
             self._retired_workers.append(old)
             old.finished.connect(
                 lambda t=old: self._retired_workers.remove(t)
@@ -444,7 +471,7 @@ class DeviceFilePanel(QWidget):
             self._status_lbl.setVisible(True)
         self._btn_refresh.setEnabled(False)
 
-        worker = _DeviceListWorker(port)
+        worker = _DeviceListWorker(port, self._cwd)
         worker.result.connect(self._on_result)
         worker.firmware_info.connect(self.firmware_info)
         worker.error.connect(self._on_error)
@@ -456,18 +483,66 @@ class DeviceFilePanel(QWidget):
 
     def _on_result(self, files: list):
         self._list.clear()
-        if not files:
+        self._update_title()
+
+        # Im Unterordner: Eintrag zum Zurückspringen anbieten.
+        if self._cwd:
+            up = QListWidgetItem("⬆  ..  (zurück)")
+            up.setData(self._ROLE_IS_UP, True)
+            self._list.addItem(up)
+
+        # Ordner zuerst, dann Dateien – jeweils alphabetisch.
+        def _key(entry):
+            name, _size, is_dir = entry
+            return (0 if is_dir else 1, name.lower())
+
+        for name, size, is_dir in sorted(files, key=_key):
+            if is_dir:
+                label = f"📁  {name}"
+            elif size != "?":
+                label = f"📄  {name}  ({size} B)"
+            else:
+                label = f"📄  {name}"
+            item = QListWidgetItem(label)
+            item.setData(self._ROLE_NAME, name)
+            item.setData(self._ROLE_IS_DIR, is_dir)
+            self._list.addItem(item)
+
+        if not files and not self._cwd:
             self._status_lbl.setText("(keine Dateien auf Controller)")
             self._status_lbl.setVisible(True)
             self._list.setVisible(False)
             return
-        for name, size in files:
-            label = f"{name}  ({size} B)" if size != "?" else name
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, name)
-            self._list.addItem(item)
-        self._status_lbl.setVisible(False)
+        if not files:
+            self._status_lbl.setText("(Ordner ist leer)")
+            self._status_lbl.setVisible(True)
+        else:
+            self._status_lbl.setVisible(False)
         self._list.setVisible(True)
+
+    def _update_title(self):
+        """Zeigt im Kopf das aktuelle Verzeichnis an."""
+        if self._cwd:
+            self._dev_title_lbl.setText(f"CONTROLLER / {self._cwd}")
+        else:
+            self._dev_title_lbl.setText("CONTROLLER")
+
+    def _navigate_into(self, name: str):
+        self._cwd = f"{self._cwd}/{name}" if self._cwd else name
+        self._list.clear()   # alte Einträge nicht stehen lassen während des Ladens
+        self.refresh(self._port)
+
+    def _navigate_up(self):
+        if "/" in self._cwd:
+            self._cwd = self._cwd.rsplit("/", 1)[0]
+        else:
+            self._cwd = ""
+        self._list.clear()
+        self.refresh(self._port)
+
+    def _remote_path(self, name: str) -> str:
+        """Vollständiger Pfad auf dem Controller für einen Eintrag."""
+        return f"{self._cwd}/{name}" if self._cwd else name
 
     def _on_error(self, msg: str):
         # Sind bereits Dateien sichtbar, NICHT die Liste leeren – die Anzeige
@@ -482,8 +557,14 @@ class DeviceFilePanel(QWidget):
 
     def _on_double_click(self, index):
         item = self._list.currentItem()
-        if item:
-            self._open_file(item.data(Qt.ItemDataRole.UserRole))
+        if not item:
+            return
+        if item.data(self._ROLE_IS_UP):
+            self._navigate_up()
+        elif item.data(self._ROLE_IS_DIR):
+            self._navigate_into(item.data(self._ROLE_NAME))
+        else:
+            self._open_file(item.data(self._ROLE_NAME))
 
     def _show_context_menu(self, pos):
         item = self._list.itemAt(pos)
@@ -504,8 +585,14 @@ class DeviceFilePanel(QWidget):
             }}
             """
         )
-        if item:
-            name = item.data(Qt.ItemDataRole.UserRole)
+        if item and item.data(self._ROLE_IS_UP):
+            pass   # "zurück"-Eintrag: nur Aktualisieren anbieten
+        elif item and item.data(self._ROLE_IS_DIR):
+            name = item.data(self._ROLE_NAME)
+            menu.addAction("📂 Ordner öffnen", lambda: self._navigate_into(name))
+            menu.addSeparator()
+        elif item:
+            name = item.data(self._ROLE_NAME)
             menu.addAction("📂 Öffnen (herunterladen)", lambda: self._open_file(name))
             menu.addSeparator()
             menu.addAction("🗑 Vom Controller löschen", lambda: self._delete_file(name))
@@ -520,7 +607,7 @@ class DeviceFilePanel(QWidget):
         try:
             r = subprocess.run(
                 [*tool_command("mpremote"), "connect", self._port,
-                 "cp", f":{name}", tmp_path],
+                 "cp", f":{self._remote_path(name)}", tmp_path],
                 capture_output=True, text=True, timeout=15,
             )
             if r.returncode == 0:
@@ -541,7 +628,7 @@ class DeviceFilePanel(QWidget):
         try:
             r = subprocess.run(
                 [*tool_command("mpremote"), "connect", self._port,
-                 "rm", f":{name}"],
+                 "rm", f":{self._remote_path(name)}"],
                 capture_output=True, text=True, timeout=10,
             )
             if r.returncode == 0:
