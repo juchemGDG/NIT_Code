@@ -710,6 +710,26 @@ class LibInstallWorker(QThread):
 
     def run(self):
         import subprocess, sys, tempfile
+
+        # Sicherstellen, dass der Ordner /lib auf dem Controller existiert.
+        # mpremote legt ihn an; existiert er bereits (EEXIST), ignorieren wir das.
+        self.log.emit("Stelle Ordner 'lib' auf dem Controller sicher ...\n")
+        try:
+            mk = subprocess.run(
+                [*tool_command("mpremote"), "connect", self.port, "mkdir", ":lib"],
+                capture_output=True, text=True, timeout=30
+            )
+            if mk.returncode == 0:
+                self.log.emit("✓ Ordner 'lib' angelegt.\n")
+            elif "EEXIST" in (mk.stderr or "") or "exist" in (mk.stderr or "").lower():
+                self.log.emit("✓ Ordner 'lib' ist bereits vorhanden.\n")
+            else:
+                # Kein bekannter "existiert bereits"-Fehler – warnen, aber weitermachen;
+                # die nachfolgenden cp-Befehle melden ein echtes Problem ohnehin.
+                self.log.emit(f"⚠ Konnte 'lib' nicht anlegen: {mk.stderr.strip()}\n")
+        except Exception as e:
+            self.log.emit(f"⚠ Ordner 'lib' konnte nicht geprüft werden: {e}\n")
+
         for finfo in self.files:
             if finfo.get("type") == "dir":
                 # Unterordner: .py-Dateien (keine Beispiele) holen und installieren
@@ -749,15 +769,15 @@ class LibInstallWorker(QThread):
                         tmp.write(resp.content)
                         tmp_path = tmp.name
 
-                    self.log.emit(f"Übertrage {name} auf Controller ({self.port}) ...\n")
+                    self.log.emit(f"Übertrage {name} nach lib/ auf Controller ({self.port}) ...\n")
                     result = subprocess.run(
                         [*tool_command("mpremote"), "connect", self.port,
-                         "cp", tmp_path, f":{name}"],
+                         "cp", tmp_path, f":lib/{name}"],
                         capture_output=True, text=True, timeout=30
                     )
                     os.unlink(tmp_path)
                     if result.returncode == 0:
-                        self.log.emit(f"✓ {name} erfolgreich übertragen.\n")
+                        self.log.emit(f"✓ lib/{name} erfolgreich übertragen.\n")
                     else:
                         self.log.emit(f"✗ Fehler bei {name}: {result.stderr}\n")
                         self.done.emit(False, f"Fehler bei {name}")

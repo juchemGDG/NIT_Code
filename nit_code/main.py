@@ -1,11 +1,66 @@
 """Einstiegspunkt für NIT_Code."""
 import sys
+import traceback
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QIcon
 
 from .main_window import MainWindow, build_global_style
+
+
+def _install_exception_hook():
+    """Fängt unbehandelte Ausnahmen ab, statt die App stillschweigend zu beenden.
+
+    Hintergrund: In PyQt6 beendet eine nicht abgefangene Python-Ausnahme in
+    einem Slot (Signal-Handler, Timer-Callback ...) standardmäßig den gesamten
+    Prozess sofort – in der gebauten .exe ohne sichtbare Fehlermeldung. Das war
+    die Ursache für die sporadischen Abstürze z. B. beim Wechsel in den
+    MicroPython-Modus (Port-Scan/Geräteerkennung). Mit diesem Hook wird der
+    Fehler stattdessen angezeigt und das Programm läuft weiter.
+    """
+    def _handle(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        # In die Konsole/Log schreiben (für Entwickler), wenn vorhanden.
+        try:
+            sys.stderr.write(msg)
+        except Exception:
+            pass
+        # Für den Nutzer sichtbar machen, ohne die App zu beenden.
+        try:
+            box = QMessageBox()
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Unerwarteter Fehler")
+            box.setText(
+                "In NIT_Code ist ein unerwarteter Fehler aufgetreten.\n"
+                "Das Programm versucht weiterzulaufen."
+            )
+            box.setDetailedText(msg)
+            box.exec()
+        except Exception:
+            pass
+
+    sys.excepthook = _handle
+
+    # Ausnahmen in Worker-Threads (QThread/threading) ebenfalls abfangen,
+    # damit auch dort nichts unbemerkt den Prozess gefährdet.
+    import threading
+    def _thread_handle(args):
+        _handle(args.exc_type, args.exc_value, args.exc_traceback)
+    try:
+        threading.excepthook = _thread_handle
+    except Exception:
+        pass
+
+    # Echte C-Level-Abstürze (Segfaults) zumindest auf stderr protokollieren.
+    try:
+        import faulthandler
+        faulthandler.enable()
+    except Exception:
+        pass
 
 
 def _find_logo() -> QIcon:
@@ -37,6 +92,7 @@ def main():
     )
 
     app = QApplication(sys.argv)
+    _install_exception_hook()
     app.setApplicationName("NIT_Code")
     app.setOrganizationName("NIT")
     app.setStyleSheet(build_global_style())
