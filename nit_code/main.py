@@ -1,4 +1,5 @@
 """Einstiegspunkt für NIT_Code."""
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -101,6 +102,14 @@ def main():
     if not logo.isNull():
         app.setWindowIcon(logo)
 
+    # Beim Start übergebener Dateipfad (z. B. Doppelklick auf .py über die
+    # Windows-Dateizuordnung oder "NIT_Code datei.py" auf der Kommandozeile).
+    initial_file = None
+    for _arg in sys.argv[1:]:
+        if not _arg.startswith("-") and os.path.isfile(_arg):
+            initial_file = os.path.abspath(_arg)
+            break
+
     # Standard-Schrift (plattformspezifisch, um Font-Scan-Warnung zu vermeiden)
     import sys as _sys
     if _sys.platform == "darwin":
@@ -111,7 +120,7 @@ def main():
         _font_family = "Ubuntu"
     app.setFont(QFont(_font_family, 13))
 
-    window = MainWindow()
+    window = MainWindow(initial_file=initial_file)
     window.showMaximized()
     sys.exit(app.exec())
 

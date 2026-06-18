@@ -35,7 +35,7 @@ Hinweise:
 ## Zielartefakte
 
 - macOS: `NIT_Code-macos.dmg`
-- Windows: `NIT_Code-windows.zip` und `NIT_Code.exe`
+- Windows: `NIT_Code-Setup.exe` (Installer, empfohlen) und `NIT_Code-windows.zip` (portabel)
 - Linux: `NIT_Code-linux-x86_64.tar.gz`
 
 ## Lokal bauen
@@ -48,6 +48,9 @@ Voraussetzungen: Python 3.11+ und Plattform-spezifische Build-Umgebung.
   - `bash release/scripts/build_macos.sh`
 - Windows (PowerShell):
   - `pwsh -File release/scripts/build_windows.ps1`
+  - Fuer die `NIT_Code-Setup.exe` wird zusaetzlich [Inno Setup 6](https://jrsoftware.org/isdl.php) benoetigt.
+    Fehlt es, wird nur das ZIP erstellt (das Skript bricht nicht ab). Auf den
+    GitHub-Actions-Runnern (`windows-latest`) ist Inno Setup vorinstalliert.
 
 Die fertigen Dateien landen in `release/downloads/<plattform>/`.
 

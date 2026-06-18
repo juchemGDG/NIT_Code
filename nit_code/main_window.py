@@ -586,7 +586,7 @@ class EditorTab:
 # Haupt-Fenster
 # ──────────────────────────────────────────────────────────────────────────────
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_file: str | None = None):
         super().__init__()
         self._tabs: list[EditorTab] = []
         self._mode = "python"       # "python" | "micropython"
@@ -622,6 +622,9 @@ class MainWindow(QMainWindow):
         # currentIndexChanged feuerte beim addItem noch nicht (Signal erst danach verbunden)
         # → Modus einmalig manuell initialisieren
         QTimer.singleShot(0, lambda: self._on_mode_changed(0))
+        # Beim Start übergebene Datei öffnen (z. B. Doppelklick auf .py in Windows).
+        if initial_file and os.path.isfile(initial_file):
+            self._open_file_path(initial_file)
 
     # ──────────────────────────────────────────────────────────────────────
     # Fenster
