@@ -86,7 +86,35 @@ def _find_logo() -> QIcon:
     return QIcon()
 
 
+def _suppress_child_consoles():
+    """Verhindert, dass unter Windows bei jedem Subprozess ein schwarzes
+    Konsolenfenster aufpoppt.
+
+    NIT_Code ist eine GUI-Anwendung (PyInstaller: console=False). Alle
+    Hilfsprozesse (git, pip, mpremote, die Python-Shell …) sollen unsichtbar
+    im Hintergrund laufen – ihre Ausgabe wird ohnehin in der GUI angezeigt.
+    Ohne das Flag CREATE_NO_WINDOW oeffnet Windows fuer jeden dieser Aufrufe
+    kurz ein eigenes Konsolenfenster.
+
+    subprocess.run() nutzt intern Popen, daher genuegt es, Popen.__init__ an
+    einer Stelle zu patchen – das deckt alle Aufrufstellen ab.
+    """
+    if sys.platform != "win32":
+        return
+    import subprocess
+    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    _orig_init = subprocess.Popen.__init__
+
+    def _patched_init(self, *args, **kwargs):
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | create_no_window
+        _orig_init(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = _patched_init
+
+
 def main():
+    _suppress_child_consoles()
+
     # High-DPI Unterstützung
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
