@@ -37,8 +37,11 @@ SetupIconFile=NIT_Code.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; x64compatible deckt natives x64 UND ARM64-Windows (x64-Emulation) ab.
+; NICHT "x64" verwenden: Inno Setup >=6.3 deutet das in das restriktive "x64os"
+; um, das ARM64-Windows-11-Geraete ausschliesst.
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"
