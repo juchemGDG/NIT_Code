@@ -2315,14 +2315,22 @@ class MainWindow(QMainWindow):
         # In den Einstellungen gewählter Interpreter hat Vorrang – sofern er
         # existiert und nicht die App selbst ist (Fork-Bomb-Schutz im Frozen-Modus).
         chosen = (self._settings_python_exec or "").strip()
-        if chosen and os.path.isfile(chosen):
-            if getattr(sys, "frozen", False):
-                try:
-                    if os.path.realpath(chosen) == os.path.realpath(sys.executable):
-                        return python_executable()
-                except OSError:
-                    pass
-            return chosen
+        if chosen:
+            # Wurde nur ein Name statt eines Pfads gewählt (z. B. "python3.14"),
+            # über PATH auflösen – sonst würde fälschlich der System-Python
+            # verwendet (z. B. ein Python ohne tkinter/pyserial).
+            if not os.path.isfile(chosen):
+                resolved = shutil.which(chosen)
+                if resolved:
+                    chosen = resolved
+            if os.path.isfile(chosen):
+                if getattr(sys, "frozen", False):
+                    try:
+                        if os.path.realpath(chosen) == os.path.realpath(sys.executable):
+                            return python_executable()
+                    except OSError:
+                        pass
+                return chosen
         # Sonst automatische Ermittlung (Frozen: System-Python; Dev: venv).
         return python_executable()
 
