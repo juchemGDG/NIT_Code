@@ -1,4 +1,6 @@
 """Einstellungs-Dialog für NIT_Code."""
+import os
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -9,8 +11,9 @@ from PyQt6.QtWidgets import (
 from .config import (
     THEME, THEMES,
     TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL,
-    OLLAMA_WEB_PASSWORD,
+    ollama_web_password,
     is_ollama_available, AIS_CHAT_URL,
+    detect_python_interpreters, python_version_label,
 )
 
 # Auto-Save-Intervalle: Anzeigetext → Sekunden
@@ -74,6 +77,18 @@ class _OllamaFetcher(QThread):
             pass
 
         self.error.emit("Nicht erreichbar")
+
+
+# ── Hintergrund-Thread: Python-Interpreter suchen ───────────────────────────
+class _PythonScanner(QThread):
+    """Sucht installierte Python-Interpreter samt Version, ohne die UI zu blockieren."""
+    found = pyqtSignal(list)   # list[tuple[str, str]]  (pfad, version-label)
+
+    def run(self):
+        results: list[tuple[str, str]] = []
+        for path in detect_python_interpreters():
+            results.append((path, python_version_label(path)))
+        self.found.emit(results)
 
 
 # ── Einstellungs-Dialog ──────────────────────────────────────────────────────
@@ -311,10 +326,17 @@ class SettingsDialog(QDialog):
 
         py_row = QHBoxLayout()
         py_row.setSpacing(6)
-        self._edit_py = QLineEdit()
-        self._edit_py.setPlaceholderText("(automatisch erkannt)")
-        self._edit_py.setText(python_exec)
-        py_row.addWidget(self._edit_py)
+        self._combo_py = QComboBox()
+        self._combo_py.setEditable(True)
+        self._combo_py.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._combo_py.lineEdit().setPlaceholderText("(automatisch erkannt)")
+        self._combo_py.setCurrentText(python_exec)
+        py_row.addWidget(self._combo_py, stretch=1)
+        self._btn_scan_py = QPushButton("↻")
+        self._btn_scan_py.setFixedWidth(32)
+        self._btn_scan_py.setToolTip("Erneut nach Python-Interpretern suchen")
+        self._btn_scan_py.clicked.connect(self._scan_python_interpreters)
+        py_row.addWidget(self._btn_scan_py)
         btn_browse = QPushButton("…")
         btn_browse.setObjectName("browse")
         btn_browse.setFixedWidth(32)
@@ -322,8 +344,19 @@ class SettingsDialog(QDialog):
         py_row.addWidget(btn_browse)
         form_py.addRow("Python-Interpreter:", py_row)
 
+        # Versions-Anzeige des aktuell gewählten Interpreters
+        self._lbl_py_version = QLabel("")
+        self._lbl_py_version.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
+        form_py.addRow("", self._lbl_py_version)
+        self._py_versions: dict[str, str] = {}   # pfad → version-label
+        self._py_scanner: _PythonScanner | None = None
+        self._combo_py.currentTextChanged.connect(self._update_py_version_label)
+
         root.addLayout(form_py)
         root.addSpacing(6)
+
+        # Beim Öffnen automatisch im Hintergrund nach Interpretern suchen
+        self._scan_python_interpreters()
 
         # ── Abschnitt: Dateisystem ───────────────────────────────────────
         title_fs, sep_fs = self._section("DATEISYSTEM")
@@ -451,7 +484,7 @@ class SettingsDialog(QDialog):
         url = self._edit_tutor_url.text().strip() or TUTOR_DEFAULT_URL
         self._btn_refresh_models.setEnabled(False)
         self._btn_refresh_models.setText("…")
-        self._fetcher = _OllamaFetcher(url, OLLAMA_WEB_PASSWORD)
+        self._fetcher = _OllamaFetcher(url, ollama_web_password())
         self._fetcher.models_ready.connect(self._on_models_ready)
         self._fetcher.error.connect(self._on_models_error)
         self._fetcher.start()
@@ -481,6 +514,8 @@ class SettingsDialog(QDialog):
         if self._fetcher and self._fetcher.isRunning():
             self._fetcher.quit()
             self._fetcher.wait(500)
+        if self._py_scanner and self._py_scanner.isRunning():
+            self._py_scanner.wait(1500)
         super().done(result)
 
     # ── Hilfsmethoden ───────────────────────────────────────────────────────
@@ -493,7 +528,47 @@ class SettingsDialog(QDialog):
             "Ausführbare Dateien (*python* *python3*);; Alle Dateien (*)",
         )
         if path:
-            self._edit_py.setText(path)
+            self._combo_py.setCurrentText(path)
+
+    # ── Python-Interpreter automatisch suchen ────────────────────────────────
+    def _scan_python_interpreters(self):
+        if self._py_scanner and self._py_scanner.isRunning():
+            return
+        self._btn_scan_py.setEnabled(False)
+        self._btn_scan_py.setText("…")
+        self._py_scanner = _PythonScanner()
+        self._py_scanner.found.connect(self._on_python_found)
+        self._py_scanner.start()
+
+    def _on_python_found(self, results: list):
+        self._btn_scan_py.setEnabled(True)
+        self._btn_scan_py.setText("↻")
+        current = self._combo_py.currentText().strip()
+        self._py_versions = {path: ver for path, ver in results}
+        self._combo_py.blockSignals(True)
+        self._combo_py.clear()
+        for path, ver in results:
+            self._combo_py.addItem(path)
+            idx = self._combo_py.count() - 1
+            if ver:
+                self._combo_py.setItemData(idx, ver, Qt.ItemDataRole.ToolTipRole)
+        # Vorherige Auswahl bzw. leeres Feld (= automatisch) beibehalten
+        self._combo_py.setCurrentText(current)
+        self._combo_py.blockSignals(False)
+        self._update_py_version_label(current)
+
+    def _update_py_version_label(self, text: str):
+        path = (text or "").strip()
+        if not path:
+            n = len(self._py_versions)
+            self._lbl_py_version.setText(
+                f"Automatisch erkannt – {n} Interpreter gefunden"
+                if n else "Automatisch (kein Interpreter gefunden)"
+            )
+            return
+        ver = self._py_versions.get(path) or self._py_versions.get(
+            os.path.realpath(path) if os.path.exists(path) else path, "")
+        self._lbl_py_version.setText(ver or "")
 
     def _browse_sketchbook(self):
         folder = QFileDialog.getExistingDirectory(
@@ -533,7 +608,7 @@ class SettingsDialog(QDialog):
 
     @property
     def python_exec(self) -> str:
-        return self._edit_py.text().strip()
+        return self._combo_py.currentText().strip()
 
     @property
     def scrollback_lines(self) -> int:

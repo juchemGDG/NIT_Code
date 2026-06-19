@@ -6,7 +6,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal, QObject
 from PyQt6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
@@ -45,6 +45,7 @@ class ProcessRunner(QThread):
                 pass
 
     def run(self):
+        import codecs
         try:
             self._proc = subprocess.Popen(
                 self.cmd,
@@ -55,13 +56,21 @@ class ProcessRunner(QThread):
                 env=self.env,
                 bufsize=0,   # unbuffered – damit input()-Prompts sofort erscheinen
             )
-            # Stdout und Stderr parallel in kleinen Chunks lesen (kein Warten auf \n)
+            # Stdout und Stderr parallel in größeren Chunks lesen. Ein
+            # inkrementeller UTF-8-Decoder verhindert, dass Mehrbyte-Zeichen
+            # (Umlaute, ², €, Emojis) an Chunk-Grenzen zerschnitten werden.
             def read_stream(stream, kind):
+                decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
                 while True:
-                    chunk = stream.read(256)
+                    chunk = stream.read(65536)
                     if not chunk:
                         break
-                    self.output.emit(chunk.decode("utf-8", errors="replace"), kind)
+                    text = decoder.decode(chunk)
+                    if text:
+                        self.output.emit(text, kind)
+                rest = decoder.decode(b"", final=True)
+                if rest:
+                    self.output.emit(rest, kind)
                 stream.close()
 
             t_out = threading.Thread(target=read_stream, args=(self._proc.stdout, "stdout"))
@@ -168,7 +177,23 @@ class MicroPythonRunner(QThread):
             rc          = 0
 
             while not self._abort:
-                chunk = ser.read(256)
+                # Wird der Controller während des Laufs abgezogen, meldet
+                # pyserial entweder einen Fehler oder der Port ist geschlossen –
+                # dann sauber abbrechen statt endlos auf Daten zu warten.
+                if not ser.is_open:
+                    self.output.emit(
+                        "\n⚠  Verbindung zum Controller verloren "
+                        "(abgezogen?).\n", "stderr")
+                    rc = 1
+                    break
+                try:
+                    chunk = ser.read(256)
+                except (OSError, serial.SerialException) as exc:
+                    self.output.emit(
+                        f"\n⚠  Verbindung zum Controller unterbrochen: {exc}\n",
+                        "stderr")
+                    rc = 1
+                    break
                 if not chunk:
                     continue
 
@@ -587,6 +612,14 @@ class ConsolePanel(QWidget):
         self._active_runner: ProcessRunner | None = None
         self._shell_is_micropython = False
         self._shell_pending_cmd: list | None = None
+        # Gepufferte Programmausgabe: viele kleine print()-Chunks werden
+        # gesammelt und nur alle 40 ms gebündelt eingefügt. Das verhindert,
+        # dass der GUI-Thread bei ausgabeintensiven Programmen (Schleifen mit
+        # vielen print()) durch zehntausende Einzel-Updates einfriert.
+        self._pending: list[tuple[str, str]] = []   # (text, kind) kind ∈ out|err
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(40)
+        self._flush_timer.timeout.connect(self._flush_pending)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -711,6 +744,49 @@ class ConsolePanel(QWidget):
         if runner is not None:
             self.tabs.setCurrentIndex(0)
             self._input_field.setFocus()
+
+    # ── Gepufferte Programmausgabe (hohe Frequenz) ──────────────────────────
+    def append_program_output(self, text: str):
+        """stdout eines laufenden Programms – gepuffert/gebündelt."""
+        self._enqueue(text, "out")
+
+    def append_program_error(self, text: str):
+        """stderr eines laufenden Programms – gepuffert/gebündelt."""
+        self._enqueue(text, "err")
+
+    def _enqueue(self, text: str, kind: str):
+        self._pending.append((text, kind))
+        if not self._flush_timer.isActive():
+            self._flush_timer.start()
+
+    def _flush_pending(self):
+        if not self._pending:
+            self._flush_timer.stop()
+            return
+        pending = self._pending
+        self._pending = []
+        # Aufeinanderfolgende gleichartige Chunks zu einem Insert zusammenfassen
+        parts: list[str] = []
+        cur_kind: str | None = None
+        for text, kind in pending:
+            if kind != cur_kind and parts:
+                self._emit_grouped(cur_kind, "".join(parts))
+                parts = []
+            cur_kind = kind
+            parts.append(text)
+        if parts:
+            self._emit_grouped(cur_kind, "".join(parts))
+        self.tabs.setCurrentIndex(0)
+
+    def _emit_grouped(self, kind: str | None, text: str):
+        if kind == "err":
+            self.output_console.append_error(text)
+        else:
+            self.output_console.append_output(text)
+
+    def flush_now(self):
+        """Restpuffer sofort ausgeben (z. B. bevor 'Programm beendet' erscheint)."""
+        self._flush_pending()
 
     # Delegations-Methoden
     def append_output(self, text: str):

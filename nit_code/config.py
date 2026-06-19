@@ -1,5 +1,7 @@
 """Konstanten und Konfiguration für NIT_Code."""
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,6 +29,114 @@ def python_executable() -> str:
     return sys.executable
 
 
+def _venv_python() -> Path:
+    """Pfad zum Python der projekteigenen .venv (Dev-Modus)."""
+    return Path(__file__).resolve().parents[1] / ".venv" / (
+        "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    )
+
+
+def detect_python_interpreters() -> list[str]:
+    """Sucht mögliche Python-Interpreter auf dem System.
+
+    Durchsucht PATH und plattformtypische Installationsorte. Liefert eine
+    deduplizierte Liste echter Pfade (reale Ziele, keine Symlink-Dubletten).
+    Die App selbst (Frozen-EXE) wird NIE vorgeschlagen – das würde beim Start
+    eines Programms die GUI rekursiv neu öffnen (Fork-Bomb-Schutz).
+    """
+    found: list[str] = []
+
+    def add(path: str | None):
+        if not path:
+            return
+        try:
+            p = Path(path)
+            if not p.exists():
+                return
+            real = str(p.resolve())
+        except OSError:
+            return
+        if real not in found:
+            found.append(real)
+
+    # 1. Projekteigene .venv (Dev-Modus) zuerst
+    venv_py = _venv_python()
+    if venv_py.exists():
+        add(str(venv_py))
+
+    # 2. Über PATH auffindbare Namen
+    minor_names = [f"python3.{m}" for m in range(20, 7, -1)]
+    if sys.platform == "win32":
+        path_names = ["python.exe", "python3.exe", "python"]
+    else:
+        path_names = ["python3", "python", *minor_names]
+    for name in path_names:
+        add(shutil.which(name))
+
+    # 3. Plattformtypische Installationsorte
+    if sys.platform == "win32":
+        # py-Launcher kennt alle registrierten Versionen
+        py_launcher = shutil.which("py")
+        if py_launcher:
+            try:
+                res = subprocess.run([py_launcher, "-0p"], capture_output=True,
+                                     text=True, timeout=5)
+                for line in res.stdout.splitlines():
+                    for token in line.split():
+                        if token.lower().endswith("python.exe"):
+                            add(token)
+            except Exception:
+                pass
+        bases: list[str] = []
+        for env_var in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"):
+            val = os.environ.get(env_var)
+            if val:
+                bases.append(val)
+        bases.append("C:\\")
+        for base in bases:
+            for pattern_base in (Path(base), Path(base) / "Programs" / "Python"):
+                try:
+                    for d in pattern_base.glob("Python3*"):
+                        add(str(d / "python.exe"))
+                except OSError:
+                    pass
+    else:
+        search_dirs = [
+            "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin",
+            "/opt/local/bin", str(Path.home() / ".pyenv" / "shims"),
+        ]
+        macfw = Path("/Library/Frameworks/Python.framework/Versions")
+        if macfw.exists():
+            try:
+                for ver in macfw.glob("3.*"):
+                    search_dirs.append(str(ver / "bin"))
+            except OSError:
+                pass
+        for d in search_dirs:
+            for name in ["python3", "python", *minor_names]:
+                add(str(Path(d) / name))
+
+    # 4. Frozen-App-EXE niemals vorschlagen
+    if getattr(sys, "frozen", False):
+        try:
+            self_exe = str(Path(sys.executable).resolve())
+            found = [c for c in found if c != self_exe]
+        except OSError:
+            pass
+
+    return found
+
+
+def python_version_label(path: str) -> str:
+    """Kurzbeschreibung (z. B. 'Python 3.12.3') eines Interpreters – leer bei Fehler."""
+    try:
+        res = subprocess.run([path, "--version"], capture_output=True,
+                             text=True, timeout=5)
+        return (res.stdout or res.stderr).strip()
+    except Exception:
+        return ""
+
+
 def tool_command(module: str) -> list[str]:
     """Befehl, um ein mitgeliefertes Tool (``mpremote``/``esptool``) zu starten.
 
@@ -44,7 +154,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.3.7"
+APP_VERSION = "1.3.8"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"
@@ -83,7 +193,40 @@ SUPPORTED_BOARDS = {
 # KI-Tutor (Ollama)
 TUTOR_DEFAULT_URL    = "http://localhost:11434"
 TUTOR_DEFAULT_MODEL  = "llama3.2"
-OLLAMA_WEB_PASSWORD  = "geheim"
+
+
+def ollama_web_password() -> str:
+    """Optionales Passwort für einen geschützten Ollama-Web-Proxy.
+
+    Wird NICHT im Quellcode gespeichert (kein Klartext im Repository). Reihenfolge:
+      1. Umgebungsvariable ``NIT_OLLAMA_PASSWORD``
+      2. lokale, nicht versionierte Datei ``<config-dir>/nit_code/ollama_password``
+      3. leer → es wird ohne Authentifizierung versucht (lokales Ollama braucht keine)
+
+    Lokales Ollama (localhost) benötigt ohnehin kein Passwort; relevant ist dies
+    nur für einen schulischen Reverse-Proxy mit Basic-/Bearer-Auth.
+    """
+    env = os.environ.get("NIT_OLLAMA_PASSWORD")
+    if env:
+        return env.strip()
+    try:
+        pw_file = _user_config_dir() / "ollama_password"
+        if pw_file.exists():
+            return pw_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    return ""
+
+
+def _user_config_dir() -> Path:
+    """Plattformabhängiges, nutzerspezifisches Konfigverzeichnis für NIT_Code."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "nit_code"
 
 # AIS-Chat (schulischer Web-Chatbot)
 AIS_CHAT_URL = "https://app.ais-chat.schule"

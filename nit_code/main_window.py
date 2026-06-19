@@ -1178,7 +1178,13 @@ class MainWindow(QMainWindow):
         if self._mode == "python":
             python = self._get_python_executable()
             cmd = [python, "-u", tab.filepath]
-            self._process = ProcessRunner(cmd, cwd=os.path.dirname(tab.filepath))
+            # Ungepufferte, UTF-8-Ausgabe erzwingen – greift auch für
+            # Subprozesse, die das Schüler-Programm selbst startet, sodass
+            # Ausgaben/Fehler sofort statt verzögert erscheinen.
+            env = os.environ.copy()
+            env["PYTHONUNBUFFERED"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
+            self._process = ProcessRunner(cmd, cwd=os.path.dirname(tab.filepath), env=env)
         else:
             # MicroPython: Raw-REPL über pyserial (stdin-Forwarding)
             port = self._get_serial_port()
@@ -1195,6 +1201,7 @@ class MainWindow(QMainWindow):
     def _stop_program(self):
         if self._process and self._process.isRunning():
             self._process.terminate_process()
+            self._console.flush_now()
             self._console.append_info("\n■  Abgebrochen.\n")
         self._console.set_active_runner(None)
         if self._mode == "micropython":
@@ -1202,7 +1209,7 @@ class MainWindow(QMainWindow):
 
     def _on_process_output(self, text: str, kind: str):
         if kind == "stderr":
-            self._console.append_error(text)
+            self._console.append_program_error(text)
             # Fehlerzeilen im Editor markieren
             import re
             for m in re.finditer(r'File "([^"]+)", line (\d+)', text):
@@ -1211,9 +1218,11 @@ class MainWindow(QMainWindow):
                 if tab and tab.filepath and os.path.abspath(fp) == os.path.abspath(tab.filepath):
                     tab.editor.mark_error_line(ln)
         else:
-            self._console.append_output(text)
+            self._console.append_program_output(text)
 
     def _on_process_done(self, code: int):
+        # Restpuffer leeren, damit die Abschlussmeldung wirklich zuletzt erscheint
+        self._console.flush_now()
         self._console.set_active_runner(None)
         if self._mode == "micropython":
             self._console.resume_shell()
@@ -1705,30 +1714,83 @@ class MainWindow(QMainWindow):
             display_cmd=display_cmd,
         )
 
+    def _secure_credential_helper(self) -> str:
+        """Plattformabhängiger, sicherer git-credential-Helper.
+
+        Speichert Zugangsdaten verschlüsselt im Betriebssystem (Windows Credential
+        Manager / macOS Keychain / GNOME-Keyring via libsecret) statt im Klartext.
+        Wo libsecret fehlt, wird der eingebaute, nur im Arbeitsspeicher gehaltene
+        ``cache``-Helper genutzt (besser als Klartext auf der Platte).
+        """
+        if sys.platform == "win32":
+            return "manager"
+        if sys.platform == "darwin":
+            return "osxkeychain"
+        if shutil.which("git-credential-libsecret"):
+            return "libsecret"
+        # Fallback: 8 h im RAM-Cache – kein Klartext auf der Platte
+        return "cache --timeout=28800"
+
     def _store_git_credentials(self, repo_path: str, url: str, username: str, password: str):
-        """Speichert HTTPS-Credentials lokal im Repository und in ~/.git-credentials."""
-        # Lokalen credential.helper auf 'store' setzen
+        """Speichert HTTPS-Credentials verschlüsselt über den OS-Credential-Manager.
+
+        Es wird KEIN Klartext mehr in ``~/.git-credentials`` geschrieben. Ein evtl.
+        vorhandener alter Klartext-Eintrag für denselben Host wird entfernt.
+        """
+        parsed = urlparse(url)
+        helper = self._secure_credential_helper()
+        # Lokalen credential.helper auf den sicheren Helper setzen
         subprocess.run(
-            ["git", "-C", repo_path, "config", "credential.helper", "store"],
+            ["git", "-C", repo_path, "config", "credential.helper", helper],
             capture_output=True,
             check=False,
         )
-        # In ~/.git-credentials schreiben (Format: https://user:pass@hostname)
-        parsed = urlparse(url)
-        enc_user = urlquote(username, safe="")
-        enc_pass = urlquote(password, safe="")
-        cred_line = f"{parsed.scheme}://{enc_user}:{enc_pass}@{parsed.hostname}\n"
-        creds_file = Path.home() / ".git-credentials"
+        # Zugangsdaten über 'git credential approve' an den Helper übergeben –
+        # dieser legt sie verschlüsselt im OS-Schlüsselspeicher ab.
+        approve_input = (
+            f"protocol={parsed.scheme}\n"
+            f"host={parsed.hostname}\n"
+            f"username={username}\n"
+            f"password={password}\n\n"
+        )
         try:
-            existing = creds_file.read_text(encoding="utf-8") if creds_file.exists() else ""
-            # Bestehenden Eintrag für denselben Host ersetzen oder neu anfügen
-            host_prefix = f"{parsed.scheme}://{enc_user}:"
-            lines = [ln for ln in existing.splitlines(keepends=True) if not ln.startswith(host_prefix)]
-            lines.append(cred_line)
-            creds_file.write_text("".join(lines), encoding="utf-8")
-            self._console.append_success("[Git] Zugangsdaten wurden gespeichert.\n")
+            res = subprocess.run(
+                ["git", "-C", repo_path, "credential", "approve"],
+                input=approve_input, text=True,
+                capture_output=True, check=False,
+            )
+            if res.returncode == 0:
+                self._console.append_success(
+                    "[Git] Zugangsdaten sicher im System-Schlüsselspeicher abgelegt.\n")
+            else:
+                self._console.append_info(
+                    "[Git] Zugangsdaten konnten nicht im Schlüsselspeicher abgelegt "
+                    "werden – Git fragt beim nächsten Zugriff erneut nach.\n")
         except OSError as exc:
-            self._console.append_error(f"[Git] Zugangsdaten konnten nicht gespeichert werden: {exc}\n")
+            self._console.append_error(
+                f"[Git] Zugangsdaten konnten nicht gespeichert werden: {exc}\n")
+
+        # Migration/Bereinigung: evtl. früher gespeicherten Klartext-Eintrag löschen
+        self._purge_plaintext_credentials(parsed.scheme, parsed.hostname, username)
+
+    def _purge_plaintext_credentials(self, scheme: str, hostname: str | None, username: str):
+        """Entfernt einen alten Klartext-Eintrag aus ~/.git-credentials (falls vorhanden)."""
+        creds_file = Path.home() / ".git-credentials"
+        if not hostname or not creds_file.exists():
+            return
+        try:
+            enc_user = urlquote(username, safe="")
+            host_prefix = f"{scheme}://{enc_user}:"
+            host_suffix = f"@{hostname}"
+            existing = creds_file.read_text(encoding="utf-8").splitlines(keepends=True)
+            kept = [
+                ln for ln in existing
+                if not (ln.startswith(host_prefix) and host_suffix in ln)
+            ]
+            if len(kept) != len(existing):
+                creds_file.write_text("".join(kept), encoding="utf-8")
+        except OSError:
+            pass
 
     def _set_active_repo_after_clone(self, repo_path: str):
         normalized = str(Path(repo_path).resolve())
@@ -2250,8 +2312,18 @@ class MainWindow(QMainWindow):
     # Hilfsfunktionen
     # ──────────────────────────────────────────────────────────────────────
     def _get_python_executable(self) -> str:
-        # Zentrale Helper-Funktion: liefert im Frozen-Modus System-Python,
-        # damit Subprozesse nicht die App neu starten (Fork-Bomb).
+        # In den Einstellungen gewählter Interpreter hat Vorrang – sofern er
+        # existiert und nicht die App selbst ist (Fork-Bomb-Schutz im Frozen-Modus).
+        chosen = (self._settings_python_exec or "").strip()
+        if chosen and os.path.isfile(chosen):
+            if getattr(sys, "frozen", False):
+                try:
+                    if os.path.realpath(chosen) == os.path.realpath(sys.executable):
+                        return python_executable()
+                except OSError:
+                    pass
+            return chosen
+        # Sonst automatische Ermittlung (Frozen: System-Python; Dev: venv).
         return python_executable()
 
     def _refresh_ports(self):
