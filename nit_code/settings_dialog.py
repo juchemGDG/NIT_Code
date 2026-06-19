@@ -115,7 +115,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
         self.setModal(True)
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(560)
         self._fetcher: _OllamaFetcher | None = None
         self.setStyleSheet(
             f"""
@@ -330,7 +330,9 @@ class SettingsDialog(QDialog):
         self._combo_py.setEditable(True)
         self._combo_py.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._combo_py.lineEdit().setPlaceholderText("(automatisch erkannt)")
+        self._combo_py.setMinimumWidth(280)
         self._combo_py.setCurrentText(python_exec)
+        self._combo_py.lineEdit().setCursorPosition(0)
         py_row.addWidget(self._combo_py, stretch=1)
         self._btn_scan_py = QPushButton("↻")
         self._btn_scan_py.setFixedWidth(32)
@@ -529,6 +531,7 @@ class SettingsDialog(QDialog):
         )
         if path:
             self._combo_py.setCurrentText(path)
+            self._combo_py.lineEdit().setCursorPosition(0)
 
     # ── Python-Interpreter automatisch suchen ────────────────────────────────
     def _scan_python_interpreters(self):
@@ -554,6 +557,7 @@ class SettingsDialog(QDialog):
                 self._combo_py.setItemData(idx, ver, Qt.ItemDataRole.ToolTipRole)
         # Vorherige Auswahl bzw. leeres Feld (= automatisch) beibehalten
         self._combo_py.setCurrentText(current)
+        self._combo_py.lineEdit().setCursorPosition(0)
         self._combo_py.blockSignals(False)
         self._update_py_version_label(current)
 

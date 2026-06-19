@@ -1403,7 +1403,7 @@ class MainWindow(QMainWindow):
 
     def _open_pip_manager(self):
         from .micropython_dialogs import PipManagerDialog
-        dlg = PipManagerDialog(self)
+        dlg = PipManagerDialog(self, python_exec=self._get_python_executable())
         dlg.exec()
 
     # ──────────────────────────────────────────────────────────────────────

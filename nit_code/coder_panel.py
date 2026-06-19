@@ -875,12 +875,6 @@ class CoderPanel(QWidget):
         self._clear_btn.clicked.connect(self._clear_history)
         btn_row.addWidget(self._clear_btn)
 
-        self._insert_btn = QPushButton("→  Code in Editor schreiben")
-        self._insert_btn.setToolTip("Generierten Code in einen neuen Editor-Tab übertragen")
-        self._insert_btn.setEnabled(False)
-        self._insert_btn.clicked.connect(self._on_insert_code)
-        btn_row.addWidget(self._insert_btn)
-
         btn_row.addStretch()
 
         self._send_btn = QPushButton("Senden")
@@ -888,6 +882,17 @@ class CoderPanel(QWidget):
         btn_row.addWidget(self._send_btn)
 
         ilay.addLayout(btn_row)
+
+        # Eigene, volle Zeile – der Text „Code in Editor schreiben“ passt sonst
+        # bei schmalem Panel nicht zwischen die anderen Buttons und wird
+        # abgeschnitten.
+        self._insert_btn = QPushButton("→  Code in Editor schreiben")
+        self._insert_btn.setToolTip("Generierten Code in einen neuen Editor-Tab übertragen")
+        self._insert_btn.setEnabled(False)
+        self._insert_btn.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                       QSizePolicy.Policy.Fixed)
+        self._insert_btn.clicked.connect(self._on_insert_code)
+        ilay.addWidget(self._insert_btn)
         root.addWidget(self._input_area)
         self.refresh_theme()
 

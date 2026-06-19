@@ -61,26 +61,40 @@ class ProcessRunner(QThread):
             # (Umlaute, ², €, Emojis) an Chunk-Grenzen zerschnitten werden.
             def read_stream(stream, kind):
                 decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-                while True:
-                    chunk = stream.read(65536)
-                    if not chunk:
-                        break
-                    text = decoder.decode(chunk)
-                    if text:
-                        self.output.emit(text, kind)
-                rest = decoder.decode(b"", final=True)
-                if rest:
-                    self.output.emit(rest, kind)
-                stream.close()
+                try:
+                    while True:
+                        chunk = stream.read(65536)
+                        if not chunk:
+                            break
+                        text = decoder.decode(chunk)
+                        if text:
+                            self.output.emit(text, kind)
+                    rest = decoder.decode(b"", final=True)
+                    if rest:
+                        self.output.emit(rest, kind)
+                except (OSError, ValueError):
+                    pass   # Pipe wurde geschlossen / Prozess beendet
+                finally:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
 
-            t_out = threading.Thread(target=read_stream, args=(self._proc.stdout, "stdout"))
-            t_err = threading.Thread(target=read_stream, args=(self._proc.stderr, "stderr"))
+            # Daemon-Threads: blockieren das Programmende nicht, falls eine vom
+            # Schülerprogramm gestartete Subprozess-/Thread-Instanz das Pipe-Ende
+            # offen hält.
+            t_out = threading.Thread(target=read_stream, args=(self._proc.stdout, "stdout"), daemon=True)
+            t_err = threading.Thread(target=read_stream, args=(self._proc.stderr, "stderr"), daemon=True)
             t_out.start()
             t_err.start()
-            t_out.join()
-            t_err.join()
-            self._proc.wait()
-            self.finished_run.emit(self._proc.returncode)
+            # Auf den ECHTEN Prozess-Exit warten (nicht auf Pipe-EOF). So wird
+            # 'Programm beendet' auch dann gemeldet, wenn ein geerbtes Pipe-Ende
+            # in einem Kindprozess offen bleibt – sonst „hängt“ die Ausführung.
+            rc = self._proc.wait()
+            # Restausgabe (z. B. Traceback) noch einsammeln, aber nicht ewig warten.
+            t_out.join(timeout=1.5)
+            t_err.join(timeout=1.5)
+            self.finished_run.emit(rc)
         except Exception as e:
             self.output.emit(f"Fehler beim Starten: {e}\n", "stderr")
             self.finished_run.emit(-1)
@@ -765,24 +779,19 @@ class ConsolePanel(QWidget):
             return
         pending = self._pending
         self._pending = []
-        # Aufeinanderfolgende gleichartige Chunks zu einem Insert zusammenfassen
-        parts: list[str] = []
-        cur_kind: str | None = None
-        for text, kind in pending:
-            if kind != cur_kind and parts:
-                self._emit_grouped(cur_kind, "".join(parts))
-                parts = []
-            cur_kind = kind
-            parts.append(text)
-        if parts:
-            self._emit_grouped(cur_kind, "".join(parts))
+        # stdout und stderr kommen über zwei getrennte Pipes/Threads und damit in
+        # nicht garantierter Reihenfolge an (Race Condition – ein Traceback konnte
+        # so VOR der zugehörigen Programmausgabe erscheinen). Innerhalb eines
+        # Flush-Fensters geben wir deshalb erst die normale Ausgabe, dann die
+        # Fehlerausgabe aus. Für den häufigsten Fall (Programm gibt etwas aus und
+        # stürzt am Ende ab) ist die Reihenfolge damit immer korrekt.
+        out_text = "".join(text for text, kind in pending if kind != "err")
+        err_text = "".join(text for text, kind in pending if kind == "err")
+        if out_text:
+            self.output_console.append_output(out_text)
+        if err_text:
+            self.output_console.append_error(err_text)
         self.tabs.setCurrentIndex(0)
-
-    def _emit_grouped(self, kind: str | None, text: str):
-        if kind == "err":
-            self.output_console.append_error(text)
-        else:
-            self.output_console.append_output(text)
 
     def flush_now(self):
         """Restpuffer sofort ausgeben (z. B. bevor 'Programm beendet' erscheint)."""

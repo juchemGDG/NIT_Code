@@ -1041,44 +1041,115 @@ _PIP_CATALOG: list[dict] = [
 ]
 
 
+# Standardbibliotheks-Module, die Einsteiger erfahrungsgemäß versehentlich
+# per pip installieren wollen – sie sind bereits in Python enthalten und
+# führen sonst zu „No matching distribution found“.
+_STDLIB_MODULES: set[str] = {
+    "tkinter", "turtle", "random", "math", "os", "sys", "time", "json",
+    "csv", "datetime", "re", "statistics", "collections", "itertools",
+    "functools", "pathlib", "sqlite3", "threading", "subprocess", "socket",
+    "http", "urllib", "tk", "tcl", "decimal", "fractions", "string",
+}
+
+
 class _PipWorker(QThread):
     log    = pyqtSignal(str)
     done   = pyqtSignal(bool, str)
 
-    def __init__(self, packages: list[str], action: str = "install", parent=None):
+    def __init__(self, packages: list[str], action: str = "install",
+                 python_exec: str = "", parent=None):
         super().__init__(parent)
         self._packages = packages
         self._action   = action   # "install" | "uninstall"
+        self._python   = python_exec or python_executable()
 
     def run(self):
-        import subprocess, sys
+        import subprocess
+        self.log.emit(f"Verwende Interpreter: {self._python}\n")
         for pkg in self._packages:
+            # Standardbibliothek abfangen – nicht per pip installierbar.
+            if self._action == "install" and pkg.lower() in _STDLIB_MODULES:
+                self.log.emit(
+                    f"ℹ {pkg} gehört zur Python-Standardbibliothek und ist "
+                    f"bereits enthalten – keine Installation nötig.\n"
+                )
+                if pkg.lower() in ("tkinter", "turtle", "tk", "tcl"):
+                    self.log.emit(
+                        "   Falls 'import tkinter' fehlschlägt, fehlt das "
+                        "Tk-Paket des Betriebssystems (z. B. unter Linux: "
+                        "'sudo apt install python3-tk').\n"
+                    )
+                continue
+
             self.log.emit(f"{'Installiere' if self._action == 'install' else 'Deinstalliere'} {pkg} …\n")
-            cmd = [python_executable(), "-m", "pip", self._action, pkg]
+            cmd = [self._python, "-m", "pip", self._action, pkg]
             if self._action == "uninstall":
                 cmd.append("-y")
             try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 self.log.emit(r.stdout)
                 if r.returncode == 0:
                     self.log.emit(f"✓ {pkg} erfolgreich.\n")
-                else:
-                    self.log.emit(r.stderr)
-                    self.done.emit(False, f"Fehler bei {pkg}")
-                    return
+                    continue
+
+                # PEP 668: system-verwalteter Interpreter blockiert pip.
+                # Einmaliger Wiederholungsversuch mit --user bzw.
+                # --break-system-packages, damit Schüler nicht hängenbleiben.
+                if (self._action == "install"
+                        and "externally-managed-environment" in (r.stderr or "").lower()):
+                    self.log.emit(
+                        "ℹ Dieser Python ist vom System verwaltet – "
+                        "versuche Installation ins Benutzerverzeichnis …\n"
+                    )
+                    retry = subprocess.run(
+                        [self._python, "-m", "pip", "install", "--user",
+                         "--break-system-packages", pkg],
+                        capture_output=True, text=True, timeout=300,
+                    )
+                    self.log.emit(retry.stdout)
+                    if retry.returncode == 0:
+                        self.log.emit(f"✓ {pkg} erfolgreich (Benutzerverzeichnis).\n")
+                        continue
+                    self.log.emit(retry.stderr)
+
+                self.log.emit(r.stderr)
+                self.done.emit(False, self._explain_error(pkg, r.stderr or r.stdout))
+                return
+            except subprocess.TimeoutExpired:
+                self.done.emit(False, f"Zeitüberschreitung bei {pkg} (Netzwerk?).")
+                return
             except Exception as e:
                 self.done.emit(False, str(e))
                 return
         action_word = "installiert" if self._action == "install" else "deinstalliert"
         self.done.emit(True, f"Alle Pakete {action_word}.")
 
+    @staticmethod
+    def _explain_error(pkg: str, stderr: str) -> str:
+        """Liefert eine schülerfreundliche Kurzerklärung des pip-Fehlers."""
+        low = (stderr or "").lower()
+        if "no matching distribution" in low or "could not find a version" in low:
+            return (f"Paket „{pkg}“ wurde auf PyPI nicht gefunden. "
+                    f"Tippfehler im Namen? Oder es ist kein pip-Paket.")
+        if "no module named pip" in low or "no module named ensurepip" in low:
+            return ("Der gewählte Python-Interpreter hat kein pip. "
+                    "Bitte in den Einstellungen einen anderen Interpreter wählen.")
+        if "could not connect" in low or "temporary failure in name resolution" in low \
+                or "network is unreachable" in low or "timed out" in low:
+            return "Keine Verbindung zu PyPI – Internetverbindung prüfen."
+        if "permission denied" in low or "winerror 5" in low:
+            return (f"Keine Schreibrechte für die Installation von „{pkg}“. "
+                    f"Evtl. einen Benutzer-Interpreter wählen.")
+        return f"Fehler bei {pkg}"
+
 
 class PipManagerDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, python_exec: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Python-Pakete (pip)")
         self.setMinimumSize(700, 540)
         self.setStyleSheet(_dialog_style())
+        self._python = (python_exec or "").strip() or python_executable()
         self._worker: _PipWorker | None = None
         self._installed: set[str] = set()
         self._setup_ui()
@@ -1200,11 +1271,11 @@ class PipManagerDialog(QDialog):
 
     # ── Installierte Pakete laden ─────────────────────────────────────────
     def _load_installed(self):
-        import subprocess, sys
+        import subprocess
         self._log.append("Lade installierte Pakete …")
         try:
             r = subprocess.run(
-                [python_executable(), "-m", "pip", "list", "--format=columns"],
+                [self._python, "-m", "pip", "list", "--format=columns"],
                 capture_output=True, text=True, timeout=15,
             )
             lines = r.stdout.splitlines()[2:]   # Header überspringen
@@ -1256,7 +1327,7 @@ class PipManagerDialog(QDialog):
     def _run_pip(self, packages: list[str], action: str):
         self._btn_install.setEnabled(False)
         self._btn_uninstall.setEnabled(False)
-        self._worker = _PipWorker(packages, action, self)
+        self._worker = _PipWorker(packages, action, self._python, self)
         self._worker.log.connect(lambda t: self._log.append(t.rstrip()))
         self._worker.done.connect(self._on_done)
         self._worker.start()
