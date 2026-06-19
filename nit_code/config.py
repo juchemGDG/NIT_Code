@@ -170,6 +170,20 @@ def python_version_label(path: str) -> str:
         return ""
 
 
+def python_has_tkinter(path: str) -> bool:
+    """Prüft, ob ein Interpreter tkinter importieren kann.
+
+    Viele GUI-Programme im Unterricht brauchen tkinter. Es fehlt z. B. beim
+    Homebrew-Python ohne ``python-tk`` oder ist beim macOS-System-Python defekt.
+    """
+    try:
+        res = subprocess.run([path, "-c", "import tkinter"],
+                             capture_output=True, text=True, timeout=8)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
 def tool_command(module: str) -> list[str]:
     """Befehl, um ein mitgeliefertes Tool (``mpremote``/``esptool``) zu starten.
 

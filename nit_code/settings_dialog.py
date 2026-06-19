@@ -13,7 +13,7 @@ from .config import (
     TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL,
     ollama_web_password,
     is_ollama_available, AIS_CHAT_URL,
-    detect_python_interpreters, python_version_label,
+    detect_python_interpreters, python_version_label, python_has_tkinter,
 )
 
 # Auto-Save-Intervalle: Anzeigetext → Sekunden
@@ -82,12 +82,12 @@ class _OllamaFetcher(QThread):
 # ── Hintergrund-Thread: Python-Interpreter suchen ───────────────────────────
 class _PythonScanner(QThread):
     """Sucht installierte Python-Interpreter samt Version, ohne die UI zu blockieren."""
-    found = pyqtSignal(list)   # list[tuple[str, str]]  (pfad, version-label)
+    found = pyqtSignal(list)   # list[tuple[str, str, bool]]  (pfad, version, hat_tkinter)
 
     def run(self):
-        results: list[tuple[str, str]] = []
+        results: list[tuple[str, str, bool]] = []
         for path in detect_python_interpreters():
-            results.append((path, python_version_label(path)))
+            results.append((path, python_version_label(path), python_has_tkinter(path)))
         self.found.emit(results)
 
 
@@ -351,6 +351,7 @@ class SettingsDialog(QDialog):
         self._lbl_py_version.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
         form_py.addRow("", self._lbl_py_version)
         self._py_versions: dict[str, str] = {}   # pfad → version-label
+        self._py_has_tk: dict[str, bool] = {}    # pfad → tkinter verfügbar
         self._py_scanner: _PythonScanner | None = None
         self._combo_py.currentTextChanged.connect(self._update_py_version_label)
 
@@ -547,14 +548,18 @@ class SettingsDialog(QDialog):
         self._btn_scan_py.setEnabled(True)
         self._btn_scan_py.setText("↻")
         current = self._combo_py.currentText().strip()
-        self._py_versions = {path: ver for path, ver in results}
+        self._py_versions = {path: ver for path, ver, _tk in results}
+        self._py_has_tk = {path: tk for path, _ver, tk in results}
         self._combo_py.blockSignals(True)
         self._combo_py.clear()
-        for path, ver in results:
+        for path, ver, has_tk in results:
             self._combo_py.addItem(path)
             idx = self._combo_py.count() - 1
-            if ver:
-                self._combo_py.setItemData(idx, ver, Qt.ItemDataRole.ToolTipRole)
+            tip = ver
+            if ver and not has_tk:
+                tip = f"{ver} – ohne tkinter"
+            if tip:
+                self._combo_py.setItemData(idx, tip, Qt.ItemDataRole.ToolTipRole)
         # Vorherige Auswahl bzw. leeres Feld (= automatisch) beibehalten
         self._combo_py.setCurrentText(current)
         self._combo_py.lineEdit().setCursorPosition(0)
@@ -570,9 +575,16 @@ class SettingsDialog(QDialog):
                 if n else "Automatisch (kein Interpreter gefunden)"
             )
             return
-        ver = self._py_versions.get(path) or self._py_versions.get(
-            os.path.realpath(path) if os.path.exists(path) else path, "")
-        self._lbl_py_version.setText(ver or "")
+        key = path
+        if path not in self._py_versions and os.path.exists(path):
+            key = os.path.realpath(path)
+        ver = self._py_versions.get(key, "")
+        if ver and key in self._py_has_tk and not self._py_has_tk[key]:
+            self._lbl_py_version.setText(
+                f"{ver}  ·  ⚠ tkinter fehlt (z. B. 'brew install python-tk')"
+            )
+        else:
+            self._lbl_py_version.setText(ver or "")
 
     def _browse_sketchbook(self):
         folder = QFileDialog.getExistingDirectory(
