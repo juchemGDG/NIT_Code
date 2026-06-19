@@ -15,18 +15,51 @@ def python_executable() -> str:
     ignoriert der Bootloader die Argumente und startet die GUI rekursiv neu –
     eine Endlosschleife / Fork-Bomb, die den Rechner zum Absturz bringen kann.
 
-    Im Frozen-Modus wird daher der System-Python gesucht; im normalen Modus
+    Im Frozen-Modus wird ein „guter" System-Python gesucht; im normalen Modus
     der venv-Python bzw. der laufende Interpreter.
     """
     if getattr(sys, "frozen", False):
-        found = shutil.which("python3") or shutil.which("python")
-        return found or ("python" if sys.platform == "win32" else "python3")
+        return _best_system_python()
     venv_py = Path(__file__).resolve().parents[1] / ".venv" / (
         "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
     )
     if venv_py.exists():
         return str(venv_py)
     return sys.executable
+
+
+def _is_poor_macos_python(path: str) -> bool:
+    """True für macOS-Pythons, die für den Unterricht ungeeignet sind.
+
+    Der Command-Line-Tools-/System-Python bringt ein veraltetes Tk 8.5 mit
+    (leere/abstürzende Tkinter-Fenster) und ist häufig „externally managed"
+    (pip blockiert). python.org-/Homebrew-Pythons sind klar zu bevorzugen.
+    """
+    pl = path.lower()
+    return (
+        "/library/developer/commandlinetools" in pl
+        or pl.startswith("/system/")
+    )
+
+
+_BEST_PYTHON_CACHE: str | None = None
+
+
+def _best_system_python() -> str:
+    """Bester verfügbarer System-Python (Frozen-Modus), Command-Line-Tools meidend."""
+    global _BEST_PYTHON_CACHE
+    if _BEST_PYTHON_CACHE:
+        return _BEST_PYTHON_CACHE
+    candidates = detect_python_interpreters()
+    good = [c for c in candidates if not _is_poor_macos_python(c)]
+    chosen = (
+        good[0] if good
+        else (candidates[0] if candidates else None)
+        or shutil.which("python3") or shutil.which("python")
+        or ("python" if sys.platform == "win32" else "python3")
+    )
+    _BEST_PYTHON_CACHE = chosen
+    return chosen
 
 
 def _venv_python() -> Path:
