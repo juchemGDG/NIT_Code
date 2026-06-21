@@ -124,7 +124,7 @@
         <block type="oled_rect"></block>
         <block type="oled_circle"></block>
       </category>
-      <category name="LCD-Display" colour="290">
+      <category name="LC-Display" colour="290">
         <block type="lcd_init"></block>
         <block type="lcd_print"><value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
         <block type="lcd_clear"></block>
@@ -133,6 +133,11 @@
         <block type="toene_init"></block>
         <block type="toene_ton"></block>
         <block type="toene_stop"></block>
+        <label text="NITon (mit Notenkonstanten)"></label>
+        <block type="niton_init"></block>
+        <block type="niton_ton"></block>
+        <block type="niton_pause"></block>
+        <block type="niton_tempo"></block>
       </category>
       <category name="Ultraschall" colour="290">
         <block type="us_init"></block>
@@ -192,6 +197,24 @@
         <block type="compass_init"></block>
         <block type="compass_heading"></block>
       </category>
+      <category name="Lage / Bewegung (MPU6050)" colour="290">
+        <block type="mpu_init"></block>
+        <block type="mpu_calibrate"></block>
+        <block type="mpu_pitch"></block>
+        <block type="mpu_roll"></block>
+        <block type="mpu_tilt"></block>
+        <block type="mpu_level"></block>
+        <block type="mpu_orient"></block>
+        <block type="mpu_temp"></block>
+        <block type="mpu_accel"></block>
+        <block type="mpu_ax"></block>
+        <block type="mpu_ay"></block>
+        <block type="mpu_az"></block>
+        <block type="mpu_gyro"></block>
+        <block type="mpu_gx"></block>
+        <block type="mpu_gy"></block>
+        <block type="mpu_gz"></block>
+      </category>
       <category name="Funk (ESP-NOW / MQTT)" colour="290">
         <block type="espnow_init"></block>
         <block type="espnow_peer"></block>
@@ -202,10 +225,30 @@
         <block type="mqtt_check"></block>
       </category>
       <category name="Maschinelles Lernen" colour="290">
+        <label text="Daten"></label>
         <block type="mlearn_init"></block>
         <block type="mlearn_load"></block>
-        <block type="mlearn_train"></block>
-        <block type="mlearn_predict"></block>
+        <block type="mlearn_add"></block>
+        <block type="mlearn_clear"></block>
+        <block type="mlearn_split"></block>
+        <label text="k-nächste Nachbarn"></label>
+        <block type="mlearn_train_knn"></block>
+        <block type="mlearn_predict_knn"></block>
+        <label text="Entscheidungsbaum"></label>
+        <block type="mlearn_train_tree"></block>
+        <block type="mlearn_predict_tree"></block>
+        <label text="Random Forest"></label>
+        <block type="mlearn_train_forest"></block>
+        <block type="mlearn_predict_forest"></block>
+        <label text="Logistische Regression"></label>
+        <block type="mlearn_train_logreg"></block>
+        <block type="mlearn_predict_logreg"></block>
+        <label text="Neuronales Netz"></label>
+        <block type="mlearn_train_netz"></block>
+        <block type="mlearn_predict_netz"></block>
+        <label text="Speichern / Laden"></label>
+        <block type="mlearn_save"></block>
+        <block type="mlearn_load_model"></block>
       </category>
     </category>
   </xml>

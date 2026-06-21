@@ -94,6 +94,37 @@
       code: 'speaker.ton(("%NOTE%", %DAUER%))' });
   B({ type: 'toene_stop', parts: ['Ton stoppen'], code: 'speaker.stop()' });
 
+  // ════════════════════════ Töne erweitert (NITon) ════════════════════
+  var NOTEN = [['c', 'c'], ['d', 'd'], ['e', 'e'], ['f', 'f'], ['g', 'g'], ['a', 'a'], ['h', 'h'], ['c²', 'c2']];
+  var DAUERN = [['Viertel', 'viertel'], ['Halbe', 'halbe'], ['punkt. Viertel', 'vi'], ['punkt. Halbe', 'ha'], ['Triole', 'triole']];
+  B({ type: 'niton_init', parts: ['NITon-Lautsprecher an Pin', { f: 'PIN', d: 15, lo: 0, hi: 40 }, 'Tempo', { f: 'GESCHW', d: 80, lo: 20, hi: 400 }, 'Legato', { f: 'LEGATO', d: 95, lo: 0, hi: 100 }],
+      defs: [['from_nitbw_niton', 'from nitbw_niton import NITon, c, d, e, f, g, a, h, c2, viertel, halbe, vi, ha, triole'],
+             ['inst_niton', 'niton = NITon(%PIN%, geschwindigkeit=%GESCHW%, legato=%LEGATO%)']],
+      tip: 'Töne mit Notenkonstanten (NITon).' });
+  B({ type: 'niton_ton', parts: ['NITon spiele Note', { sel: 'NOTE', o: NOTEN }, 'Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.ton(%NOTE%, %DAUER%)' });
+  B({ type: 'niton_pause', parts: ['NITon Pause Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.pause(%DAUER%)' });
+  B({ type: 'niton_tempo', parts: ['NITon Tempo (BPM)', { f: 'BPM', d: 120, lo: 20, hi: 400 }], code: 'niton.setGeschw(%BPM%)' });
+
+  // ════════════════════════ MPU6050 (Lage/Bewegung, I2C) ══════════════
+  B({ type: 'mpu_init', parts: ['MPU6050 einrichten'],
+      defs: [['from_nitbw_mpu6050', 'from nitbw_mpu6050 import MPU6050']].concat(I2C_DEFS).concat([['inst_mpu', 'mpu = MPU6050(i2c, addr=0x68)']]),
+      tip: 'Beschleunigungs-/Gyrosensor MPU6050.' });
+  B({ type: 'mpu_calibrate', parts: ['MPU6050 Gyro kalibrieren'], code: 'mpu.calibrate_gyro()' });
+  B({ type: 'mpu_temp', parts: ['Temperatur (MPU6050)'], out: 'Number', code: 'mpu.read_temperature()' });
+  B({ type: 'mpu_pitch', parts: ['Nick-Winkel (pitch)'], out: 'Number', code: 'mpu.read_pitch()' });
+  B({ type: 'mpu_roll', parts: ['Roll-Winkel (roll)'], out: 'Number', code: 'mpu.read_roll()' });
+  B({ type: 'mpu_tilt', parts: ['Gesamtneigung in Grad'], out: 'Number', code: 'mpu.read_tilt_angle()' });
+  B({ type: 'mpu_level', parts: ['ist waagerecht?'], out: 'Boolean', code: 'mpu.is_level()' });
+  B({ type: 'mpu_orient', parts: ['Orientierung (Text)'], out: 'String', code: 'mpu.read_orientation_text()' });
+  B({ type: 'mpu_accel', parts: ['Beschleunigung messen'], code: 'ax, ay, az = mpu.read_accel()' });
+  B({ type: 'mpu_ax', parts: ['Beschleunigung x'], out: 'Number', outOrder: 'ATOMIC', code: 'ax' });
+  B({ type: 'mpu_ay', parts: ['Beschleunigung y'], out: 'Number', outOrder: 'ATOMIC', code: 'ay' });
+  B({ type: 'mpu_az', parts: ['Beschleunigung z'], out: 'Number', outOrder: 'ATOMIC', code: 'az' });
+  B({ type: 'mpu_gyro', parts: ['Drehrate messen'], code: 'gx, gy, gz = mpu.read_gyro()' });
+  B({ type: 'mpu_gx', parts: ['Drehrate x'], out: 'Number', outOrder: 'ATOMIC', code: 'gx' });
+  B({ type: 'mpu_gy', parts: ['Drehrate y'], out: 'Number', outOrder: 'ATOMIC', code: 'gy' });
+  B({ type: 'mpu_gz', parts: ['Drehrate z'], out: 'Number', outOrder: 'ATOMIC', code: 'gz' });
+
   // ════════════════════════ Ultraschall HC-SR04 ═══════════════════════
   B({ type: 'us_init', parts: ['Ultraschall Trigger Pin', { f: 'TRIG', d: 5, lo: 0, hi: 40 }, 'Echo Pin', { f: 'ECHO', d: 18, lo: 0, hi: 40 }],
       defs: [['from_nitbw_ultraschall', 'from nitbw_ultraschall import Ultraschall'],
@@ -218,10 +249,32 @@
   B({ type: 'mqtt_check', parts: ['MQTT Nachrichten prüfen'], code: 'mqtt_client.check_msg()' });
 
   // ════════════════════════ Maschinelles Lernen ═══════════════════════
+  // Daten
   B({ type: 'mlearn_init', parts: ['ML-Modell k =', { f: 'K', d: 3, lo: 1, hi: 50 }],
       defs: [['from_nitbw_mlearn', 'from nitbw_mlearn import MLearn'], ['inst_model', 'model = MLearn(k=%K%)']],
-      tip: 'Maschinelles Lernen (kNN, Baum, …).' });
-  B({ type: 'mlearn_load', parts: ['ML lade Daten', { txt: 'DATEI', d: 'daten.csv' }], code: "model.load_csv('%DATEI%', separator=',', target=0)" });
-  B({ type: 'mlearn_train', parts: ['ML trainiere kNN'], code: 'model.train_knn()' });
-  B({ type: 'mlearn_predict', parts: ['ML Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_knn(%FEATURES%)' });
+      tip: 'Maschinelles Lernen (kNN, Baum, Wald, Netz, …).' });
+  B({ type: 'mlearn_load', parts: ['ML lade CSV', { txt: 'DATEI', d: 'daten.csv' }, 'Zielspalte', { f: 'TARGET', d: 0, lo: 0, hi: 50 }],
+      code: "model.load_csv('%DATEI%', separator=',', target=%TARGET%)" });
+  B({ type: 'mlearn_add', parts: ['ML Beispiel Merkmale', { v: 'FEATURES' }, 'Label', { v: 'LABEL' }], code: 'model.add_sample(%FEATURES%, %LABEL%)' });
+  B({ type: 'mlearn_clear', parts: ['ML Daten löschen'], code: 'model.clear_data()' });
+  B({ type: 'mlearn_split', parts: ['ML aufteilen Testanteil', { txt: 'ANTEIL', d: '0.2' }, 'Seed', { f: 'SEED', d: 42, lo: 0, hi: 9999 }], code: 'model.split_data(%ANTEIL%, %SEED%)' });
+  // kNN
+  B({ type: 'mlearn_train_knn', parts: ['ML trainiere kNN'], code: 'model.train_knn()' });
+  B({ type: 'mlearn_predict_knn', parts: ['kNN Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_knn(%FEATURES%)' });
+  // Entscheidungsbaum
+  B({ type: 'mlearn_train_tree', parts: ['ML trainiere Baum max. Tiefe', { f: 'DEPTH', d: 3, lo: 1, hi: 20 }], code: 'model.train_tree(max_depth=%DEPTH%)' });
+  B({ type: 'mlearn_predict_tree', parts: ['Baum Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_tree(%FEATURES%)' });
+  // Random Forest
+  B({ type: 'mlearn_train_forest', parts: ['ML trainiere Wald Bäume', { f: 'NTREES', d: 5, lo: 1, hi: 100 }, 'max. Tiefe', { f: 'DEPTH', d: 3, lo: 1, hi: 20 }], code: 'model.train_forest(n_trees=%NTREES%, max_depth=%DEPTH%)' });
+  B({ type: 'mlearn_predict_forest', parts: ['Wald Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_forest(%FEATURES%)' });
+  // Logistische Regression
+  B({ type: 'mlearn_train_logreg', parts: ['ML trainiere log. Regression'], code: 'model.train_logreg()' });
+  B({ type: 'mlearn_predict_logreg', parts: ['log. Regression Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_logreg(%FEATURES%)' });
+  // Neuronales Netz
+  B({ type: 'mlearn_train_netz', parts: ['ML trainiere Netz versteckt', { f: 'HIDDEN', d: 8, lo: 1, hi: 64 }, 'Epochen', { f: 'EPOCHS', d: 200, lo: 1, hi: 5000 }], code: 'model.train_netz(hidden=%HIDDEN%, epochs=%EPOCHS%, lr=0.01)' });
+  B({ type: 'mlearn_predict_netz', parts: ['Netz Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_netz(%FEATURES%)' });
+  // Bewertung & Speichern
+  B({ type: 'mlearn_save', parts: ['ML Modell speichern', { txt: 'DATEI', d: 'modell.json' }, 'Typ', { sel: 'TYP', o: [['kNN', 'knn'], ['Baum', 'tree'], ['Wald', 'forest'], ['Netz', 'netz'], ['log. Regression', 'logreg']] }],
+      code: "model.save_model('%DATEI%', model_type='%TYP%')" });
+  B({ type: 'mlearn_load_model', parts: ['ML Modell laden', { txt: 'DATEI', d: 'modell.json' }], code: "model.load_model('%DATEI%')" });
 })();
