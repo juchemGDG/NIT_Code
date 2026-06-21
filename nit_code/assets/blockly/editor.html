@@ -8,6 +8,7 @@
   <script src="blocks_compressed.js"></script>
   <script src="python_compressed.js"></script>
   <script src="de.js"></script>
+  <script src="nit_blocks.js"></script>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
                  font-family: 'Segoe UI', system-ui, sans-serif; }
@@ -83,49 +84,47 @@
     <category name="Variablen" colour="330" custom="VARIABLE"></category>
     <category name="Funktionen" colour="290" custom="PROCEDURE"></category>
     <sep></sep>
-    <category name="NIT (Beispiel)" colour="20">
+    <category name="Zeit" colour="20">
       <block type="nit_warte">
         <value name="SEK"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
       </block>
+      <block type="nit_warte_ms">
+        <value name="MS"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+      </block>
+    </category>
+    <category name="MicroPython (ESP32)" colour="200">
+      <label text="Digital"></label>
+      <block type="nit_pin_write"></block>
+      <block type="nit_pin_read"></block>
+      <label text="Analog"></label>
+      <block type="nit_adc_read"></block>
+      <block type="nit_dac_write">
+        <value name="WERT"><shadow type="math_number"><field name="NUM">128</field></shadow></value>
+      </block>
+      <block type="nit_pwm_write">
+        <value name="DUTY"><shadow type="math_number"><field name="NUM">512</field></shadow></value>
+      </block>
+    </category>
+    <category name="NeoPixel" colour="20">
+      <block type="nit_neopixel_init"></block>
+      <block type="nit_neopixel_set">
+        <value name="INDEX"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="nit_neopixel_fill"></block>
+      <block type="nit_neopixel_show"></block>
     </category>
   </xml>
 
   <script>
-    // ── Beispiel für einen eigenen NIT-Block ────────────────────────────────
-    // Zeigt, wie spätere nitbw-Blöcke aussehen: eigener Block + Python-Generator.
-    Blockly.Blocks['nit_warte'] = {
-      init: function () {
-        this.appendValueInput('SEK').setCheck('Number').appendField('warte');
-        this.appendDummyInput().appendField('Sekunden');
-        this.setInputsInline(true);
-        this.setPreviousStatement(true, null);
-        this.setNextStatement(true, null);
-        this.setColour(20);
-        this.setTooltip('Pausiert das Programm für die angegebene Zeit.');
-      }
-    };
-    // Order-Konstante versionsrobust ermitteln (neu: .Order.NONE, alt: .ORDER_NONE)
-    function _orderNone() {
-      var P = Blockly.Python;
-      if (P.Order && P.Order.NONE !== undefined) return P.Order.NONE;
-      if (P.ORDER_NONE !== undefined) return P.ORDER_NONE;
-      return 99; // Python-Generator: ORDER_NONE == 99
-    }
-    var _genWarte = function (block) {
-      var gen = Blockly.Python;
-      var sek = gen.valueToCode(block, 'SEK', _orderNone()) || '1';
-      gen.definitions_['import_time'] = 'import time';
-      return 'time.sleep(' + sek + ')\n';
-    };
-    // Neue (forBlock) und alte Generator-API absichern
-    if (Blockly.Python.forBlock) { Blockly.Python.forBlock['nit_warte'] = _genWarte; }
-    Blockly.Python['nit_warte'] = _genWarte;
+    // Eigene NIT-/MicroPython-Blöcke siehe nit_blocks.js.
 
     // ── Workspace aufbauen ──────────────────────────────────────────────────
     var workspace = Blockly.inject('blocklyDiv', {
       toolbox: document.getElementById('toolbox'),
+      media: 'media/',          // lokale Sprites/Sounds – verhindert "Failed to fetch"
       renderer: 'zelos',
       trashcan: true,
+      sounds: true,
       grid: { spacing: 22, length: 3, colour: '#e6e6ee', snap: true },
       zoom: { controls: true, wheel: true, startScale: 0.95, maxScale: 2, minScale: 0.4 },
       move: { scrollbars: true, drag: true, wheel: true }

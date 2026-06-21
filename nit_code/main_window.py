@@ -1175,10 +1175,13 @@ class MainWindow(QMainWindow):
         win.activateWindow()
 
     def _insert_block_code(self, code: str):
-        """Erzeugten Block-Code in einen neuen Editor-Tab schreiben."""
+        """Erzeugten Block-Code in einen neuen Editor-Tab schreiben.
+
+        Konvention (wie KI-Codegenerator): KEINE Kommentare im erzeugten Code –
+        Kommentieren ist Aufgabe der Schülerinnen und Schüler.
+        """
         tab = self._new_tab()
-        header = "# Aus dem Block-Editor erzeugt – kann frei weiterbearbeitet werden\n\n"
-        tab.editor.set_text(header + code)
+        tab.editor.set_text(code)
         self.raise_()
         self.activateWindow()
         self._console.append_info("🧩  Block-Code in neuen Tab übernommen.\n")
