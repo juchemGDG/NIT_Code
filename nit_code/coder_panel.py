@@ -220,10 +220,10 @@ Toene – einfach (passiver Piezo):
 
 Toene – erweitert mit Notenkonstanten (NITon):
   from nitbw_niton import NITon, c, d, e, f, g, a, h, c2
-  from nitbw_niton import viertel, halbe, vi, ha
-  ton = NITon(pin=15, geschwindigkeit=80, legato=95)
+  from nitbw_niton import viertel, achtel, halbe, ganze, viertelpunkt, halbepunkt, vierteltriole
+  ton = NITon(15, geschwindigkeit=80, legato=95)   # erstes Argument positional (Pin)
   ton.ton(c, viertel)
-  ton.pause(viertel)
+  ton.ton(0, viertel)        # Pause/Rest (Hoehe 0); ton.pause(ms) erwartet Millisekunden
   ton.setGeschw(140) / ton.setLegato(90)
 
 Ultraschall HC-SR04:
@@ -321,6 +321,15 @@ Kompass / Magnetometer (I2C):
   kompass = Compass(i2c)
   kompass.heading()   # Gradzahl 0–360
 
+Lage-/Bewegungssensor MPU6050 (I2C):
+  from nitbw_mpu6050 import MPU6050
+  mpu = MPU6050(i2c, addr=0x68)
+  mpu.read_pitch() / mpu.read_roll() / mpu.read_tilt_angle()   # Grad
+  ax, ay, az = mpu.read_accel()   # g    /    gx, gy, gz = mpu.read_gyro()   # deg/s
+  mpu.read_temperature()
+  mpu.is_level(threshold=5.0) / mpu.read_orientation_text()
+  mpu.calibrate_gyro(samples=200)   # einmalig zu Beginn (Sensor ruhig halten)
+
 Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   from nitbw_mlearn import MLearn
   model = MLearn(k=3)
@@ -329,6 +338,9 @@ Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   model.train_tree(max_depth=3) / model.predict_tree(features)
   model.train_forest(n_trees=5, max_depth=3) / model.predict_forest(features)
   model.train_netz(hidden=8, epochs=200, lr=0.01) / model.predict_netz(features)
+  model.train_logreg() / model.predict_logreg(features)
+  model.add_sample(features, label) / model.split_data(anteil_test=0.2, seed=42)
+  model.save_model('modell.json', model_type='knn') / model.load_model('modell.json')
 
 NeoPixel WS2812B (direkt MicroPython):
   from machine import Pin

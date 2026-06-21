@@ -96,13 +96,14 @@
 
   // ════════════════════════ Töne erweitert (NITon) ════════════════════
   var NOTEN = [['c', 'c'], ['d', 'd'], ['e', 'e'], ['f', 'f'], ['g', 'g'], ['a', 'a'], ['h', 'h'], ['c²', 'c2']];
-  var DAUERN = [['Viertel', 'viertel'], ['Halbe', 'halbe'], ['punkt. Viertel', 'vi'], ['punkt. Halbe', 'ha'], ['Triole', 'triole']];
+  var DAUERN = [['Viertel', 'viertel'], ['Achtel', 'achtel'], ['Halbe', 'halbe'], ['Ganze', 'ganze'],
+                ['punkt. Viertel', 'viertelpunkt'], ['punkt. Halbe', 'halbepunkt'], ['Viertel-Triole', 'vierteltriole']];
   B({ type: 'niton_init', parts: ['NITon-Lautsprecher an Pin', { f: 'PIN', d: 15, lo: 0, hi: 40 }, 'Tempo', { f: 'GESCHW', d: 80, lo: 20, hi: 400 }, 'Legato', { f: 'LEGATO', d: 95, lo: 0, hi: 100 }],
-      defs: [['from_nitbw_niton', 'from nitbw_niton import NITon, c, d, e, f, g, a, h, c2, viertel, halbe, vi, ha, triole'],
+      defs: [['from_nitbw_niton', 'from nitbw_niton import NITon, c, d, e, f, g, a, h, c2, viertel, achtel, halbe, ganze, viertelpunkt, halbepunkt, vierteltriole'],
              ['inst_niton', 'niton = NITon(%PIN%, geschwindigkeit=%GESCHW%, legato=%LEGATO%)']],
       tip: 'Töne mit Notenkonstanten (NITon).' });
   B({ type: 'niton_ton', parts: ['NITon spiele Note', { sel: 'NOTE', o: NOTEN }, 'Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.ton(%NOTE%, %DAUER%)' });
-  B({ type: 'niton_pause', parts: ['NITon Pause Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.pause(%DAUER%)' });
+  B({ type: 'niton_pause', parts: ['NITon Pause Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.ton(0, %DAUER%)' });
   B({ type: 'niton_tempo', parts: ['NITon Tempo (BPM)', { f: 'BPM', d: 120, lo: 20, hi: 400 }], code: 'niton.setGeschw(%BPM%)' });
 
   // ════════════════════════ MPU6050 (Lage/Bewegung, I2C) ══════════════
