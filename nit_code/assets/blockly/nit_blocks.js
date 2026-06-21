@@ -1,15 +1,23 @@
 /* NIT-eigene Blöcke + Python/MicroPython-Generatoren.
  *
  * Die Code-Erzeugung folgt den Konventionen des NIT-Codegenerators
- * (siehe coder_panel.py CODER_SYSTEM_PROMPT):
- *   - Importe immer als "from ... import ..."
- *   - Warten über "from time import sleep" / "from time import sleep_ms"
- *   - ADC: 10-Bit-Auflösung (WIDTH_10BIT) + volle Bandbreite (ATTN_11DB)
- *   - NeoPixel: from neopixel import NeoPixel, np[i] = (r,g,b), np.write()
- *   - keine main()/__main__-Konstruktion, Code beginnt direkt
+ * (siehe coder_panel.py CODER_SYSTEM_PROMPT) UND einem festen Aufbau:
+ *   1. Bibliotheken einbinden   (from ... import ...)
+ *   2. Instanzen definieren      (Pin/ADC/DAC/PWM/NeoPixel – EINMALIG, nicht in der Schleife)
+ *   3. Variablen definieren
+ *   4. Funktionen definieren
+ *   5. Hauptprogramm
+ *
+ * Hardware-Objekte werden deshalb nicht inline im Hauptprogramm erzeugt,
+ * sondern über definitions_ (mit Schlüssel-Präfix "inst_") in den
+ * Instanz-Abschnitt gehoben. Die finish()-Überschreibung sortiert die
+ * Abschnitte in die obige Reihenfolge.
  */
 (function () {
   var P = Blockly.Python;
+
+  // 4 Leerzeichen Einrückung wie in Standard-Python (statt Blockly-Default 2)
+  P.INDENT = '    ';
 
   // Order-Konstante versionsrobust (neu: .Order.X, alt: .ORDER_X)
   function ord(name) {
@@ -25,6 +33,56 @@
   var FDrop = Blockly.FieldDropdown;
   var NIT_COLOUR = 20;
   var PIN_COLOUR = 200;
+
+  // ── finish() überschreiben: feste Abschnitts-Reihenfolge ──────────────────
+  var _origFinish = P.finish;
+  P.finish = function (code) {
+    var imports = [], instances = [], variables = [], functions = [], rest = [];
+    for (var key in this.definitions_) {
+      var def = this.definitions_[key];
+      if (/^(from |import )/.test(def)) imports.push(def);
+      else if (/^def /.test(def)) functions.push(def);
+      else if (key.indexOf('inst_') === 0) instances.push(def);
+      else if (key.indexOf('var_') === 0 || key === 'variables') variables.push(def);
+      else rest.push(def);
+    }
+    // Mehrfache "from MODUL import ..." zu je einer Zeile pro Modul zusammenfassen
+    imports = (function (lines) {
+      var fromMods = {}, order = [], plain = [];
+      lines.forEach(function (line) {
+        var m = /^from (\S+) import (.+)$/.exec(line);
+        if (m) {
+          if (!fromMods[m[1]]) { fromMods[m[1]] = {}; order.push(m[1]); }
+          m[2].split(',').forEach(function (n) { fromMods[m[1]][n.trim()] = true; });
+        } else if (plain.indexOf(line) === -1) {
+          plain.push(line);
+        }
+      });
+      var out = order.map(function (mod) {
+        return 'from ' + mod + ' import ' + Object.keys(fromMods[mod]).sort().join(', ');
+      });
+      return out.concat(plain);
+    })(imports);
+
+    // definitions_ leeren, damit die Original-finish nichts doppelt anhängt;
+    // sie übernimmt aber weiterhin die Zustands-/nameDB-Bereinigung.
+    this.definitions_ = Object.create(null);
+    var mainOnly;
+    try {
+      mainOnly = _origFinish.call(this, code).replace(/^\s+/, '');
+    } catch (e) {
+      mainOnly = code;
+    }
+    var blocks = [];
+    if (imports.length)   blocks.push(imports.join('\n'));
+    if (instances.length) blocks.push(instances.join('\n'));
+    if (variables.length) blocks.push(variables.join('\n'));
+    if (rest.length)      blocks.push(rest.join('\n\n'));
+    if (functions.length) blocks.push(functions.join('\n\n'));
+    var head = blocks.join('\n\n');
+    var out = head ? head + '\n\n' + mainOnly : mainOnly;
+    return out.replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
+  };
 
   // ── Warten ────────────────────────────────────────────────────────────────
   Blockly.Blocks['nit_warte'] = {
@@ -79,7 +137,8 @@
     var pin = block.getFieldValue('PIN');
     var val = block.getFieldValue('VAL');
     P.definitions_['from_machine_pin'] = 'from machine import Pin';
-    return 'Pin(' + pin + ', Pin.OUT).value(' + val + ')\n';
+    P.definitions_['inst_pin_out_' + pin] = 'pin_out_' + pin + ' = Pin(' + pin + ', Pin.OUT)';
+    return 'pin_out_' + pin + '.value(' + val + ')\n';
   });
 
   // ── Digitaler Eingang ─────────────────────────────────────────────────────
@@ -96,7 +155,8 @@
   reg('nit_pin_read', function (block) {
     var pin = block.getFieldValue('PIN');
     P.definitions_['from_machine_pin'] = 'from machine import Pin';
-    return ['Pin(' + pin + ', Pin.IN).value()', ord('FUNCTION_CALL')];
+    P.definitions_['inst_pin_in_' + pin] = 'pin_in_' + pin + ' = Pin(' + pin + ', Pin.IN)';
+    return ['pin_in_' + pin + '.value()', ord('FUNCTION_CALL')];
   });
 
   // ── Analoger Eingang (ADC) ────────────────────────────────────────────────
@@ -113,14 +173,11 @@
   reg('nit_adc_read', function (block) {
     var pin = block.getFieldValue('PIN');
     P.definitions_['from_machine_adc'] = 'from machine import ADC, Pin';
-    var fn = P.provideFunction_('lies_adc', [
-      'def ' + P.FUNCTION_NAME_PLACEHOLDER_ + '(pin):',
-      '    adc = ADC(Pin(pin))',
-      '    adc.width(ADC.WIDTH_10BIT)',
-      '    adc.atten(ADC.ATTN_11DB)',
-      '    return adc.read()'
-    ]);
-    return [fn + '(' + pin + ')', ord('FUNCTION_CALL')];
+    P.definitions_['inst_adc_' + pin] =
+      'adc_' + pin + ' = ADC(Pin(' + pin + '))\n' +
+      'adc_' + pin + '.width(ADC.WIDTH_10BIT)\n' +
+      'adc_' + pin + '.atten(ADC.ATTN_11DB)';
+    return ['adc_' + pin + '.read()', ord('FUNCTION_CALL')];
   });
 
   // ── Analoger Ausgang (DAC) ────────────────────────────────────────────────
@@ -141,7 +198,8 @@
     var pin = block.getFieldValue('PIN');
     var wert = P.valueToCode(block, 'WERT', ord('NONE')) || '0';
     P.definitions_['from_machine_dac'] = 'from machine import DAC, Pin';
-    return 'DAC(Pin(' + pin + ')).write(' + wert + ')\n';
+    P.definitions_['inst_dac_' + pin] = 'dac_' + pin + ' = DAC(Pin(' + pin + '))';
+    return 'dac_' + pin + '.write(' + wert + ')\n';
   });
 
   // ── PWM (z. B. Helligkeit/Motor) ──────────────────────────────────────────
@@ -165,7 +223,8 @@
     var freq = block.getFieldValue('FREQ');
     var duty = P.valueToCode(block, 'DUTY', ord('NONE')) || '0';
     P.definitions_['from_machine_pwm'] = 'from machine import Pin, PWM';
-    return 'PWM(Pin(' + pin + '), freq=' + freq + ', duty=' + duty + ')\n';
+    P.definitions_['inst_pwm_' + pin] = 'pwm_' + pin + ' = PWM(Pin(' + pin + '), freq=' + freq + ')';
+    return 'pwm_' + pin + '.duty(' + duty + ')\n';
   });
 
   // ── NeoPixel ──────────────────────────────────────────────────────────────
@@ -179,7 +238,7 @@
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(NIT_COLOUR);
-      this.setTooltip('Richtet den NeoPixel-Streifen ein (Variable np).');
+      this.setTooltip('Richtet den NeoPixel-Streifen ein (Variable np, einmalig oben).');
     }
   };
   reg('nit_neopixel_init', function (block) {
@@ -187,7 +246,8 @@
     var num = block.getFieldValue('NUM');
     P.definitions_['from_machine_pin'] = 'from machine import Pin';
     P.definitions_['from_neopixel'] = 'from neopixel import NeoPixel';
-    return 'np = NeoPixel(Pin(' + pin + '), ' + num + ')\n';
+    P.definitions_['inst_np'] = 'np = NeoPixel(Pin(' + pin + '), ' + num + ')';
+    return '';   // Instanz steht oben – kein Code im Hauptprogramm
   });
 
   Blockly.Blocks['nit_neopixel_set'] = {
@@ -201,7 +261,7 @@
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(NIT_COLOUR);
-      this.setTooltip('Setzt die Farbe einer einzelnen LED (noch nicht sichtbar – erst "anzeigen").');
+      this.setTooltip('Setzt die Farbe einer einzelnen LED (erst "anzeigen" macht es sichtbar).');
     }
   };
   reg('nit_neopixel_set', function (block) {
