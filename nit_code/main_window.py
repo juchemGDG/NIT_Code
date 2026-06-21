@@ -1175,16 +1175,25 @@ class MainWindow(QMainWindow):
         win.activateWindow()
 
     def _insert_block_code(self, code: str):
-        """Erzeugten Block-Code in einen neuen Editor-Tab schreiben.
+        """Erzeugten Block-Code in den Editor schreiben.
 
-        Konvention (wie KI-Codegenerator): KEINE Kommentare im erzeugten Code –
-        Kommentieren ist Aufgabe der Schülerinnen und Schüler.
+        Wurde dasselbe Block-Programm bereits einmal umgewandelt, wird der
+        bestehende Tab aktualisiert statt ein neuer geöffnet. Konvention (wie
+        KI-Codegenerator): KEINE Kommentare im erzeugten Code – das Kommentieren
+        ist Aufgabe der Schülerinnen und Schüler.
         """
-        tab = self._new_tab()
-        tab.editor.set_text(code)
+        existing = getattr(self, "_block_tab", None)
+        if existing is not None and existing in self._tabs:
+            existing.editor.set_text(code)
+            self._tab_widget.setCurrentWidget(existing.editor)
+            self._console.append_info("🧩  Block-Code aktualisiert.\n")
+        else:
+            tab = self._new_tab()
+            tab.editor.set_text(code)
+            self._block_tab = tab
+            self._console.append_info("🧩  Block-Code in neuen Tab übernommen.\n")
         self.raise_()
         self.activateWindow()
-        self._console.append_info("🧩  Block-Code in neuen Tab übernommen.\n")
 
     def _run_program(self):
         tab = self._current_tab()

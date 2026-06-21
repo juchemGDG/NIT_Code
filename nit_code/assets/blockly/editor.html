@@ -9,6 +9,7 @@
   <script src="python_compressed.js"></script>
   <script src="de.js"></script>
   <script src="nit_blocks.js"></script>
+  <script src="nitbw_blocks.js"></script>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
                  font-family: 'Segoe UI', system-ui, sans-serif; }
@@ -112,6 +113,100 @@
       </block>
       <block type="nit_neopixel_fill"></block>
       <block type="nit_neopixel_show"></block>
+    </category>
+    <category name="nitbw-Bibliotheken" colour="290">
+      <category name="OLED-Display" colour="290">
+        <block type="oled_init"></block>
+        <block type="oled_clear"></block>
+        <block type="oled_print"><value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
+        <block type="oled_show"></block>
+        <block type="oled_line"></block>
+        <block type="oled_rect"></block>
+        <block type="oled_circle"></block>
+      </category>
+      <category name="LCD-Display" colour="290">
+        <block type="lcd_init"></block>
+        <block type="lcd_print"><value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
+        <block type="lcd_clear"></block>
+      </category>
+      <category name="Töne" colour="290">
+        <block type="toene_init"></block>
+        <block type="toene_ton"></block>
+        <block type="toene_stop"></block>
+      </category>
+      <category name="Ultraschall" colour="290">
+        <block type="us_init"></block>
+        <block type="us_cm"></block>
+        <block type="us_mm"></block>
+      </category>
+      <category name="Servo" colour="290">
+        <block type="servo_init"></block>
+        <block type="servo_winkel"><value name="GRAD"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
+        <block type="servo_mitte"></block>
+        <block type="servo_lese"></block>
+        <block type="servo_aus"></block>
+      </category>
+      <category name="Schrittmotor" colour="290">
+        <block type="stepperdir_init"></block>
+        <block type="stepperdir_schritte"><value name="N"><shadow type="math_number"><field name="NUM">200</field></shadow></value></block>
+        <block type="stepperdir_winkel"><value name="GRAD"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
+        <block type="stepperdir_aus"></block>
+        <block type="stepperuln_init"></block>
+        <block type="stepperuln_umdr"><value name="N"><shadow type="math_number"><field name="NUM">1</field></shadow></value></block>
+      </category>
+      <category name="Temperatur" colour="290">
+        <block type="ds18b20_init"></block>
+        <block type="ds18b20_messen"></block>
+        <block type="dht_init"></block>
+        <block type="dht_measure"></block>
+        <block type="dht_temp"></block>
+        <block type="dht_hum"></block>
+        <block type="bme280_init"></block>
+        <block type="bme280_read"></block>
+        <block type="bme280_temp"></block>
+        <block type="bme280_druck"></block>
+        <block type="bme280_feuchte"></block>
+      </category>
+      <category name="Abstand/Licht/Farbe" colour="290">
+        <block type="tof_init"></block>
+        <block type="tof_mm"></block>
+        <block type="tof_cm"></block>
+        <block type="tcs_init"></block>
+        <block type="tcs_farbe"></block>
+        <block type="as7262_init"></block>
+        <block type="as7262_messen"></block>
+        <block type="puls_init"></block>
+        <block type="puls_lesen"></block>
+      </category>
+      <category name="Joystick" colour="290">
+        <block type="joy_init"></block>
+        <block type="joy_lesen"></block>
+        <block type="joy_x"></block>
+        <block type="joy_y"></block>
+        <block type="joy_sw"></block>
+        <block type="joy_richtung"></block>
+      </category>
+      <category name="Uhr / Kompass" colour="290">
+        <block type="rtc_init"></block>
+        <block type="rtc_string"></block>
+        <block type="compass_init"></block>
+        <block type="compass_heading"></block>
+      </category>
+      <category name="Funk (ESP-NOW / MQTT)" colour="290">
+        <block type="espnow_init"></block>
+        <block type="espnow_peer"></block>
+        <block type="espnow_send"><value name="MSG"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
+        <block type="mqtt_init"></block>
+        <block type="mqtt_connect"></block>
+        <block type="mqtt_publish"><value name="WERT"><shadow type="text"><field name="TEXT">wert</field></shadow></value></block>
+        <block type="mqtt_check"></block>
+      </category>
+      <category name="Maschinelles Lernen" colour="290">
+        <block type="mlearn_init"></block>
+        <block type="mlearn_load"></block>
+        <block type="mlearn_train"></block>
+        <block type="mlearn_predict"></block>
+      </category>
     </category>
   </xml>
 

@@ -1,0 +1,227 @@
+/* Blöcke für die nitbw-Bibliotheken (ESP32/MicroPython).
+ *
+ * Die erzeugten Code-Schablonen folgen exakt der API aus
+ * coder_panel.py (CODER_SYSTEM_PROMPT). Instanzen werden über definitions_
+ * (Schlüssel "inst_*") angelegt und landen so – dank des finish()-Overrides in
+ * nit_blocks.js – im Abschnitt "Instanzen", nicht im Hauptprogramm.
+ *
+ * Eine kleine DSL (B(spec)) hält die vielen Blöcke kompakt.
+ */
+(function () {
+  var P = Blockly.Python;
+  function ord(name) {
+    if (P.Order && P.Order[name] !== undefined) return P.Order[name];
+    if (P['ORDER_' + name] !== undefined) return P['ORDER_' + name];
+    return 99;
+  }
+  var FNum = Blockly.FieldNumber, FDrop = Blockly.FieldDropdown, FText = Blockly.FieldTextInput;
+  var LIB = 290;   // Farbe nitbw-Bibliotheken
+
+  // I2C-Bus (von OLED/LCD/BME280/TOF/RTC/AS7262/Compass gemeinsam genutzt)
+  var I2C_DEFS = [
+    ['from_machine_i2c', 'from machine import I2C, Pin'],
+    ['inst_i2c', 'i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=400000)']
+  ];
+
+  function subst(tpl, block) {
+    return tpl.replace(/%(\w+)%/g, function (_, name) {
+      if (block.getInput(name)) return P.valueToCode(block, name, ord('NONE')) || '0';
+      var v = block.getFieldValue(name);
+      return v == null ? '' : v;
+    });
+  }
+
+  function buildBlock(b, spec) {
+    b.setColour(spec.colour || LIB);
+    if (spec.tip) b.setTooltip(spec.tip);
+    var pending = [];
+    function flush(input) { pending.forEach(function (f) { input.appendField(f[0], f[1]); }); pending = []; }
+    (spec.parts || []).forEach(function (p) {
+      if (typeof p === 'string') pending.push([p]);
+      else if (p.f !== undefined) pending.push([new FNum(p.d != null ? p.d : 0, p.lo, p.hi), p.f]);
+      else if (p.sel !== undefined) pending.push([new FDrop(p.o), p.sel]);
+      else if (p.txt !== undefined) pending.push([new FText(String(p.d != null ? p.d : '')), p.txt]);
+      else if (p.v !== undefined) { var inp = b.appendValueInput(p.v); if (p.c) inp.setCheck(p.c); flush(inp); }
+    });
+    if (pending.length) flush(b.appendDummyInput());
+    b.setInputsInline(true);
+    if (spec.out) b.setOutput(true, spec.out === true ? null : spec.out);
+    else { b.setPreviousStatement(true, null); b.setNextStatement(true, null); }
+  }
+
+  function B(spec) {
+    Blockly.Blocks[spec.type] = { init: function () { buildBlock(this, spec); } };
+    var fn = function (block) {
+      (spec.defs || []).forEach(function (d) { P.definitions_[d[0]] = subst(d[1], block); });
+      var code = spec.code != null ? subst(spec.code, block) : '';
+      if (spec.out) return [code, ord(spec.outOrder || 'FUNCTION_CALL')];
+      return code ? code + '\n' : '';
+    };
+    if (P.forBlock) P.forBlock[spec.type] = fn;
+    P[spec.type] = fn;
+  }
+
+  // ════════════════════════ OLED-Display (I2C) ════════════════════════
+  var OLED_INIT = [['from_nitbw_oled', 'from nitbw_oled import OLED']].concat(I2C_DEFS)
+    .concat([['inst_oled', "oled = OLED(i2c, chip='%CHIP%')"]]);
+  B({ type: 'oled_init', parts: ['OLED-Display Chip', { sel: 'CHIP', o: [['SSD1306', 'ssd1306'], ['SH1106', 'sh1106']] }],
+      defs: OLED_INIT, tip: 'Richtet ein OLED-Display am I2C-Bus ein.' });
+  B({ type: 'oled_clear', parts: ['OLED löschen'], code: 'oled.clear()' });
+  B({ type: 'oled_print', parts: ['OLED schreibe', { v: 'TEXT' }, 'bei x', { f: 'X', d: 0, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 0, lo: 0, hi: 63 }],
+      code: 'oled.print(%TEXT%, %X%, %Y%)' });
+  B({ type: 'oled_show', parts: ['OLED anzeigen'], code: 'oled.show()' });
+  B({ type: 'oled_line', parts: ['OLED Linie x1', { f: 'X1', d: 0, lo: 0, hi: 127 }, 'y1', { f: 'Y1', d: 0, lo: 0, hi: 63 }, 'x2', { f: 'X2', d: 20, lo: 0, hi: 127 }, 'y2', { f: 'Y2', d: 20, lo: 0, hi: 63 }],
+      code: 'oled.line(%X1%, %Y1%, %X2%, %Y2%)' });
+  B({ type: 'oled_rect', parts: ['OLED Rechteck x', { f: 'X', d: 0, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 0, lo: 0, hi: 63 }, 'b', { f: 'W', d: 20, lo: 1, hi: 128 }, 'h', { f: 'H', d: 10, lo: 1, hi: 64 }],
+      code: 'oled.rect(%X%, %Y%, %W%, %H%)' });
+  B({ type: 'oled_circle', parts: ['OLED Kreis x', { f: 'X', d: 64, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 32, lo: 0, hi: 63 }, 'r', { f: 'R', d: 10, lo: 1, hi: 64 }],
+      code: 'oled.draw_circle(%X%, %Y%, %R%)' });
+
+  // ════════════════════════ LCD-Display (I2C) ═════════════════════════
+  B({ type: 'lcd_init', parts: ['LCD-Display Adresse', { txt: 'ADDR', d: '0x27' }],
+      defs: [['from_nitbw_lcd', 'from nitbw_lcd import LCD']].concat(I2C_DEFS).concat([['inst_lcd', 'lcd = LCD(i2c, addr=%ADDR%)']]),
+      tip: 'Richtet ein LCD-Display (HD44780/PCF8574) am I2C-Bus ein.' });
+  B({ type: 'lcd_print', parts: ['LCD schreibe', { v: 'TEXT' }, 'Spalte', { f: 'SP', d: 0, lo: 0, hi: 19 }, 'Zeile', { f: 'ZE', d: 0, lo: 0, hi: 3 }],
+      code: 'lcd.print(%TEXT%, %SP%, %ZE%)' });
+  B({ type: 'lcd_clear', parts: ['LCD löschen'], code: 'lcd.clear()' });
+
+  // ════════════════════════ Töne (Piezo) ══════════════════════════════
+  B({ type: 'toene_init', parts: ['Lautsprecher an Pin', { f: 'PIN', d: 15, lo: 0, hi: 40 }, 'Tempo', { f: 'GESCHW', d: 60, lo: 20, hi: 400 }],
+      defs: [['from_nitbw_toene', 'from nitbw_toene import TOENE'], ['from_machine_pin', 'from machine import Pin'],
+             ['inst_speaker', 'speaker = TOENE(Pin(%PIN%), geschwindigkeit=%GESCHW%)']],
+      tip: 'Richtet einen passiven Piezo-Lautsprecher ein.' });
+  B({ type: 'toene_ton', parts: ['spiele Note', { txt: 'NOTE', d: 'C4' }, 'Dauer', { sel: 'DAUER', o: [['Ganze', '1'], ['Halbe', '1/2'], ['Viertel', '1/4'], ['Achtel', '1/8'], ['Pause', 'P'] ] }],
+      code: 'speaker.ton(("%NOTE%", %DAUER%))' });
+  B({ type: 'toene_stop', parts: ['Ton stoppen'], code: 'speaker.stop()' });
+
+  // ════════════════════════ Ultraschall HC-SR04 ═══════════════════════
+  B({ type: 'us_init', parts: ['Ultraschall Trigger Pin', { f: 'TRIG', d: 5, lo: 0, hi: 40 }, 'Echo Pin', { f: 'ECHO', d: 18, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_ultraschall', 'from nitbw_ultraschall import Ultraschall'],
+             ['inst_ultraschall', 'ultraschall = Ultraschall(trigger=%TRIG%, echo=%ECHO%)']],
+      tip: 'Richtet einen HC-SR04 Ultraschallsensor ein.' });
+  B({ type: 'us_cm', parts: ['Abstand in cm'], out: 'Number', code: 'ultraschall.messen_cm()' });
+  B({ type: 'us_mm', parts: ['Abstand in mm'], out: 'Number', code: 'ultraschall.messen_mm()' });
+
+  // ════════════════════════ Servo ═════════════════════════════════════
+  B({ type: 'servo_init', parts: ['Servo an Pin', { f: 'PIN', d: 13, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_servo', 'from nitbw_servo import Servo'], ['inst_servo', 'servo = Servo(pin=%PIN%)']],
+      tip: 'Richtet einen Servomotor ein.' });
+  B({ type: 'servo_winkel', parts: ['Servo Winkel', { v: 'GRAD', c: 'Number' }, 'Grad'], code: 'servo.winkel(%GRAD%)' });
+  B({ type: 'servo_mitte', parts: ['Servo Mittelstellung'], code: 'servo.mitte()' });
+  B({ type: 'servo_aus', parts: ['Servo aus'], code: 'servo.aus()' });
+  B({ type: 'servo_lese', parts: ['Servo Winkel lesen'], out: 'Number', code: 'servo.lese_winkel()' });
+
+  // ════════════════════════ Schrittmotor NEMA17 (A4988) ═══════════════
+  B({ type: 'stepperdir_init', parts: ['Schrittmotor (A4988) step', { f: 'STEP', d: 14, lo: 0, hi: 40 }, 'dir', { f: 'DIR', d: 27, lo: 0, hi: 40 }, 'enable', { f: 'EN', d: 26, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_stepper', 'from nitbw_stepper import StepperDir, VOR, ZURUECK'],
+             ['inst_motor', 'motor = StepperDir(step_pin=%STEP%, dir_pin=%DIR%, enable_pin=%EN%, schritte_pro_umdrehung=200, geschwindigkeit=400)']],
+      tip: 'Schrittmotor NEMA17 mit A4988/DRV8825.' });
+  B({ type: 'stepperdir_schritte', parts: ['Motor Schritte', { v: 'N', c: 'Number' }, { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.schritte(%N%, %RICHT%)' });
+  B({ type: 'stepperdir_winkel', parts: ['Motor Winkel', { v: 'GRAD', c: 'Number' }, 'Grad', { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.winkel(%GRAD%, %RICHT%)' });
+  B({ type: 'stepperdir_aus', parts: ['Motor aus'], code: 'motor.aus()' });
+
+  // ════════════════════════ Schrittmotor 28BYJ-48 (ULN2003) ═══════════
+  B({ type: 'stepperuln_init', parts: ['Schrittmotor (ULN2003) IN1', { f: 'I1', d: 19, lo: 0, hi: 40 }, 'IN2', { f: 'I2', d: 18, lo: 0, hi: 40 }, 'IN3', { f: 'I3', d: 5, lo: 0, hi: 40 }, 'IN4', { f: 'I4', d: 17, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_stepper2', 'from nitbw_stepper import StepperULN, VOR, ZURUECK'],
+             ['inst_motor', 'motor = StepperULN(pins=[%I1%, %I2%, %I3%, %I4%], geschwindigkeit=800)']],
+      tip: 'Schrittmotor 28BYJ-48 mit ULN2003.' });
+  B({ type: 'stepperuln_umdr', parts: ['Motor Umdrehungen', { v: 'N', c: 'Number' }, { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.umdrehungen(%N%, %RICHT%)' });
+
+  // ════════════════════════ Temperatur DS18B20 ════════════════════════
+  B({ type: 'ds18b20_init', parts: ['DS18B20 an Pin', { f: 'PIN', d: 4, lo: 0, hi: 40 }],
+      defs: [['from_machine_pin', 'from machine import Pin'], ['from_nitbw_ds18b20', 'from nitbw_ds18b20 import DS18B20'],
+             ['inst_ds18b20', 'ds18b20 = DS18B20(Pin(%PIN%))']],
+      tip: 'Temperatursensor DS18B20 (OneWire).' });
+  B({ type: 'ds18b20_messen', parts: ['Temperatur (DS18B20)'], out: 'Number', code: 'ds18b20.messen()' });
+
+  // ════════════════════════ DHT22 (Temp + Feuchte) ════════════════════
+  B({ type: 'dht_init', parts: ['DHT22 an Pin', { f: 'PIN', d: 15, lo: 0, hi: 40 }],
+      defs: [['from_machine_pin', 'from machine import Pin'], ['from_dht', 'from dht import DHT22'],
+             ['inst_dht', 'dht = DHT22(Pin(%PIN%))']],
+      tip: 'Temperatur-/Feuchtesensor DHT22.' });
+  B({ type: 'dht_measure', parts: ['DHT22 messen'], code: 'dht.measure()' });
+  B({ type: 'dht_temp', parts: ['Temperatur (DHT22)'], out: 'Number', code: 'dht.temperature()' });
+  B({ type: 'dht_hum', parts: ['Feuchte (DHT22)'], out: 'Number', code: 'dht.humidity()' });
+
+  // ════════════════════════ BME280 (Temp/Druck/Feuchte) ═══════════════
+  B({ type: 'bme280_init', parts: ['BME280 einrichten'],
+      defs: [['from_nitbw_bme280', 'from nitbw_bme280 import BME280']].concat(I2C_DEFS).concat([['inst_bme280', 'bme280 = BME280(i2c)']]),
+      tip: 'Sensor BME280 am I2C-Bus.' });
+  B({ type: 'bme280_read', parts: ['BME280 messen'], code: 'temperatur, druck, feuchtigkeit = bme280.read_all()' });
+  B({ type: 'bme280_temp', parts: ['Temperatur (BME280)'], out: 'Number', outOrder: 'ATOMIC', code: 'temperatur' });
+  B({ type: 'bme280_druck', parts: ['Druck (BME280)'], out: 'Number', outOrder: 'ATOMIC', code: 'druck' });
+  B({ type: 'bme280_feuchte', parts: ['Feuchte (BME280)'], out: 'Number', outOrder: 'ATOMIC', code: 'feuchtigkeit' });
+
+  // ════════════════════════ Pulssensor (ADC) ══════════════════════════
+  B({ type: 'puls_init', parts: ['Pulssensor an ADC-Pin', { f: 'PIN', d: 34, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_puls', 'from nitbw_puls import Pulssensor'], ['inst_puls', 'puls = Pulssensor(adc_pin=%PIN%)']],
+      tip: 'Analoger Pulssensor.' });
+  B({ type: 'puls_lesen', parts: ['Puls (Mittelwert)'], out: 'Number', code: 'puls.lesen_roh_mittelwert(samples=8, pause_ms=2)' });
+
+  // ════════════════════════ Farbsensor TCS3200 ════════════════════════
+  B({ type: 'tcs_init', parts: ['Farbsensor out', { f: 'OUT', d: 27, lo: 0, hi: 40 }, 's2', { f: 'S2', d: 14, lo: 0, hi: 40 }, 's3', { f: 'S3', d: 12, lo: 0, hi: 40 }, 's0', { f: 'S0', d: 26, lo: 0, hi: 40 }, 's1', { f: 'S1', d: 25, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_tcs3200', 'from nitbw_tcs3200 import TCS3200'],
+             ['inst_farbsensor', 'farbsensor = TCS3200(out=%OUT%, s2=%S2%, s3=%S3%, s0=%S0%, s1=%S1%)']],
+      tip: 'Farbsensor TCS3200.' });
+  B({ type: 'tcs_farbe', parts: ['dominante Farbe'], out: 'String', code: 'farbsensor.dominante_farbe(messungen=8)' });
+
+  // ════════════════════════ TOF VL53L0X (I2C) ═════════════════════════
+  B({ type: 'tof_init', parts: ['TOF-Sensor einrichten'],
+      defs: [['from_nitbw_tof', 'from nitbw_tof import TOF']].concat(I2C_DEFS).concat([['inst_tof', 'tof = TOF(i2c)']]),
+      tip: 'Abstandssensor VL53L0X am I2C-Bus.' });
+  B({ type: 'tof_mm', parts: ['Abstand TOF in mm'], out: 'Number', code: 'tof.messen_mm()' });
+  B({ type: 'tof_cm', parts: ['Abstand TOF in cm'], out: 'Number', code: 'tof.messen_cm()' });
+
+  // ════════════════════════ Joystick KY-023 ═══════════════════════════
+  B({ type: 'joy_init', parts: ['Joystick VRx', { f: 'VRX', d: 34, lo: 0, hi: 40 }, 'VRy', { f: 'VRY', d: 35, lo: 0, hi: 40 }, 'SW', { f: 'SW', d: 32, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_ky023', 'from nitbw_ky023 import KY023'],
+             ['inst_joystick', 'joystick = KY023(vrx_pin=%VRX%, vry_pin=%VRY%, sw_pin=%SW%)']],
+      tip: 'Joystick KY-023.' });
+  B({ type: 'joy_lesen', parts: ['Joystick lesen'], code: 'd = joystick.daten()' });
+  B({ type: 'joy_x', parts: ['Joystick x'], out: 'Number', outOrder: 'ATOMIC', code: "d['x']" });
+  B({ type: 'joy_y', parts: ['Joystick y'], out: 'Number', outOrder: 'ATOMIC', code: "d['y']" });
+  B({ type: 'joy_sw', parts: ['Joystick Taster'], out: 'Boolean', outOrder: 'ATOMIC', code: "d['sw']" });
+  B({ type: 'joy_richtung', parts: ['Joystick Richtung'], out: 'String', outOrder: 'ATOMIC', code: "d['richtung']" });
+
+  // ════════════════════════ RTC (I2C) ═════════════════════════════════
+  B({ type: 'rtc_init', parts: ['Uhr (RTC)', { sel: 'CHIP', o: [['DS3231', 'DS3231'], ['DS1307', 'DS1307']] }],
+      defs: [['from_nitbw_rtc', 'from nitbw_rtc import RTC']].concat(I2C_DEFS).concat([['inst_rtc', "rtc = RTC(chip='%CHIP%', i2c=i2c)"]]),
+      tip: 'Echtzeituhr DS3231/DS1307.' });
+  B({ type: 'rtc_string', parts: ['Uhrzeit als Text', { txt: 'FORMAT', d: 'DD.MM.YYYY hh:mm:ss' }], out: 'String', code: 'rtc.toString("%FORMAT%")' });
+
+  // ════════════════════════ Kompass (I2C) ═════════════════════════════
+  B({ type: 'compass_init', parts: ['Kompass einrichten'],
+      defs: [['from_nitbw_compass', 'from nitbw_compass import Compass']].concat(I2C_DEFS).concat([['inst_kompass', 'kompass = Compass(i2c)']]),
+      tip: 'Kompass / Magnetometer.' });
+  B({ type: 'compass_heading', parts: ['Richtung (Grad)'], out: 'Number', code: 'kompass.heading()' });
+
+  // ════════════════════════ Spektralsensor AS7262 (I2C) ═══════════════
+  B({ type: 'as7262_init', parts: ['Spektralsensor einrichten'],
+      defs: [['from_nitbw_as7262', 'from nitbw_as7262 import AS7262']].concat(I2C_DEFS).concat([['inst_spektral', 'spektral = AS7262(i2c)']]),
+      tip: 'Spektralsensor AS7262.' });
+  B({ type: 'as7262_messen', parts: ['Spektralwerte'], out: true, code: 'spektral.messen_rohwerte()' });
+
+  // ════════════════════════ ESP-NOW (Funk) ════════════════════════════
+  B({ type: 'espnow_init', parts: ['ESP-NOW einrichten'],
+      defs: [['from_nitbw_espnow', 'from nitbw_espnow import ESPNow'], ['inst_espnow', 'espnow = ESPNow()']],
+      tip: 'Funkverbindung zwischen zwei ESP32.' });
+  B({ type: 'espnow_peer', parts: ['ESP-NOW Empfänger', { txt: 'MAC', d: 'AA:BB:CC:DD:EE:FF' }], code: 'espnow.add_peer("%MAC%")' });
+  B({ type: 'espnow_send', parts: ['ESP-NOW sende an', { txt: 'MAC', d: 'AA:BB:CC:DD:EE:FF' }, 'Nachricht', { v: 'MSG' }], code: 'espnow.send("%MAC%", %MSG%)' });
+
+  // ════════════════════════ MQTT (WiFi) ═══════════════════════════════
+  B({ type: 'mqtt_init', parts: ['MQTT Broker', { txt: 'SERVER', d: '192.168.0.1' }, 'ID', { txt: 'ID', d: 'esp32' }],
+      defs: [['from_nitbw_mqtt', 'from nitbw_mqtt import MQTTClient'],
+             ['inst_mqtt', 'mqtt_client = MQTTClient(client_id=b"%ID%", server="%SERVER%", keepalive=30)']],
+      tip: 'MQTT-Client (Broker z. B. Raspberry Pi).' });
+  B({ type: 'mqtt_connect', parts: ['MQTT verbinden'], code: 'mqtt_client.connect()' });
+  B({ type: 'mqtt_publish', parts: ['MQTT sende Thema', { txt: 'TOPIC', d: 'nit/topic' }, 'Wert', { v: 'WERT' }], code: 'mqtt_client.publish(b"%TOPIC%", %WERT%)' });
+  B({ type: 'mqtt_check', parts: ['MQTT Nachrichten prüfen'], code: 'mqtt_client.check_msg()' });
+
+  // ════════════════════════ Maschinelles Lernen ═══════════════════════
+  B({ type: 'mlearn_init', parts: ['ML-Modell k =', { f: 'K', d: 3, lo: 1, hi: 50 }],
+      defs: [['from_nitbw_mlearn', 'from nitbw_mlearn import MLearn'], ['inst_model', 'model = MLearn(k=%K%)']],
+      tip: 'Maschinelles Lernen (kNN, Baum, …).' });
+  B({ type: 'mlearn_load', parts: ['ML lade Daten', { txt: 'DATEI', d: 'daten.csv' }], code: "model.load_csv('%DATEI%', separator=',', target=0)" });
+  B({ type: 'mlearn_train', parts: ['ML trainiere kNN'], code: 'model.train_knn()' });
+  B({ type: 'mlearn_predict', parts: ['ML Vorhersage für', { v: 'FEATURES' }], out: true, code: 'model.predict_knn(%FEATURES%)' });
+})();
