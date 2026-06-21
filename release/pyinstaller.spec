@@ -87,7 +87,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # 'cryptography' wird nur von espsecure (ESP-Secure-Boot-Signierung) benötigt,
+    # das NIT_Code nicht verwendet. Ihr Rust-Binärteil (_rust.abi3.so) wird von
+    # mehreren Virenscannern fälschlich als 'OSX/CrossC2' gemeldet (Fehlalarm).
+    # Ausschluss entfernt die Datei und damit den Fehlalarm – ohne Funktionsverlust.
+    excludes=['cryptography', 'espsecure', 'espefuse'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
