@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NIT Block-Editor</title>
+  <script src="blockly_compressed.js"></script>
+  <script src="blocks_compressed.js"></script>
+  <script src="python_compressed.js"></script>
+  <script src="de.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
+                 font-family: 'Segoe UI', system-ui, sans-serif; }
+    #blocklyDiv { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="blocklyDiv"></div>
+
+  <!-- Werkzeugkasten (Toolbox) -->
+  <xml id="toolbox" style="display: none">
+    <category name="Logik" colour="210">
+      <block type="controls_if"></block>
+      <block type="logic_compare"></block>
+      <block type="logic_operation"></block>
+      <block type="logic_negate"></block>
+      <block type="logic_boolean"></block>
+    </category>
+    <category name="Schleifen" colour="120">
+      <block type="controls_repeat_ext">
+        <value name="TIMES"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      </block>
+      <block type="controls_whileUntil"></block>
+      <block type="controls_for">
+        <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+        <value name="BY"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="controls_flow_statements"></block>
+    </category>
+    <category name="Mathematik" colour="230">
+      <block type="math_number"><field name="NUM">0</field></block>
+      <block type="math_arithmetic">
+        <value name="A"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="B"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="math_single">
+        <value name="NUM"><shadow type="math_number"><field name="NUM">9</field></shadow></value>
+      </block>
+      <block type="math_modulo">
+        <value name="DIVIDEND"><shadow type="math_number"><field name="NUM">64</field></shadow></value>
+        <value name="DIVISOR"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      </block>
+      <block type="math_random_int">
+        <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+      </block>
+    </category>
+    <category name="Text" colour="160">
+      <block type="text"></block>
+      <block type="text_print">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value>
+      </block>
+      <block type="text_join"></block>
+      <block type="text_length">
+        <value name="VALUE"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_prompt_ext">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Wie heißt du?</field></shadow></value>
+      </block>
+    </category>
+    <category name="Listen" colour="260">
+      <block type="lists_create_with"></block>
+      <block type="lists_length"></block>
+      <block type="lists_getIndex">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_setIndex">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+    </category>
+    <sep></sep>
+    <category name="Variablen" colour="330" custom="VARIABLE"></category>
+    <category name="Funktionen" colour="290" custom="PROCEDURE"></category>
+    <sep></sep>
+    <category name="NIT (Beispiel)" colour="20">
+      <block type="nit_warte">
+        <value name="SEK"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+    </category>
+  </xml>
+
+  <script>
+    // ── Beispiel für einen eigenen NIT-Block ────────────────────────────────
+    // Zeigt, wie spätere nitbw-Blöcke aussehen: eigener Block + Python-Generator.
+    Blockly.Blocks['nit_warte'] = {
+      init: function () {
+        this.appendValueInput('SEK').setCheck('Number').appendField('warte');
+        this.appendDummyInput().appendField('Sekunden');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(20);
+        this.setTooltip('Pausiert das Programm für die angegebene Zeit.');
+      }
+    };
+    // Order-Konstante versionsrobust ermitteln (neu: .Order.NONE, alt: .ORDER_NONE)
+    function _orderNone() {
+      var P = Blockly.Python;
+      if (P.Order && P.Order.NONE !== undefined) return P.Order.NONE;
+      if (P.ORDER_NONE !== undefined) return P.ORDER_NONE;
+      return 99; // Python-Generator: ORDER_NONE == 99
+    }
+    var _genWarte = function (block) {
+      var gen = Blockly.Python;
+      var sek = gen.valueToCode(block, 'SEK', _orderNone()) || '1';
+      gen.definitions_['import_time'] = 'import time';
+      return 'time.sleep(' + sek + ')\n';
+    };
+    // Neue (forBlock) und alte Generator-API absichern
+    if (Blockly.Python.forBlock) { Blockly.Python.forBlock['nit_warte'] = _genWarte; }
+    Blockly.Python['nit_warte'] = _genWarte;
+
+    // ── Workspace aufbauen ──────────────────────────────────────────────────
+    var workspace = Blockly.inject('blocklyDiv', {
+      toolbox: document.getElementById('toolbox'),
+      renderer: 'zelos',
+      trashcan: true,
+      grid: { spacing: 22, length: 3, colour: '#e6e6ee', snap: true },
+      zoom: { controls: true, wheel: true, startScale: 0.95, maxScale: 2, minScale: 0.4 },
+      move: { scrollbars: true, drag: true, wheel: true }
+    });
+
+    // ── Brücke zur App (wird von Python via runJavaScript aufgerufen) ────────
+    function getPython() {
+      try {
+        return Blockly.Python.workspaceToCode(workspace);
+      } catch (e) {
+        return '# Fehler bei der Code-Erzeugung: ' + e;
+      }
+    }
+    function getXml() {
+      var dom = Blockly.Xml.workspaceToDom(workspace);
+      return Blockly.Xml.domToText(dom);
+    }
+    function loadXml(text) {
+      try {
+        workspace.clear();
+        var dom = Blockly.Xml.textToDom(text);
+        Blockly.Xml.domToWorkspace(dom, workspace);
+        return true;
+      } catch (e) { return false; }
+    }
+    function clearWorkspace() { workspace.clear(); }
+  </script>
+</body>
+</html>

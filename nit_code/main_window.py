@@ -23,6 +23,7 @@ from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, pyth
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
+from .block_panel import BlockEditorWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
@@ -689,6 +690,10 @@ class MainWindow(QMainWindow):
         )
         self._act_upload.setVisible(False)
 
+        # ── Blöcke ──
+        m_blocks = mb.addMenu("Blöcke")
+        self._add_action(m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
+
         # ── Python ──
         self._m_python = mb.addMenu("Python")
         self._add_action(self._m_python, "📦  Pakete installieren (pip) …", self._open_pip_manager)
@@ -1157,6 +1162,27 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────
     # Programmausführung
     # ──────────────────────────────────────────────────────────────────────
+    # ── Block-Editor ──────────────────────────────────────────────────────
+    def _open_block_editor(self):
+        """Öffnet das Blockly-Extrafenster (einmalig, dann nach vorne holen)."""
+        win = getattr(self, "_block_window", None)
+        if win is None:
+            win = BlockEditorWindow(self)
+            win.code_generated.connect(self._insert_block_code)
+            self._block_window = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def _insert_block_code(self, code: str):
+        """Erzeugten Block-Code in einen neuen Editor-Tab schreiben."""
+        tab = self._new_tab()
+        header = "# Aus dem Block-Editor erzeugt – kann frei weiterbearbeitet werden\n\n"
+        tab.editor.set_text(header + code)
+        self.raise_()
+        self.activateWindow()
+        self._console.append_info("🧩  Block-Code in neuen Tab übernommen.\n")
+
     def _run_program(self):
         tab = self._current_tab()
         if not tab:
