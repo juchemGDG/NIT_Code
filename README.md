@@ -130,6 +130,10 @@ KI setzt **genau diesen** Algorithmus in Code um – ohne den Lösungsweg vorzug
 lokal über [Ollama](https://ollama.com). So bleibt das Algorithmen-Entwerfen Aufgabe der
 Lernenden, während die reine Umsetzung in Syntax unterstützt wird.
 
+> Mit **„🧩 Als Blöcke öffnen"** lässt sich der erzeugte Code zusätzlich im Block-Editor
+> als Blöcke anzeigen – ideal für den Übergang vom Block- zum Textprogrammieren. Die
+> Umwandlung ist deterministisch; nicht erkannte Zeilen bleiben als Roh-Python-Block erhalten.
+
 ---
 
 ## Git-Integration
