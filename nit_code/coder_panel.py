@@ -200,7 +200,7 @@ OLED-Display (SSD1306 / SH1106, I2C):
   oled = OLED(i2c, chip='ssd1306')   # chip='sh1106' fuer SH1106
   oled.print("Text", x, y)           # font='sans' unterstuetzt Umlaute
   oled.hline(x,y,l) / oled.vline(x,y,l) / oled.line(x1,y1,x2,y2)
-  oled.rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
+  oled.draw_rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
   oled.draw_circle(x,y,r) / oled.fill_circle(x,y,r)
   oled.show()   # nach jeder Zeichenoperation aufrufen
   oled.clear()
@@ -220,10 +220,10 @@ Toene – einfach (passiver Piezo):
 
 Toene – erweitert mit Notenkonstanten (NITon):
   from nitbw_niton import NITon, c, d, e, f, g, a, h, c2
-  from nitbw_niton import viertel, halbe, vi, ha
-  ton = NITon(pin=15, geschwindigkeit=80, legato=95)
+  from nitbw_niton import viertel, achtel, halbe, ganze, viertelpunkt, halbepunkt, vierteltriole
+  ton = NITon(15, geschwindigkeit=80, legato=95)   # erstes Argument positional (Pin)
   ton.ton(c, viertel)
-  ton.pause(viertel)
+  ton.ton(0, viertel)        # Pause/Rest (Hoehe 0); ton.pause(ms) erwartet Millisekunden
   ton.setGeschw(140) / ton.setLegato(90)
 
 Ultraschall HC-SR04:
@@ -248,7 +248,7 @@ Schrittmotor NEMA17 mit A4988/DRV8825 (StepperDir):
 
 Schrittmotor 28BYJ-48 mit ULN2003 (StepperULN):
   from nitbw_stepper import StepperULN, VOR, ZURUECK
-  motor = StepperULN(pins=[IN1, IN2, IN3, IN4], geschwindigkeit=800)
+  motor = StepperULN(IN1, IN2, IN3, IN4, geschwindigkeit=800)   # 4 Pins positional
   motor.schritte(n, VOR) / motor.umdrehungen(n, VOR) / motor.aus()
 
 Temperatur DS18B20 (OneWire):
@@ -314,12 +314,22 @@ MQTT (WiFi, Broker z.B. Raspberry Pi):
 Spektralsensor AS7262 (I2C):
   from nitbw_as7262 import AS7262
   sensor = AS7262(i2c)
-  sensor.messen_rohwerte()   # dict mit Wellenlaengen 450–680 nm
+  sensor.messen_roh()        # Werte der 6 Kanaele (450–680 nm)
+  sensor.messen_kalibriert() / sensor.dominanter_kanal()
 
 Kompass / Magnetometer (I2C):
   from nitbw_compass import Compass
   kompass = Compass(i2c)
-  kompass.heading()   # Gradzahl 0–360
+  kompass.read_heading()   # Gradzahl 0–360 (NICHT heading())
+
+Lage-/Bewegungssensor MPU6050 (I2C):
+  from nitbw_mpu6050 import MPU6050
+  mpu = MPU6050(i2c, addr=0x68)
+  mpu.read_pitch() / mpu.read_roll() / mpu.read_tilt_angle()   # Grad
+  ax, ay, az = mpu.read_accel()   # g    /    gx, gy, gz = mpu.read_gyro()   # deg/s
+  mpu.read_temperature()
+  mpu.is_level(threshold=5.0) / mpu.read_orientation_text()
+  mpu.calibrate_gyro(samples=200)   # einmalig zu Beginn (Sensor ruhig halten)
 
 Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   from nitbw_mlearn import MLearn
@@ -329,6 +339,9 @@ Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   model.train_tree(max_depth=3) / model.predict_tree(features)
   model.train_forest(n_trees=5, max_depth=3) / model.predict_forest(features)
   model.train_netz(hidden=8, epochs=200, lr=0.01) / model.predict_netz(features)
+  model.train_logreg() / model.predict_logreg(features)
+  model.add_sample(features, label) / model.split_data(anteil_test=0.2, seed=42)
+  model.save_model('modell.json', model_type='knn') / model.load_model('modell.json')
 
 NeoPixel WS2812B (direkt MicroPython):
   from machine import Pin
@@ -660,6 +673,7 @@ class CoderPanel(QWidget):
     """Seitliches Panel: Schüler spezifizieren vollständig – Bot generiert Code."""
 
     insert_code_requested = pyqtSignal(str)   # Code-Block → neuer Editor-Tab
+    open_as_blocks_requested = pyqtSignal(str) # Code-Block → Block-Editor (Coder→Blockly)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -893,6 +907,16 @@ class CoderPanel(QWidget):
                                        QSizePolicy.Policy.Fixed)
         self._insert_btn.clicked.connect(self._on_insert_code)
         ilay.addWidget(self._insert_btn)
+
+        self._blocks_btn = QPushButton("🧩  Als Blöcke öffnen")
+        self._blocks_btn.setToolTip(
+            "Den erzeugten Code im Block-Editor als Blöcke anzeigen "
+            "(hilfreich für Einsteiger)")
+        self._blocks_btn.setEnabled(False)
+        self._blocks_btn.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                       QSizePolicy.Policy.Fixed)
+        self._blocks_btn.clicked.connect(self._on_open_as_blocks)
+        ilay.addWidget(self._blocks_btn)
         root.addWidget(self._input_area)
         self.refresh_theme()
 
@@ -964,7 +988,7 @@ class CoderPanel(QWidget):
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
             f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
         )
-        self._insert_btn.setStyleSheet(
+        _action_btn_style = (
             f"QPushButton {{ background:transparent; color:{THEME['accent']};"
             f" border:1px solid {THEME['accent']}; border-radius:4px;"
             f" font-weight:bold; padding:5px 22px; }}"
@@ -972,6 +996,8 @@ class CoderPanel(QWidget):
             f"QPushButton:disabled {{ background:transparent;"
             f" color:{THEME['text_dim']}; border:1px solid {THEME['border']}; }}"
         )
+        self._insert_btn.setStyleSheet(_action_btn_style)
+        self._blocks_btn.setStyleSheet(_action_btn_style)
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
             f"border:none; border-radius:4px; padding:5px 18px;"
@@ -1161,6 +1187,7 @@ class CoderPanel(QWidget):
             if code:
                 self._last_code_block = code
                 self._insert_btn.setEnabled(True)
+                self._blocks_btn.setEnabled(True)
             # Gestreamten Rohtext durch formatiertes HTML ersetzen
             # (Prosa + farbiger Python-Codeblock).
             cursor = self._chat_view.textCursor()
@@ -1201,6 +1228,10 @@ class CoderPanel(QWidget):
         if self._last_code_block:
             self.insert_code_requested.emit(self._last_code_block)
 
+    def _on_open_as_blocks(self):
+        if self._last_code_block:
+            self.open_as_blocks_requested.emit(self._last_code_block)
+
     # ── Verlauf zurücksetzen ──────────────────────────────────────────────────
     def _clear_history(self):
         self._history         = [{"role": "system", "content": CODER_SYSTEM_PROMPT}]
@@ -1208,6 +1239,7 @@ class CoderPanel(QWidget):
         self._iteration       = 0
         self._iter_lbl.setText("Iteration 0")
         self._insert_btn.setEnabled(False)
+        self._blocks_btn.setEnabled(False)
         self._chat_view.clear()
         self._spec_edit.clear()
         self._ablauf_edit.clear()

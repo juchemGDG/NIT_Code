@@ -23,6 +23,7 @@ from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, pyth
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
+from .block_panel import BlockEditorWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
@@ -689,6 +690,10 @@ class MainWindow(QMainWindow):
         )
         self._act_upload.setVisible(False)
 
+        # ── Blöcke ──
+        m_blocks = mb.addMenu("Blöcke")
+        self._add_action(m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
+
         # ── Python ──
         self._m_python = mb.addMenu("Python")
         self._add_action(self._m_python, "📦  Pakete installieren (pip) …", self._open_pip_manager)
@@ -891,6 +896,7 @@ class MainWindow(QMainWindow):
         self._ai_stack.addWidget(self._aischat_panel)  # Index 1 → AIS-Chat
         self._ai_stack.addWidget(self._coder_panel)    # Index 2 → Code-Generator
         self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
+        self._coder_panel.open_as_blocks_requested.connect(self._open_blocks_from_code)
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
@@ -1157,6 +1163,52 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────
     # Programmausführung
     # ──────────────────────────────────────────────────────────────────────
+    # ── Block-Editor ──────────────────────────────────────────────────────
+    def _open_block_editor(self):
+        """Öffnet das Blockly-Extrafenster (einmalig, dann nach vorne holen)."""
+        win = getattr(self, "_block_window", None)
+        if win is None:
+            win = BlockEditorWindow(self)
+            win.code_generated.connect(self._insert_block_code)
+            self._block_window = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def _open_blocks_from_code(self, code: str):
+        """Coder → Blockly: erzeugten Python-Code als Blöcke im Block-Editor zeigen."""
+        from .py2blockly import python_to_block_state
+        try:
+            state = python_to_block_state(code)
+        except Exception as exc:
+            self._console.append_error(f"Blöcke konnten nicht erzeugt werden: {exc}\n")
+            return
+        self._open_block_editor()
+        win = getattr(self, "_block_window", None)
+        if win is not None:
+            win.load_block_state(state)
+
+    def _insert_block_code(self, code: str):
+        """Erzeugten Block-Code in den Editor schreiben.
+
+        Wurde dasselbe Block-Programm bereits einmal umgewandelt, wird der
+        bestehende Tab aktualisiert statt ein neuer geöffnet. Konvention (wie
+        KI-Codegenerator): KEINE Kommentare im erzeugten Code – das Kommentieren
+        ist Aufgabe der Schülerinnen und Schüler.
+        """
+        existing = getattr(self, "_block_tab", None)
+        if existing is not None and existing in self._tabs:
+            existing.editor.set_text(code)
+            self._tab_widget.setCurrentWidget(existing.editor)
+            self._console.append_info("🧩  Block-Code aktualisiert.\n")
+        else:
+            tab = self._new_tab()
+            tab.editor.set_text(code)
+            self._block_tab = tab
+            self._console.append_info("🧩  Block-Code in neuen Tab übernommen.\n")
+        self.raise_()
+        self.activateWindow()
+
     def _run_program(self):
         tab = self._current_tab()
         if not tab:

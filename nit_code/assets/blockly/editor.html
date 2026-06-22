@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NIT Block-Editor</title>
+  <script src="blockly_compressed.js"></script>
+  <script src="blocks_compressed.js"></script>
+  <script src="python_compressed.js"></script>
+  <script src="de.js"></script>
+  <script src="nit_blocks.js"></script>
+  <script src="nitbw_blocks.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
+                 font-family: 'Segoe UI', system-ui, sans-serif; }
+    #blocklyDiv { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="blocklyDiv"></div>
+
+  <!-- Werkzeugkasten (Toolbox) -->
+  <xml id="toolbox" style="display: none">
+    <category name="Kontrollstrukturen" colour="120">
+      <label text="Verzweigungen"></label>
+      <block type="controls_if"></block>
+      <block type="controls_if"><mutation else="1"></mutation></block>
+      <label text="Schleifen"></label>
+      <block type="controls_repeat_ext">
+        <value name="TIMES"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      </block>
+      <block type="controls_whileUntil"></block>
+      <block type="controls_for">
+        <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+        <value name="BY"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="controls_flow_statements"></block>
+    </category>
+    <category name="Logik" colour="210">
+      <block type="logic_compare"></block>
+      <block type="logic_operation"></block>
+      <block type="logic_negate"></block>
+      <block type="logic_boolean"></block>
+    </category>
+    <category name="Mathematik" colour="230">
+      <block type="math_number"><field name="NUM">0</field></block>
+      <block type="math_arithmetic">
+        <value name="A"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="B"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="math_single">
+        <value name="NUM"><shadow type="math_number"><field name="NUM">9</field></shadow></value>
+      </block>
+      <block type="math_modulo">
+        <value name="DIVIDEND"><shadow type="math_number"><field name="NUM">64</field></shadow></value>
+        <value name="DIVISOR"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      </block>
+      <block type="math_random_int">
+        <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+      </block>
+    </category>
+    <category name="Text" colour="160">
+      <block type="text"></block>
+      <block type="text_print">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value>
+      </block>
+      <block type="text_join"></block>
+      <block type="text_length">
+        <value name="VALUE"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_prompt_ext">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Wie heißt du?</field></shadow></value>
+      </block>
+    </category>
+    <category name="Listen" colour="260">
+      <block type="lists_create_with"></block>
+      <block type="lists_length"></block>
+      <block type="lists_getIndex">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_setIndex">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+    </category>
+    <sep></sep>
+    <category name="Variablen" colour="330" custom="VARIABLE"></category>
+    <category name="Funktionen" colour="290" custom="PROCEDURE"></category>
+    <sep></sep>
+    <category name="Zeit" colour="20">
+      <block type="nit_warte">
+        <value name="SEK"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="nit_warte_ms">
+        <value name="MS"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+      </block>
+    </category>
+    <category name="MicroPython (ESP32)" colour="200">
+      <label text="Digital"></label>
+      <block type="nit_pin_write"></block>
+      <block type="nit_pin_read"></block>
+      <label text="Analog"></label>
+      <block type="nit_adc_read"></block>
+      <block type="nit_dac_write">
+        <value name="WERT"><shadow type="math_number"><field name="NUM">128</field></shadow></value>
+      </block>
+      <block type="nit_pwm_write">
+        <value name="DUTY"><shadow type="math_number"><field name="NUM">512</field></shadow></value>
+      </block>
+      <label text="DHT22 (Temperatur/Feuchte)"></label>
+      <block type="dht_init"></block>
+      <block type="dht_measure"></block>
+      <block type="dht_temp"></block>
+      <block type="dht_hum"></block>
+    </category>
+    <category name="NeoPixel" colour="20">
+      <block type="nit_neopixel_init"></block>
+      <block type="nit_neopixel_set">
+        <value name="INDEX"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="nit_neopixel_fill"></block>
+      <block type="nit_neopixel_show"></block>
+    </category>
+    <category name="nitbw-Bibliotheken" colour="290">
+      <category name="OLED-Display" colour="290">
+        <block type="oled_init"></block>
+        <block type="oled_clear"></block>
+        <block type="oled_print"><value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
+        <block type="oled_show"></block>
+        <block type="oled_line"></block>
+        <block type="oled_rect"></block>
+        <block type="oled_circle"></block>
+      </category>
+      <category name="LC-Display" colour="290">
+        <block type="lcd_init"></block>
+        <block type="lcd_print"><value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
+        <block type="lcd_clear"></block>
+      </category>
+      <category name="Töne" colour="290">
+        <block type="toene_init"></block>
+        <block type="toene_ton"></block>
+        <block type="toene_stop"></block>
+        <label text="NITon (mit Notenkonstanten)"></label>
+        <block type="niton_init"></block>
+        <block type="niton_ton"></block>
+        <block type="niton_pause"></block>
+        <block type="niton_tempo"></block>
+      </category>
+      <category name="Ultraschall" colour="290">
+        <block type="us_init"></block>
+        <block type="us_cm"></block>
+        <block type="us_mm"></block>
+      </category>
+      <category name="Servo" colour="290">
+        <block type="servo_init"></block>
+        <block type="servo_winkel"><value name="GRAD"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
+        <block type="servo_mitte"></block>
+        <block type="servo_lese"></block>
+        <block type="servo_aus"></block>
+      </category>
+      <category name="Schrittmotor" colour="290">
+        <block type="stepperdir_init"></block>
+        <block type="stepperdir_schritte"><value name="N"><shadow type="math_number"><field name="NUM">200</field></shadow></value></block>
+        <block type="stepperdir_winkel"><value name="GRAD"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
+        <block type="stepperdir_aus"></block>
+        <block type="stepperuln_init"></block>
+        <block type="stepperuln_umdr"><value name="N"><shadow type="math_number"><field name="NUM">1</field></shadow></value></block>
+      </category>
+      <category name="Temperatur" colour="290">
+        <block type="ds18b20_init"></block>
+        <block type="ds18b20_messen"></block>
+        <block type="bme280_init"></block>
+        <block type="bme280_read"></block>
+        <block type="bme280_temp"></block>
+        <block type="bme280_druck"></block>
+        <block type="bme280_feuchte"></block>
+      </category>
+      <category name="Abstand/Licht/Farbe" colour="290">
+        <block type="tof_init"></block>
+        <block type="tof_mm"></block>
+        <block type="tof_cm"></block>
+        <block type="tcs_init"></block>
+        <block type="tcs_farbe"></block>
+        <block type="as7262_init"></block>
+        <block type="as7262_messen"></block>
+        <block type="puls_init"></block>
+        <block type="puls_lesen"></block>
+      </category>
+      <category name="Joystick" colour="290">
+        <block type="joy_init"></block>
+        <block type="joy_lesen"></block>
+        <block type="joy_x"></block>
+        <block type="joy_y"></block>
+        <block type="joy_sw"></block>
+        <block type="joy_richtung"></block>
+      </category>
+      <category name="Uhr / Kompass" colour="290">
+        <block type="rtc_init"></block>
+        <block type="rtc_string"></block>
+        <block type="compass_init"></block>
+        <block type="compass_heading"></block>
+      </category>
+      <category name="Lage / Bewegung (MPU6050)" colour="290">
+        <block type="mpu_init"></block>
+        <block type="mpu_calibrate"></block>
+        <block type="mpu_pitch"></block>
+        <block type="mpu_roll"></block>
+        <block type="mpu_tilt"></block>
+        <block type="mpu_level"></block>
+        <block type="mpu_orient"></block>
+        <block type="mpu_temp"></block>
+        <block type="mpu_accel"></block>
+        <block type="mpu_ax"></block>
+        <block type="mpu_ay"></block>
+        <block type="mpu_az"></block>
+        <block type="mpu_gyro"></block>
+        <block type="mpu_gx"></block>
+        <block type="mpu_gy"></block>
+        <block type="mpu_gz"></block>
+      </category>
+      <category name="Funk (ESP-NOW / MQTT)" colour="290">
+        <block type="espnow_init"></block>
+        <block type="espnow_peer"></block>
+        <block type="espnow_send"><value name="MSG"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value></block>
+        <block type="mqtt_init"></block>
+        <block type="mqtt_connect"></block>
+        <block type="mqtt_publish"><value name="WERT"><shadow type="text"><field name="TEXT">wert</field></shadow></value></block>
+        <block type="mqtt_check"></block>
+      </category>
+      <category name="Maschinelles Lernen" colour="290">
+        <label text="Daten"></label>
+        <block type="mlearn_init"></block>
+        <block type="mlearn_load"></block>
+        <block type="mlearn_add"></block>
+        <block type="mlearn_clear"></block>
+        <block type="mlearn_split"></block>
+        <label text="k-nächste Nachbarn"></label>
+        <block type="mlearn_train_knn"></block>
+        <block type="mlearn_predict_knn"></block>
+        <label text="Entscheidungsbaum"></label>
+        <block type="mlearn_train_tree"></block>
+        <block type="mlearn_predict_tree"></block>
+        <label text="Random Forest"></label>
+        <block type="mlearn_train_forest"></block>
+        <block type="mlearn_predict_forest"></block>
+        <label text="Logistische Regression"></label>
+        <block type="mlearn_train_logreg"></block>
+        <block type="mlearn_predict_logreg"></block>
+        <label text="Neuronales Netz"></label>
+        <block type="mlearn_train_netz"></block>
+        <block type="mlearn_predict_netz"></block>
+        <label text="Speichern / Laden"></label>
+        <block type="mlearn_save"></block>
+        <block type="mlearn_load_model"></block>
+      </category>
+    </category>
+  </xml>
+
+  <script>
+    // Eigene NIT-/MicroPython-Blöcke siehe nit_blocks.js.
+
+    // ── Workspace aufbauen ──────────────────────────────────────────────────
+    var workspace = Blockly.inject('blocklyDiv', {
+      toolbox: document.getElementById('toolbox'),
+      media: 'media/',          // lokale Sprites/Sounds – verhindert "Failed to fetch"
+      renderer: 'zelos',
+      trashcan: true,
+      sounds: true,
+      grid: { spacing: 22, length: 3, colour: '#e6e6ee', snap: true },
+      zoom: { controls: true, wheel: true, startScale: 0.95, maxScale: 2, minScale: 0.4 },
+      move: { scrollbars: true, drag: true, wheel: true }
+    });
+
+    // ── Brücke zur App (wird von Python via runJavaScript aufgerufen) ────────
+    function getPython() {
+      try {
+        return Blockly.Python.workspaceToCode(workspace);
+      } catch (e) {
+        return '# Fehler bei der Code-Erzeugung: ' + e;
+      }
+    }
+    function getXml() {
+      var dom = Blockly.Xml.workspaceToDom(workspace);
+      return Blockly.Xml.domToText(dom);
+    }
+    function loadXml(text) {
+      try {
+        workspace.clear();
+        var dom = Blockly.Xml.textToDom(text);
+        Blockly.Xml.domToWorkspace(dom, workspace);
+        return true;
+      } catch (e) { return false; }
+    }
+    function clearWorkspace() { workspace.clear(); }
+    // Lädt einen Blockly-Serialisierungs-State (für "Coder → Blockly")
+    function loadJson(state) {
+      try {
+        if (typeof state === 'string') { state = JSON.parse(state); }
+        Blockly.serialization.workspaces.load(state, workspace);
+        return true;
+      } catch (e) { return false; }
+    }
+  </script>
+</body>
+</html>
