@@ -141,22 +141,28 @@
     return 'pin_out_' + pin + '.value(' + val + ')\n';
   });
 
-  // ── Digitaler Eingang ─────────────────────────────────────────────────────
+  // ── Digitaler Eingang (mit Pull-Up/-Down/ohne) ────────────────────────────
   Blockly.Blocks['nit_pin_read'] = {
     init: function () {
       this.appendDummyInput()
         .appendField('digitaler Eingang Pin')
-        .appendField(new FNum(4, 0, 40, 1), 'PIN');
+        .appendField(new FNum(4, 0, 40, 1), 'PIN')
+        .appendField(new FDrop([['ohne', 'none'], ['Pull-Up', 'up'], ['Pull-Down', 'down']]), 'PULL');
       this.setOutput(true, 'Number');
       this.setColour(PIN_COLOUR);
-      this.setTooltip('Liest einen digitalen Eingang (0 oder 1).');
+      this.setTooltip('Liest einen digitalen Eingang (0 oder 1). '
+        + 'Pull-Up = HIGH wenn offen (z. B. Taster gegen GND), Pull-Down = LOW wenn offen.');
     }
   };
   reg('nit_pin_read', function (block) {
     var pin = block.getFieldValue('PIN');
+    var pull = block.getFieldValue('PULL');
+    var arg = pull === 'up' ? ', Pin.PULL_UP' : pull === 'down' ? ', Pin.PULL_DOWN' : '';
+    var suffix = pull === 'up' ? '_up' : pull === 'down' ? '_down' : '';
+    var name = 'pin_in_' + pin + suffix;
     P.definitions_['from_machine_pin'] = 'from machine import Pin';
-    P.definitions_['inst_pin_in_' + pin] = 'pin_in_' + pin + ' = Pin(' + pin + ', Pin.IN)';
-    return ['pin_in_' + pin + '.value()', ord('FUNCTION_CALL')];
+    P.definitions_['inst_' + name] = name + ' = Pin(' + pin + ', Pin.IN' + arg + ')';
+    return [name + '.value()', ord('FUNCTION_CALL')];
   });
 
   // ── Analoger Eingang (ADC) ────────────────────────────────────────────────
