@@ -48,6 +48,8 @@ class BlockEditorWindow(QMainWindow):
         self.setWindowTitle("NIT Block-Editor")
         self.resize(1000, 680)
         self._editor_html = _asset_path("blockly/editor.html")
+        self._page_ready = False
+        self._pending_state = None   # State, der vor dem Laden der Seite kam
         self._build_ui()
 
     # ── UI ───────────────────────────────────────────────────────────────────
@@ -77,6 +79,7 @@ class BlockEditorWindow(QMainWindow):
 
         if HAS_WEBENGINE and self._editor_html:
             self._view = QWebEngineView(self)
+            self._view.loadFinished.connect(self._on_page_loaded)
             self._view.setUrl(QUrl.fromLocalFile(str(self._editor_html)))
             self.setCentralWidget(self._view)
         else:
@@ -101,6 +104,29 @@ class BlockEditorWindow(QMainWindow):
         lbl.setStyleSheet(f"color:{THEME['text']}; font-size:13px; padding:24px;")
         lay.addWidget(lbl)
         return w
+
+    # ── Laden eines Block-States (z. B. aus "Coder → Blockly") ────────────────
+    def _on_page_loaded(self, ok: bool):
+        self._page_ready = bool(ok)
+        if self._page_ready and self._pending_state is not None:
+            state, self._pending_state = self._pending_state, None
+            self._apply_state(state)
+
+    def load_block_state(self, state: dict):
+        """Lädt einen Blockly-Serialisierungs-State in den Workspace.
+
+        Funktioniert auch, wenn die Seite noch lädt (wird dann nachgeholt).
+        """
+        if not self._view:
+            return
+        if self._page_ready:
+            self._apply_state(state)
+        else:
+            self._pending_state = state
+
+    def _apply_state(self, state: dict):
+        import json
+        self._view.page().runJavaScript("loadJson(%s);" % json.dumps(json.dumps(state)))
 
     # ── Aktionen ──────────────────────────────────────────────────────────────
     def _emit_python(self):

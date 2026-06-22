@@ -896,6 +896,7 @@ class MainWindow(QMainWindow):
         self._ai_stack.addWidget(self._aischat_panel)  # Index 1 → AIS-Chat
         self._ai_stack.addWidget(self._coder_panel)    # Index 2 → Code-Generator
         self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
+        self._coder_panel.open_as_blocks_requested.connect(self._open_blocks_from_code)
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
@@ -1173,6 +1174,19 @@ class MainWindow(QMainWindow):
         win.show()
         win.raise_()
         win.activateWindow()
+
+    def _open_blocks_from_code(self, code: str):
+        """Coder → Blockly: erzeugten Python-Code als Blöcke im Block-Editor zeigen."""
+        from .py2blockly import python_to_block_state
+        try:
+            state = python_to_block_state(code)
+        except Exception as exc:
+            self._console.append_error(f"Blöcke konnten nicht erzeugt werden: {exc}\n")
+            return
+        self._open_block_editor()
+        win = getattr(self, "_block_window", None)
+        if win is not None:
+            win.load_block_state(state)
 
     def _insert_block_code(self, code: str):
         """Erzeugten Block-Code in den Editor schreiben.

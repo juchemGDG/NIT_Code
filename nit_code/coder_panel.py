@@ -673,6 +673,7 @@ class CoderPanel(QWidget):
     """Seitliches Panel: Schüler spezifizieren vollständig – Bot generiert Code."""
 
     insert_code_requested = pyqtSignal(str)   # Code-Block → neuer Editor-Tab
+    open_as_blocks_requested = pyqtSignal(str) # Code-Block → Block-Editor (Coder→Blockly)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -906,6 +907,16 @@ class CoderPanel(QWidget):
                                        QSizePolicy.Policy.Fixed)
         self._insert_btn.clicked.connect(self._on_insert_code)
         ilay.addWidget(self._insert_btn)
+
+        self._blocks_btn = QPushButton("🧩  Als Blöcke öffnen")
+        self._blocks_btn.setToolTip(
+            "Den erzeugten Code im Block-Editor als Blöcke anzeigen "
+            "(hilfreich für Einsteiger)")
+        self._blocks_btn.setEnabled(False)
+        self._blocks_btn.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                       QSizePolicy.Policy.Fixed)
+        self._blocks_btn.clicked.connect(self._on_open_as_blocks)
+        ilay.addWidget(self._blocks_btn)
         root.addWidget(self._input_area)
         self.refresh_theme()
 
@@ -977,7 +988,7 @@ class CoderPanel(QWidget):
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
             f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
         )
-        self._insert_btn.setStyleSheet(
+        _action_btn_style = (
             f"QPushButton {{ background:transparent; color:{THEME['accent']};"
             f" border:1px solid {THEME['accent']}; border-radius:4px;"
             f" font-weight:bold; padding:5px 22px; }}"
@@ -985,6 +996,8 @@ class CoderPanel(QWidget):
             f"QPushButton:disabled {{ background:transparent;"
             f" color:{THEME['text_dim']}; border:1px solid {THEME['border']}; }}"
         )
+        self._insert_btn.setStyleSheet(_action_btn_style)
+        self._blocks_btn.setStyleSheet(_action_btn_style)
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
             f"border:none; border-radius:4px; padding:5px 18px;"
@@ -1174,6 +1187,7 @@ class CoderPanel(QWidget):
             if code:
                 self._last_code_block = code
                 self._insert_btn.setEnabled(True)
+                self._blocks_btn.setEnabled(True)
             # Gestreamten Rohtext durch formatiertes HTML ersetzen
             # (Prosa + farbiger Python-Codeblock).
             cursor = self._chat_view.textCursor()
@@ -1214,6 +1228,10 @@ class CoderPanel(QWidget):
         if self._last_code_block:
             self.insert_code_requested.emit(self._last_code_block)
 
+    def _on_open_as_blocks(self):
+        if self._last_code_block:
+            self.open_as_blocks_requested.emit(self._last_code_block)
+
     # ── Verlauf zurücksetzen ──────────────────────────────────────────────────
     def _clear_history(self):
         self._history         = [{"role": "system", "content": CODER_SYSTEM_PROMPT}]
@@ -1221,6 +1239,7 @@ class CoderPanel(QWidget):
         self._iteration       = 0
         self._iter_lbl.setText("Iteration 0")
         self._insert_btn.setEnabled(False)
+        self._blocks_btn.setEnabled(False)
         self._chat_view.clear()
         self._spec_edit.clear()
         self._ablauf_edit.clear()

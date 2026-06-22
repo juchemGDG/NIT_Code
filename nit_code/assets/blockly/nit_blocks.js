@@ -84,6 +84,33 @@
     return out.replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
   };
 
+  // ── Roh-Python (Fallback für "Coder → Blockly") ───────────────────────────
+  // Hält eine Zeile Python-Code unverändert. So bleibt ein aus Code erzeugtes
+  // Block-Programm immer vollständig, auch wenn nicht jede Zeile als eigener
+  // Block erkannt wird (z. B. Bibliotheksaufrufe).
+  Blockly.Blocks['nit_raw'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('Python:')
+        .appendField(new Blockly.FieldTextInput(''), 'CODE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#7d8794');
+      this.setTooltip('Eine Zeile Python-Code (unverändert übernommen).');
+    }
+  };
+  reg('nit_raw', function (block) { return block.getFieldValue('CODE') + '\n'; });
+
+  Blockly.Blocks['nit_raw_expr'] = {
+    init: function () {
+      this.appendDummyInput().appendField(new Blockly.FieldTextInput(''), 'CODE');
+      this.setOutput(true, null);
+      this.setColour('#7d8794');
+      this.setTooltip('Ein Python-Ausdruck (unverändert übernommen).');
+    }
+  };
+  reg('nit_raw_expr', function (block) { return [block.getFieldValue('CODE'), ord('ATOMIC')]; });
+
   // ── Warten ────────────────────────────────────────────────────────────────
   Blockly.Blocks['nit_warte'] = {
     init: function () {

@@ -289,6 +289,14 @@
       } catch (e) { return false; }
     }
     function clearWorkspace() { workspace.clear(); }
+    // Lädt einen Blockly-Serialisierungs-State (für "Coder → Blockly")
+    function loadJson(state) {
+      try {
+        if (typeof state === 'string') { state = JSON.parse(state); }
+        Blockly.serialization.workspaces.load(state, workspace);
+        return true;
+      } catch (e) { return false; }
+    }
   </script>
 </body>
 </html>
