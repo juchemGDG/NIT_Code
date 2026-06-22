@@ -200,7 +200,7 @@ OLED-Display (SSD1306 / SH1106, I2C):
   oled = OLED(i2c, chip='ssd1306')   # chip='sh1106' fuer SH1106
   oled.print("Text", x, y)           # font='sans' unterstuetzt Umlaute
   oled.hline(x,y,l) / oled.vline(x,y,l) / oled.line(x1,y1,x2,y2)
-  oled.rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
+  oled.draw_rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
   oled.draw_circle(x,y,r) / oled.fill_circle(x,y,r)
   oled.show()   # nach jeder Zeichenoperation aufrufen
   oled.clear()
@@ -248,7 +248,7 @@ Schrittmotor NEMA17 mit A4988/DRV8825 (StepperDir):
 
 Schrittmotor 28BYJ-48 mit ULN2003 (StepperULN):
   from nitbw_stepper import StepperULN, VOR, ZURUECK
-  motor = StepperULN(pins=[IN1, IN2, IN3, IN4], geschwindigkeit=800)
+  motor = StepperULN(IN1, IN2, IN3, IN4, geschwindigkeit=800)   # 4 Pins positional
   motor.schritte(n, VOR) / motor.umdrehungen(n, VOR) / motor.aus()
 
 Temperatur DS18B20 (OneWire):
@@ -314,12 +314,13 @@ MQTT (WiFi, Broker z.B. Raspberry Pi):
 Spektralsensor AS7262 (I2C):
   from nitbw_as7262 import AS7262
   sensor = AS7262(i2c)
-  sensor.messen_rohwerte()   # dict mit Wellenlaengen 450–680 nm
+  sensor.messen_roh()        # Werte der 6 Kanaele (450–680 nm)
+  sensor.messen_kalibriert() / sensor.dominanter_kanal()
 
 Kompass / Magnetometer (I2C):
   from nitbw_compass import Compass
   kompass = Compass(i2c)
-  kompass.heading()   # Gradzahl 0–360
+  kompass.read_heading()   # Gradzahl 0–360 (NICHT heading())
 
 Lage-/Bewegungssensor MPU6050 (I2C):
   from nitbw_mpu6050 import MPU6050

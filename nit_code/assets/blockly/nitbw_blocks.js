@@ -73,7 +73,7 @@
   B({ type: 'oled_line', parts: ['OLED Linie x1', { f: 'X1', d: 0, lo: 0, hi: 127 }, 'y1', { f: 'Y1', d: 0, lo: 0, hi: 63 }, 'x2', { f: 'X2', d: 20, lo: 0, hi: 127 }, 'y2', { f: 'Y2', d: 20, lo: 0, hi: 63 }],
       code: 'oled.line(%X1%, %Y1%, %X2%, %Y2%)' });
   B({ type: 'oled_rect', parts: ['OLED Rechteck x', { f: 'X', d: 0, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 0, lo: 0, hi: 63 }, 'b', { f: 'W', d: 20, lo: 1, hi: 128 }, 'h', { f: 'H', d: 10, lo: 1, hi: 64 }],
-      code: 'oled.rect(%X%, %Y%, %W%, %H%)' });
+      code: 'oled.draw_rect(%X%, %Y%, %W%, %H%)' });
   B({ type: 'oled_circle', parts: ['OLED Kreis x', { f: 'X', d: 64, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 32, lo: 0, hi: 63 }, 'r', { f: 'R', d: 10, lo: 1, hi: 64 }],
       code: 'oled.draw_circle(%X%, %Y%, %R%)' });
 
@@ -155,7 +155,7 @@
   // ════════════════════════ Schrittmotor 28BYJ-48 (ULN2003) ═══════════
   B({ type: 'stepperuln_init', parts: ['Schrittmotor (ULN2003) IN1', { f: 'I1', d: 19, lo: 0, hi: 40 }, 'IN2', { f: 'I2', d: 18, lo: 0, hi: 40 }, 'IN3', { f: 'I3', d: 5, lo: 0, hi: 40 }, 'IN4', { f: 'I4', d: 17, lo: 0, hi: 40 }],
       defs: [['from_nitbw_stepper2', 'from nitbw_stepper import StepperULN, VOR, ZURUECK'],
-             ['inst_motor', 'motor = StepperULN(pins=[%I1%, %I2%, %I3%, %I4%], geschwindigkeit=800)']],
+             ['inst_motor', 'motor = StepperULN(%I1%, %I2%, %I3%, %I4%, geschwindigkeit=800)']],
       tip: 'Schrittmotor 28BYJ-48 mit ULN2003.' });
   B({ type: 'stepperuln_umdr', parts: ['Motor Umdrehungen', { v: 'N', c: 'Number' }, { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.umdrehungen(%N%, %RICHT%)' });
 
@@ -225,13 +225,13 @@
   B({ type: 'compass_init', parts: ['Kompass einrichten'],
       defs: [['from_nitbw_compass', 'from nitbw_compass import Compass']].concat(I2C_DEFS).concat([['inst_kompass', 'kompass = Compass(i2c)']]),
       tip: 'Kompass / Magnetometer.' });
-  B({ type: 'compass_heading', parts: ['Richtung (Grad)'], out: 'Number', code: 'kompass.heading()' });
+  B({ type: 'compass_heading', parts: ['Richtung (Grad)'], out: 'Number', code: 'kompass.read_heading()' });
 
   // ════════════════════════ Spektralsensor AS7262 (I2C) ═══════════════
   B({ type: 'as7262_init', parts: ['Spektralsensor einrichten'],
       defs: [['from_nitbw_as7262', 'from nitbw_as7262 import AS7262']].concat(I2C_DEFS).concat([['inst_spektral', 'spektral = AS7262(i2c)']]),
       tip: 'Spektralsensor AS7262.' });
-  B({ type: 'as7262_messen', parts: ['Spektralwerte'], out: true, code: 'spektral.messen_rohwerte()' });
+  B({ type: 'as7262_messen', parts: ['Spektralwerte (roh)'], out: true, code: 'spektral.messen_roh()' });
 
   // ════════════════════════ ESP-NOW (Funk) ════════════════════════════
   B({ type: 'espnow_init', parts: ['ESP-NOW einrichten'],
