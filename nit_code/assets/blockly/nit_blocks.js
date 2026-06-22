@@ -43,7 +43,9 @@
       if (/^(from |import )/.test(def)) imports.push(def);
       else if (/^def /.test(def)) functions.push(def);
       else if (key.indexOf('inst_') === 0) instances.push(def);
-      else if (key.indexOf('var_') === 0 || key === 'variables') variables.push(def);
+      else if (key === 'variables') { /* 'x = None'-Vordeklaration weglassen –
+          in Python unnoetig; Variablen werden bei der ersten Zuweisung erzeugt */ }
+      else if (key.indexOf('var_') === 0) variables.push(def);
       else rest.push(def);
     }
     // Mehrfache "from MODUL import ..." zu je einer Zeile pro Modul zusammenfassen
