@@ -99,7 +99,15 @@
       this.setTooltip('Eine Zeile Python-Code (unverändert übernommen).');
     }
   };
-  reg('nit_raw', function (block) { return block.getFieldValue('CODE') + '\n'; });
+  reg('nit_raw', function (block) {
+    var code = block.getFieldValue('CODE');
+    // Import-Zeilen in den Import-Abschnitt heben (dedupliziert mit echten Blöcken)
+    if (/^\s*(from |import )/.test(code)) {
+      P.definitions_['rawimp_' + code.trim()] = code.trim();
+      return '';
+    }
+    return code + '\n';
+  });
 
   Blockly.Blocks['nit_raw_expr'] = {
     init: function () {
