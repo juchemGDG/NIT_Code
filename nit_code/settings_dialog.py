@@ -2,10 +2,11 @@
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QSpinBox, QCheckBox, QPushButton, QFrame,
-    QComboBox, QLineEdit, QFileDialog, QWidget,
+    QComboBox, QLineEdit, QFileDialog, QWidget, QScrollArea,
 )
 
 from .config import (
@@ -116,7 +117,10 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
         self.setModal(True)
-        self.setMinimumWidth(560)
+        # Etwas breiter und mit Scrollbereich (siehe _build_ui), damit das Fenster
+        # auch auf niedrigen Auflösungen nie höher als der Bildschirm wird und der
+        # „Übernehmen“-Button immer sichtbar bleibt.
+        self.setMinimumWidth(620)
         self._fetcher: _OllamaFetcher | None = None
         self.setStyleSheet(
             f"""
@@ -222,8 +226,21 @@ class SettingsDialog(QDialog):
         theme: str = "modern_dark",
         blocks_enabled: bool = False,
     ):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
+        # Äußeres Layout: Scrollbereich (Inhalt) + feste Button-Leiste unten.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(scroll, 1)
+
+        content = QWidget()
+        scroll.setWidget(content)
+        root = QVBoxLayout(content)
+        root.setContentsMargins(20, 20, 20, 14)
         root.setSpacing(10)
 
         # ── Abschnitt: Editor ────────────────────────────────────────────
@@ -492,8 +509,11 @@ class SettingsDialog(QDialog):
 
         root.addStretch()
 
-        # ── Buttons ─────────────────────────────────────────────────────
-        btn_row = QHBoxLayout()
+        # ── Buttons (fest unten, immer sichtbar – außerhalb des Scrollbereichs) ──
+        btn_bar = QFrame()
+        btn_bar.setStyleSheet(f"background:{THEME['bg_panel']}; border-top:1px solid {THEME['border']};")
+        btn_row = QHBoxLayout(btn_bar)
+        btn_row.setContentsMargins(20, 10, 20, 12)
         btn_row.addStretch()
 
         btn_cancel = QPushButton("Abbrechen")
@@ -506,7 +526,14 @@ class SettingsDialog(QDialog):
         btn_ok.clicked.connect(self.accept)
         btn_row.addWidget(btn_ok)
 
-        root.addLayout(btn_row)
+        outer.addWidget(btn_bar)
+
+        # Maximalhöhe an den Bildschirm koppeln, damit nie etwas abgeschnitten wird.
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            avail_h = screen.availableGeometry().height()
+            self.setMaximumHeight(int(avail_h * 0.92))
+            self.resize(660, min(660, int(avail_h * 0.85)))
 
     # ── Ollama-Modelle laden ─────────────────────────────────────────────────
 
