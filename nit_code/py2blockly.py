@@ -32,12 +32,12 @@ def python_to_block_state(code: str) -> dict:
         tree = ast.parse(code)
         st = _build_symtab(tree)
         blocks = [b for b in _suite(tree.body, st) if b]
-        # Bleiben Roh-Blöcke übrig (z. B. nicht abgebildete Bibliothek), so
-        # werden die Original-Importe als Blöcke vorangestellt, damit der
-        # erzeugte Code lauffähig bleibt. Bei vollständig abgebildeten
-        # Programmen (alle Befehle als echte Blöcke) bleibt die Ansicht sauber –
-        # die echten Blöcke fügen ihre Importe selbst hinzu.
-        if any("nit_raw" in _json.dumps(b) for b in blocks):
+        # Bleiben Roh-ANWEISUNGEN übrig (z. B. nicht abgebildete Bibliotheks-
+        # methode), so werden die Original-Importe als Blöcke vorangestellt, damit
+        # der erzeugte Code lauffähig bleibt. Roh-AUSDRÜCKE (z. B. int(input()))
+        # zählen NICHT – sie nutzen nur Builtins/vorhandene Variablen und brauchen
+        # keine Bibliotheks-Importe. Vollständig abgebildete Programme bleiben sauber.
+        if any('"nit_raw"' in _json.dumps(b) for b in blocks):
             blocks = _collect_imports(tree) + blocks
         head = _chain(blocks)
     except Exception:
@@ -204,6 +204,15 @@ def _conv(node, conv):
     return None
 
 
+def _arg_node(call, pos, kwname):
+    """Holt ein Argument positional ODER per Schlüsselwort."""
+    if pos is not None and pos < len(call.args):
+        return call.args[pos]
+    if kwname:
+        return _kw(call, kwname)
+    return None
+
+
 def _extract(src, call):
     tag = src[0]
     if tag == "const":
@@ -213,6 +222,8 @@ def _extract(src, call):
         return _conv(call.args[i], conv) if i < len(call.args) else None
     if tag == "kw":
         return _conv(_kw(call, src[1]), src[2])
+    if tag == "arg":            # positional ODER Schlüsselwort: ('arg', pos, kwname, conv)
+        return _conv(_arg_node(call, src[1], src[2]), src[3])
     if tag == "pin":            # Pin-Nummer aus Pin(N) an Position i
         i = src[1]
         return _pin_num(call.args[i]) if i < len(call.args) else None
@@ -255,7 +266,8 @@ _LIB_METHODS = {
     "oled": {
         "clear": ("oled_clear", False, [], []),
         "show": ("oled_show", False, [], []),
-        "print": ("oled_print", False, [("X", ("pos", 1, "int")), ("Y", ("pos", 2, "int"))], [("TEXT", 0)]),
+        "print": ("oled_print", False, [("X", ("arg", 1, "x", "int")), ("Y", ("arg", 2, "y", "int"))],
+                  [("TEXT", 0, "string")]),
         "line": ("oled_line", False, [("X1", ("pos", 0, "int")), ("Y1", ("pos", 1, "int")),
                                       ("X2", ("pos", 2, "int")), ("Y2", ("pos", 3, "int"))], []),
         "draw_rect": ("oled_rect", False, [("X", ("pos", 0, "int")), ("Y", ("pos", 1, "int")),
@@ -264,7 +276,8 @@ _LIB_METHODS = {
                                                ("R", ("pos", 2, "int"))], []),
     },
     "lcd": {
-        "print": ("lcd_print", False, [("SP", ("pos", 1, "int")), ("ZE", ("pos", 2, "int"))], [("TEXT", 0)]),
+        "print": ("lcd_print", False, [("SP", ("arg", 1, "spalte", "int")), ("ZE", ("arg", 2, "zeile", "int"))],
+                  [("TEXT", 0, "text")]),
         "clear": ("lcd_clear", False, [], []),
     },
     "toene": {"stop": ("toene_stop", False, [], [])},
@@ -368,10 +381,13 @@ def _apply_method(spec, call, st):
             return None
         fields[fname] = v
     inputs = {}
-    for iname, idx in ispec:
-        if idx >= len(call.args):
+    for spec_in in ispec:
+        iname, pos = spec_in[0], spec_in[1]
+        kwname = spec_in[2] if len(spec_in) > 2 else None
+        node = _arg_node(call, pos, kwname)
+        if node is None:
             return None
-        inputs[iname] = _val(_expr(call.args[idx], st))
+        inputs[iname] = _val(_expr(node, st))
     return _blk(btype, fields=fields or None, inputs=inputs or None)
 
 
@@ -767,6 +783,8 @@ def _expr(node, st):
             return _raw_expr(node)
         if isinstance(node, ast.Name):
             return _blk("variables_get", fields={"VAR": {"name": node.id}})
+        if isinstance(node, ast.JoinedStr):
+            return _joinedstr(node, st)
         if isinstance(node, ast.BinOp):
             op = _BINOP.get(type(node.op))
             if op == "MODULO":
@@ -798,6 +816,24 @@ def _expr(node, st):
         return _raw_expr(node)
     except Exception:
         return _raw_expr(node)
+
+
+def _joinedstr(node, st):
+    """f-String ``f'Text {x}'`` → 'verbinde'-Block (text_join)."""
+    parts = []
+    for v in node.values:
+        if isinstance(v, ast.Constant) and isinstance(v.value, str):
+            parts.append(_blk("text", fields={"TEXT": v.value}))
+        elif isinstance(v, ast.FormattedValue):
+            parts.append(_expr(v.value, st))
+        else:
+            parts.append(_raw_expr(v))
+    if not parts:
+        return _blk("text", fields={"TEXT": ""})
+    if len(parts) == 1:
+        return parts[0]
+    inputs = {"ADD%d" % i: _val(p) for i, p in enumerate(parts)}
+    return _blk("text_join", extra_state={"itemCount": len(parts)}, inputs=inputs)
 
 
 def _hw_call_expr(node, st):
