@@ -602,6 +602,7 @@ class MainWindow(QMainWindow):
         self._settings_autosave_secs: int = 0
         self._settings_python_exec: str = ""
         self._settings_scrollback: int = 5000
+        self._settings_blocks_enabled: bool = False   # Block-Editor (BETA), Standard: aus
         self._settings_tutor_mode: str = "none"
         self._settings_tutor_url: str = ""
         self._settings_tutor_model: str = ""
@@ -690,9 +691,9 @@ class MainWindow(QMainWindow):
         )
         self._act_upload.setVisible(False)
 
-        # ── Blöcke ──
-        m_blocks = mb.addMenu("Blöcke")
-        self._add_action(m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
+        # ── Blöcke (BETA, über Einstellungen aktivierbar) ──
+        self._m_blocks = mb.addMenu("Blöcke")
+        self._add_action(self._m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
 
         # ── Python ──
         self._m_python = mb.addMenu("Python")
@@ -1174,6 +1175,19 @@ class MainWindow(QMainWindow):
         win.show()
         win.raise_()
         win.activateWindow()
+
+    def _apply_blocks_enabled(self):
+        """Blendet das Block-Editor-Feature (BETA) je nach Einstellung ein/aus."""
+        enabled = self._settings_blocks_enabled
+        if hasattr(self, "_m_blocks"):
+            self._m_blocks.menuAction().setVisible(enabled)
+        if hasattr(self, "_coder_panel"):
+            self._coder_panel.set_blocks_feature_enabled(enabled)
+        # Falls deaktiviert und ein Block-Fenster offen ist: schließen.
+        if not enabled:
+            win = getattr(self, "_block_window", None)
+            if win is not None:
+                win.close()
 
     def _open_blocks_from_code(self, code: str):
         """Coder → Blockly: erzeugten Python-Code als Blöcke im Block-Editor zeigen."""
@@ -2463,6 +2477,7 @@ class MainWindow(QMainWindow):
             tutor_model=self._settings_tutor_model,
             sketchbook_dir=self._settings_sketchbook,
             theme=self._settings_theme,
+            blocks_enabled=self._settings_blocks_enabled,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
             self._settings_font_size = dlg.font_size
@@ -2477,6 +2492,7 @@ class MainWindow(QMainWindow):
             self._settings_tutor_model = dlg.tutor_model
             self._settings_sketchbook = self._normalize_sketchbook_dir(dlg.sketchbook_dir)
             self._settings_theme = dlg.theme
+            self._settings_blocks_enabled = dlg.blocks_enabled
             try:
                 self._apply_settings()
                 self._apply_sketchbook_root()
@@ -2516,6 +2532,7 @@ class MainWindow(QMainWindow):
         self._settings_autosave_secs = self._settings_int("editor/autosave_secs", self._settings_autosave_secs)
         self._settings_python_exec = str(self._settings_store.value("python/executable", self._settings_python_exec) or "")
         self._settings_scrollback = self._settings_int("console/scrollback", self._settings_scrollback)
+        self._settings_blocks_enabled = self._settings_bool("blocks/enabled", self._settings_blocks_enabled)
         self._settings_tutor_mode = str(self._settings_store.value("tutor/mode", self._settings_tutor_mode) or "none")
         self._settings_tutor_url = str(self._settings_store.value("tutor/url", self._settings_tutor_url) or "")
         self._settings_tutor_model = str(self._settings_store.value("tutor/model", self._settings_tutor_model) or "")
@@ -2533,6 +2550,7 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("editor/word_wrap", self._settings_word_wrap)
         self._settings_store.setValue("editor/highlight_line", self._settings_highlight_line)
         self._settings_store.setValue("editor/autosave_secs", self._settings_autosave_secs)
+        self._settings_store.setValue("blocks/enabled", self._settings_blocks_enabled)
         self._settings_store.setValue("python/executable", self._settings_python_exec)
         self._settings_store.setValue("console/scrollback", self._settings_scrollback)
         self._settings_store.setValue("tutor/mode", self._settings_tutor_mode)
@@ -2656,6 +2674,8 @@ class MainWindow(QMainWindow):
         self._aischat_panel.refresh_theme()
         self._console.set_font_size(self._settings_font_size)
         self._console.set_scrollback_limit(self._settings_scrollback)
+        # Block-Editor (BETA) ein-/ausblenden
+        self._apply_blocks_enabled()
         # Auto-Save-Timer
         self._autosave_timer.stop()
         if self._settings_autosave_secs > 0:

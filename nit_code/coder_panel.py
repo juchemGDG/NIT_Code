@@ -1232,6 +1232,11 @@ class CoderPanel(QWidget):
         if self._last_code_block:
             self.open_as_blocks_requested.emit(self._last_code_block)
 
+    def set_blocks_feature_enabled(self, enabled: bool):
+        """Blendet den „Als Blöcke öffnen"-Button ein/aus (Block-Editor BETA)."""
+        if hasattr(self, "_blocks_btn"):
+            self._blocks_btn.setVisible(bool(enabled))
+
     # ── Verlauf zurücksetzen ──────────────────────────────────────────────────
     def _clear_history(self):
         self._history         = [{"role": "system", "content": CODER_SYSTEM_PROMPT}]

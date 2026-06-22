@@ -111,6 +111,7 @@ class SettingsDialog(QDialog):
         tutor_model: str = "",
         sketchbook_dir: str = "",
         theme: str = "modern_dark",
+        blocks_enabled: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
@@ -189,7 +190,8 @@ class SettingsDialog(QDialog):
         )
         self._build_ui(font_size, line_numbers, word_wrap, highlight_line,
                        autosave_secs, python_exec, scrollback,
-                       tutor_mode, tutor_url, tutor_model, sketchbook_dir, theme)
+                       tutor_mode, tutor_url, tutor_model, sketchbook_dir, theme,
+                       blocks_enabled)
 
     # ── Hilfsmethode: Abschnittsüberschrift ─────────────────────────────
     @staticmethod
@@ -218,6 +220,7 @@ class SettingsDialog(QDialog):
         tutor_model: str = "",
         sketchbook_dir: str = "",
         theme: str = "modern_dark",
+        blocks_enabled: bool = False,
     ):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -252,6 +255,32 @@ class SettingsDialog(QDialog):
         form_ed.addRow("", self._chk_hl)
 
         root.addLayout(form_ed)
+        root.addSpacing(6)
+
+        # ── Abschnitt: Funktionen ────────────────────────────────────────
+        title_f, sep_f = self._section("FUNKTIONEN")
+        root.addWidget(title_f)
+        root.addWidget(sep_f)
+
+        form_func = QFormLayout()
+        form_func.setSpacing(8)
+        form_func.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._chk_blocks = QCheckBox("  Block-Editor aktivieren  (BETA)")
+        self._chk_blocks.setChecked(blocks_enabled)
+        self._chk_blocks.setToolTip(
+            "Blendet das Menü „Blöcke“ und „Als Blöcke öffnen“ ein. "
+            "Blockbasiertes Programmieren mit Umwandlung in Python/MicroPython.")
+        form_func.addRow("", self._chk_blocks)
+
+        hint_blocks = QLabel(
+            "Befindet sich noch in der Erprobung (BETA). "
+            "Standardmäßig deaktiviert.")
+        hint_blocks.setWordWrap(True)
+        hint_blocks.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        form_func.addRow("", hint_blocks)
+
+        root.addLayout(form_func)
         root.addSpacing(6)
 
         # ── Abschnitt: Ausführen ─────────────────────────────────────────
@@ -617,6 +646,10 @@ class SettingsDialog(QDialog):
     @property
     def highlight_line(self) -> bool:
         return self._chk_hl.isChecked()
+
+    @property
+    def blocks_enabled(self) -> bool:
+        return self._chk_blocks.isChecked()
 
     @property
     def autosave_secs(self) -> int:
