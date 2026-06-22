@@ -153,6 +153,10 @@ def _classify(value):
         num = value.args[1].value if isinstance(value.args[1], ast.Constant) else None
         if p is not None and num is not None:
             return ("neopixel", p, num)
+    if fn == "I2C":
+        return ("i2c",)
+    if fn in _LIB_KIND:
+        return ("lib", _LIB_KIND[fn])
     return None
 
 
@@ -166,15 +170,291 @@ def _lit_bit(node):
     return None
 
 
+# ── nitbw-Bibliotheken: Registry für das Rück-Mapping ─────────────────────────
+_LIB_KIND = {
+    "OLED": "oled", "LCD": "lcd", "TOENE": "toene", "NITon": "niton",
+    "Ultraschall": "us", "Servo": "servo", "StepperDir": "stepperdir",
+    "StepperULN": "stepperuln", "DS18B20": "ds18b20", "DHT22": "dht",
+    "BME280": "bme280", "Pulssensor": "puls", "TCS3200": "tcs", "TOF": "tof",
+    "KY023": "joy", "RTC": "rtc", "Compass": "compass", "AS7262": "as7262",
+    "MPU6050": "mpu", "ESPNow": "espnow", "MQTTClient": "mqtt", "MLearn": "mlearn",
+}
+
+
+def _kw(call, name):
+    return next((k.value for k in call.keywords if k.arg == name), None)
+
+
+def _conv(node, conv):
+    if node is None:
+        return None
+    if conv == "int":
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, int) else None
+    if conv == "str":
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+    if conv == "bstr":
+        if isinstance(node, ast.Constant) and isinstance(node.value, bytes):
+            return node.value.decode("utf-8", "replace")
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+    if conv == "raw":
+        return _src(node)
+    if conv == "richt":
+        s = _src(node)
+        return s if s in ("VOR", "ZURUECK") else None
+    return None
+
+
+def _extract(src, call):
+    tag = src[0]
+    if tag == "const":
+        return src[1]
+    if tag == "pos":
+        i, conv = src[1], src[2]
+        return _conv(call.args[i], conv) if i < len(call.args) else None
+    if tag == "kw":
+        return _conv(_kw(call, src[1]), src[2])
+    if tag == "pin":            # Pin-Nummer aus Pin(N) an Position i
+        i = src[1]
+        return _pin_num(call.args[i]) if i < len(call.args) else None
+    return None
+
+
+# Init: kind -> (block_type, [(field, source)])
+_LIB_INIT = {
+    "oled": ("oled_init", [("CHIP", ("kw", "chip", "str"))]),
+    "lcd": ("lcd_init", [("ADDR", ("kw", "addr", "raw"))]),
+    "toene": ("toene_init", [("PIN", ("pin", 0)), ("GESCHW", ("kw", "geschwindigkeit", "int"))]),
+    "niton": ("niton_init", [("PIN", ("pos", 0, "int")), ("GESCHW", ("kw", "geschwindigkeit", "int")),
+                             ("LEGATO", ("kw", "legato", "int"))]),
+    "us": ("us_init", [("TRIG", ("kw", "trigger", "int")), ("ECHO", ("kw", "echo", "int"))]),
+    "servo": ("servo_init", [("PIN", ("kw", "pin", "int"))]),
+    "stepperdir": ("stepperdir_init", [("STEP", ("kw", "step_pin", "int")),
+                                       ("DIR", ("kw", "dir_pin", "int")), ("EN", ("kw", "enable_pin", "int"))]),
+    "stepperuln": ("stepperuln_init", [("I1", ("pos", 0, "int")), ("I2", ("pos", 1, "int")),
+                                       ("I3", ("pos", 2, "int")), ("I4", ("pos", 3, "int"))]),
+    "ds18b20": ("ds18b20_init", [("PIN", ("pin", 0))]),
+    "dht": ("dht_init", [("PIN", ("pin", 0))]),
+    "bme280": ("bme280_init", []),
+    "puls": ("puls_init", [("PIN", ("kw", "adc_pin", "int"))]),
+    "tcs": ("tcs_init", [("OUT", ("kw", "out", "int")), ("S2", ("kw", "s2", "int")), ("S3", ("kw", "s3", "int")),
+                         ("S0", ("kw", "s0", "int")), ("S1", ("kw", "s1", "int"))]),
+    "tof": ("tof_init", []),
+    "joy": ("joy_init", [("VRX", ("kw", "vrx_pin", "int")), ("VRY", ("kw", "vry_pin", "int")),
+                         ("SW", ("kw", "sw_pin", "int"))]),
+    "rtc": ("rtc_init", [("CHIP", ("kw", "chip", "str"))]),
+    "compass": ("compass_init", []),
+    "as7262": ("as7262_init", []),
+    "mpu": ("mpu_init", []),
+    "espnow": ("espnow_init", []),
+    "mqtt": ("mqtt_init", [("SERVER", ("kw", "server", "str")), ("ID", ("kw", "client_id", "bstr"))]),
+    "mlearn": ("mlearn_init", [("K", ("kw", "k", "int"))]),
+}
+
+# Methoden: kind -> { methode: (block_type, is_value, [(field, source)], [(input, pos_idx)]) }
+_LIB_METHODS = {
+    "oled": {
+        "clear": ("oled_clear", False, [], []),
+        "show": ("oled_show", False, [], []),
+        "print": ("oled_print", False, [("X", ("pos", 1, "int")), ("Y", ("pos", 2, "int"))], [("TEXT", 0)]),
+        "line": ("oled_line", False, [("X1", ("pos", 0, "int")), ("Y1", ("pos", 1, "int")),
+                                      ("X2", ("pos", 2, "int")), ("Y2", ("pos", 3, "int"))], []),
+        "draw_rect": ("oled_rect", False, [("X", ("pos", 0, "int")), ("Y", ("pos", 1, "int")),
+                                           ("W", ("pos", 2, "int")), ("H", ("pos", 3, "int"))], []),
+        "draw_circle": ("oled_circle", False, [("X", ("pos", 0, "int")), ("Y", ("pos", 1, "int")),
+                                               ("R", ("pos", 2, "int"))], []),
+    },
+    "lcd": {
+        "print": ("lcd_print", False, [("SP", ("pos", 1, "int")), ("ZE", ("pos", 2, "int"))], [("TEXT", 0)]),
+        "clear": ("lcd_clear", False, [], []),
+    },
+    "toene": {"stop": ("toene_stop", False, [], [])},
+    "niton": {"setGeschw": ("niton_tempo", False, [("BPM", ("pos", 0, "int"))], [])},
+    "us": {"messen_cm": ("us_cm", True, [], []), "messen_mm": ("us_mm", True, [], [])},
+    "servo": {
+        "winkel": ("servo_winkel", False, [], [("GRAD", 0)]),
+        "mitte": ("servo_mitte", False, [], []),
+        "lese_winkel": ("servo_lese", True, [], []),
+        "aus": ("servo_aus", False, [], []),
+    },
+    "stepperdir": {
+        "schritte": ("stepperdir_schritte", False, [("RICHT", ("pos", 1, "richt"))], [("N", 0)]),
+        "winkel": ("stepperdir_winkel", False, [("RICHT", ("pos", 1, "richt"))], [("GRAD", 0)]),
+        "aus": ("stepperdir_aus", False, [], []),
+    },
+    "stepperuln": {
+        "umdrehungen": ("stepperuln_umdr", False, [("RICHT", ("pos", 1, "richt"))], [("N", 0)]),
+    },
+    "ds18b20": {"messen": ("ds18b20_messen", True, [], [])},
+    "dht": {"measure": ("dht_measure", False, [], []), "temperature": ("dht_temp", True, [], []),
+            "humidity": ("dht_hum", True, [], [])},
+    "puls": {"lesen_roh_mittelwert": ("puls_lesen", True, [], [])},
+    "tcs": {"dominante_farbe": ("tcs_farbe", True, [], [])},
+    "tof": {"messen_mm": ("tof_mm", True, [], []), "messen_cm": ("tof_cm", True, [], [])},
+    "rtc": {"toString": ("rtc_string", True, [("FORMAT", ("pos", 0, "str"))], [])},
+    "compass": {"read_heading": ("compass_heading", True, [], [])},
+    "as7262": {"messen_roh": ("as7262_messen", True, [], [])},
+    "mpu": {
+        "calibrate_gyro": ("mpu_calibrate", False, [], []),
+        "read_temperature": ("mpu_temp", True, [], []),
+        "read_pitch": ("mpu_pitch", True, [], []),
+        "read_roll": ("mpu_roll", True, [], []),
+        "read_tilt_angle": ("mpu_tilt", True, [], []),
+        "is_level": ("mpu_level", True, [], []),
+        "read_orientation_text": ("mpu_orient", True, [], []),
+    },
+    "espnow": {
+        "add_peer": ("espnow_peer", False, [("MAC", ("pos", 0, "str"))], []),
+        "send": ("espnow_send", False, [("MAC", ("pos", 0, "str"))], [("MSG", 1)]),
+    },
+    "mqtt": {
+        "connect": ("mqtt_connect", False, [], []),
+        "check_msg": ("mqtt_check", False, [], []),
+        "publish": ("mqtt_publish", False, [("TOPIC", ("pos", 0, "bstr"))], [("WERT", 1)]),
+    },
+    "mlearn": {
+        "load_csv": ("mlearn_load", False, [("DATEI", ("pos", 0, "str")), ("TARGET", ("kw", "target", "int"))], []),
+        "add_sample": ("mlearn_add", False, [], [("FEATURES", 0), ("LABEL", 1)]),
+        "clear_data": ("mlearn_clear", False, [], []),
+        "split_data": ("mlearn_split", False, [("ANTEIL", ("pos", 0, "raw")), ("SEED", ("pos", 1, "int"))], []),
+        "train_knn": ("mlearn_train_knn", False, [], []),
+        "predict_knn": ("mlearn_predict_knn", True, [], [("FEATURES", 0)]),
+        "train_tree": ("mlearn_train_tree", False, [("DEPTH", ("kw", "max_depth", "int"))], []),
+        "predict_tree": ("mlearn_predict_tree", True, [], [("FEATURES", 0)]),
+        "train_forest": ("mlearn_train_forest", False, [("NTREES", ("kw", "n_trees", "int")),
+                                                        ("DEPTH", ("kw", "max_depth", "int"))], []),
+        "predict_forest": ("mlearn_predict_forest", True, [], [("FEATURES", 0)]),
+        "train_logreg": ("mlearn_train_logreg", False, [], []),
+        "predict_logreg": ("mlearn_predict_logreg", True, [], [("FEATURES", 0)]),
+        "train_netz": ("mlearn_train_netz", False, [("HIDDEN", ("kw", "hidden", "int")),
+                                                    ("EPOCHS", ("kw", "epochs", "int"))], []),
+        "predict_netz": ("mlearn_predict_netz", True, [], [("FEATURES", 0)]),
+        "save_model": ("mlearn_save", False, [("DATEI", ("pos", 0, "str")), ("TYP", ("kw", "model_type", "str"))], []),
+        "load_model": ("mlearn_load_model", False, [("DATEI", ("pos", 0, "str"))], []),
+    },
+}
+
+# Zusätzlich erlaubte (speziell behandelte) Methoden je Bibliothek
+_LIB_SPECIAL = {
+    "toene": {"ton"}, "niton": {"ton"}, "bme280": {"read_all"},
+    "mpu": {"read_accel", "read_gyro"}, "joy": {"daten"},
+}
+_NITON_NOTES = {"c", "d", "e", "f", "g", "a", "h", "c2"}
+_NITON_DAUER = {"viertel", "achtel", "halbe", "ganze", "viertelpunkt", "halbepunkt", "vierteltriole"}
+
+
+def _lib_allowed(kind):
+    return set(_LIB_METHODS.get(kind, {})) | _LIB_SPECIAL.get(kind, set())
+
+
+def _lib_init_block(kind, call):
+    spec = _LIB_INIT.get(kind)
+    if not spec:
+        return None
+    btype, fspec = spec
+    fields = {}
+    for fname, src in fspec:
+        v = _extract(src, call)
+        if v is not None:
+            fields[fname] = v
+    return _blk(btype, fields=fields or None)
+
+
+def _apply_method(spec, call, st):
+    btype, is_val, fspec, ispec = spec
+    fields = {}
+    for fname, src in fspec:
+        v = _extract(src, call)
+        if v is None:
+            return None
+        fields[fname] = v
+    inputs = {}
+    for iname, idx in ispec:
+        if idx >= len(call.args):
+            return None
+        inputs[iname] = _val(_expr(call.args[idx], st))
+    return _blk(btype, fields=fields or None, inputs=inputs or None)
+
+
+def _lib_method_stmt(kind, method, call, st):
+    """Bibliotheks-Methode als Anweisung → Block oder None."""
+    if kind == "toene" and method == "ton":
+        return _toene_ton(call)
+    if kind == "niton" and method == "ton":
+        return _niton_ton(call)
+    spec = _LIB_METHODS.get(kind, {}).get(method)
+    if spec and spec[1] is False:
+        return _apply_method(spec, call, st)
+    return None
+
+
+def _lib_method_expr(kind, method, call, st):
+    """Bibliotheks-Methode als Ausdruck (Wert) → Block oder None."""
+    spec = _LIB_METHODS.get(kind, {}).get(method)
+    if spec and spec[1] is True:
+        return _apply_method(spec, call, st)
+    return None
+
+
+def _toene_ton(call):
+    if not (call.args and isinstance(call.args[0], ast.Tuple) and len(call.args[0].elts) == 2):
+        return None
+    note, dauer = call.args[0].elts
+    if not (isinstance(note, ast.Constant) and isinstance(note.value, str)):
+        return None
+    d = _src(dauer).replace(" ", "")
+    return _blk("toene_ton", fields={"NOTE": note.value, "DAUER": d})
+
+
+def _niton_ton(call):
+    if len(call.args) != 2:
+        return None
+    a0, a1 = call.args
+    dauer = _src(a1)
+    if dauer not in _NITON_DAUER:
+        return None
+    if isinstance(a0, ast.Constant) and a0.value == 0:
+        return _blk("niton_pause", fields={"DAUER": dauer})
+    note = _src(a0)
+    if note not in _NITON_NOTES:
+        return None
+    return _blk("niton_ton", fields={"NOTE": note, "DAUER": dauer})
+
+
+def _multi_assign_block(node, st):
+    """Mehrfach-Zuweisungen wie ``ax, ay, az = mpu.read_accel()`` → Mess-Block."""
+    if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
+        return False
+    val = node.value
+    if not (isinstance(val, ast.Call) and isinstance(val.func, ast.Attribute)
+            and isinstance(val.func.value, ast.Name) and val.func.value.id in st):
+        return False
+    kind = st[val.func.value.id]
+    if not (isinstance(kind, tuple) and kind[0] == "lib"):
+        return False
+    k, m = kind[1], val.func.attr
+    tgt = node.targets[0]
+    if k == "bme280" and m == "read_all" and isinstance(tgt, ast.Tuple):
+        return _blk("bme280_read")
+    if k == "mpu" and m == "read_accel" and isinstance(tgt, ast.Tuple):
+        return _blk("mpu_accel")
+    if k == "mpu" and m == "read_gyro" and isinstance(tgt, ast.Tuple):
+        return _blk("mpu_gyro")
+    if k == "joy" and m == "daten" and isinstance(tgt, ast.Name):
+        return _blk("joy_lesen")
+    return False
+
+
 def _build_symtab(tree):
-    """Erkennt Hardware-Variablen, aber nur wenn ALLE ihre Verwendungen abbildbar
-    sind (sonst würde das Entfernen der Instanz-Zeile undefinierte Namen erzeugen)."""
-    cand = {}
+    """Erkennt Hardware-/Bibliotheks-Variablen, aber nur wenn ALLE ihre
+    Verwendungen abbildbar sind (sonst würde das Entfernen der Instanz-Zeile
+    undefinierte Namen erzeugen)."""
+    cand, callnode = {}, {}
     for n in ast.walk(tree):
         if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
             kind = _classify(n.value)
             if kind:
                 cand[n.targets[0].id] = kind
+                callnode[n.targets[0].id] = n.value
     if not cand:
         return {}
     parents = {}
@@ -183,13 +463,44 @@ def _build_symtab(tree):
             parents[child] = parent
     ok = {}
     for var, kind in cand.items():
+        if kind[0] == "i2c":
+            continue
         if _usages_ok(tree, parents, var, kind):
+            ok[var] = kind
+    # I2C-Busse nur entfernen, wenn ALLE Verwendungen in gemappte Lib-Konstruktoren gehen
+    mapped_calls = {id(callnode[v]) for v in ok}
+    for var, kind in cand.items():
+        if kind[0] == "i2c" and _i2c_droppable(tree, parents, var, mapped_calls):
             ok[var] = kind
     return ok
 
 
+def _i2c_droppable(tree, parents, var, mapped_calls):
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Name) and n.id == var and isinstance(n.ctx, ast.Load)):
+            continue
+        p = parents.get(n)
+        if isinstance(p, ast.keyword):
+            p = parents.get(p)
+        if not (isinstance(p, ast.Call) and id(p) in mapped_calls):
+            return False
+    return True
+
+
 def _usages_ok(tree, parents, var, kind):
     k = kind[0]
+    if k == "lib":
+        allowed = _lib_allowed(kind[1])
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Name) and n.id == var):
+                continue
+            if isinstance(n.ctx, ast.Store):
+                continue
+            p = parents.get(n)
+            if not (isinstance(p, ast.Attribute) and isinstance(parents.get(p), ast.Call)
+                    and p.attr in allowed):
+                return False
+        return True
     for n in ast.walk(tree):
         if not (isinstance(n, ast.Name) and n.id == var):
             continue
@@ -234,10 +545,14 @@ def _stmt(node, st):
             return None  # Importe erzeugen die Blöcke selbst wieder
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
             tgt = node.targets[0]
+            # Mehrfach-Rückgabe (bme280.read_all(), mpu.read_accel(), joystick.daten())
+            multi = _multi_assign_block(node, st)
+            if multi is not False:
+                return multi
             if isinstance(tgt, ast.Name):
                 hw = _hw_assign(tgt.id, node.value, st)
                 if hw is not False:
-                    return hw  # Block (NeoPixel-Init) oder None (Instanz entfällt)
+                    return hw  # Block (Init) oder None (Instanz entfällt)
                 return _blk("variables_set", fields={"VAR": {"name": tgt.id}},
                             inputs={"VALUE": _val(_expr(node.value, st))})
             if isinstance(tgt, ast.Subscript):
@@ -280,7 +595,10 @@ def _hw_assign(var, value, st):
     if kind[0] == "neopixel":
         return _blk("nit_neopixel_init",
                     fields={"PIN": kind[1], "NUM": kind[2]})
-    return None  # Pin/ADC/DAC/PWM: Instanz wird vom Operations-Block erzeugt
+    if kind[0] == "lib":
+        return _lib_init_block(kind[1], value)   # Init-Block (oled_init, servo_init, …)
+    # Pin/ADC/DAC/PWM und I2C-Bus: Instanz wird vom Operations-/Init-Block erzeugt
+    return None
 
 
 def _augassign(node, st):
@@ -338,6 +656,8 @@ def _hw_call_stmt(call, st):
     if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in st):
         return None
     kind = st[f.value.id]
+    if kind[0] == "lib":
+        return _lib_method_stmt(kind[1], f.attr, call, st)
     k, m = kind[0], f.attr
     if k == "pin_out" and m == "value" and len(call.args) == 1:
         bit = _lit_bit(call.args[0])
@@ -486,6 +806,8 @@ def _hw_call_expr(node, st):
             and isinstance(node.func.value, ast.Name) and node.func.value.id in st):
         return None
     kind = st[node.func.value.id]
+    if kind[0] == "lib":
+        return _lib_method_expr(kind[1], node.func.attr, node, st)
     k, m = kind[0], node.func.attr
     if k == "pin_in" and m == "value" and not node.args:
         fields = {"PIN": kind[1], "PULL": kind[2] or "none"}
