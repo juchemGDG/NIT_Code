@@ -262,6 +262,7 @@ class SerialPlot(QWidget):
         self._y_combo = QComboBox()
         self._y_combo.addItem("Auto", "auto")
         self._y_combo.addItem("Fest", "fixed")
+        self._setup_combo(self._y_combo)
         bar.addWidget(self._y_combo)
         self._y_min_spin = self._make_double_spin()
         self._y_max_spin = self._make_double_spin()
@@ -277,6 +278,7 @@ class SerialPlot(QWidget):
         self._x_combo = QComboBox()
         self._x_combo.addItem("Gleitend", "sliding")
         self._x_combo.addItem("Sweep", "sweep")
+        self._setup_combo(self._x_combo)
         bar.addWidget(self._x_combo)
         self._x_min_spin = self._make_int_spin()
         self._x_max_spin = self._make_int_spin()
@@ -314,6 +316,13 @@ class SerialPlot(QWidget):
         sp.setFixedWidth(84)
         sp.setKeyboardTracking(False)
         return sp
+
+    @staticmethod
+    def _setup_combo(combo: QComboBox):
+        """Sorgt für eine ausreichend breite Auswahl und ein lesbares Dropdown."""
+        combo.setMinimumWidth(112)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        combo.view().setMinimumWidth(120)
 
     # ── Konfiguration ─────────────────────────────────────────────────────────
     def apply_config(self, *, y_mode=None, y_min=None, y_max=None,
@@ -436,8 +445,12 @@ class SerialPlot(QWidget):
             f"QComboBox, QSpinBox, QDoubleSpinBox {{ background:{THEME['bg_dark']};"
             f" color:{THEME['text']}; border:1px solid {THEME['border']};"
             f" border-radius:4px; padding:2px 4px; }}"
+            # combobox-popup:0 erzwingt das Qt-eigene Popup (statt eines nativen,"
+            # das den Text abschnitt) – so wird die Breite der Einträge respektiert.
+            f"QComboBox {{ combobox-popup: 0; }}"
             f"QComboBox QAbstractItemView {{ background:{THEME['bg_dark']};"
-            f" color:{THEME['text']}; selection-background-color:{THEME['accent']}; }}"
+            f" color:{THEME['text']}; selection-background-color:{THEME['accent']};"
+            f" min-width:120px; }}"
         )
         lbl_style = f"color:{THEME['text']};"
         for c in (self._y_combo, self._x_combo, self._y_min_spin, self._y_max_spin,
