@@ -20,6 +20,7 @@ GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 | **Git-Integration** | Repository klonen, Status, Commit, Push, Pull, Branch wechseln und Merge-Konflikte lösen – direkt aus dem Menü „Git" |
 | **Syntax-Highlighting** | Farbige Python-Syntax, Zeilennummern, Klammernabgleich, Auto-Vervollständigung (Jedi) |
 | **Fehler-Links** | Fehler in rot, klickbar → Sprung zur Fehlerstelle im Editor |
+| **Fehler-Erklärung** | Verständliche deutsche Klartext-Hinweise zu Programmfehlern; auf Wunsch erklärt der KI-Tutor „Infi" den Fehler mit Bezug auf den eigenen Code |
 | **Shell** | Integriertes Terminal für Einzelbefehle |
 | **Dateibaum** | Ordner/Dateien verwalten, neue Dateien erstellen |
 | **Helles & dunkles Design** | Zwei Themes – klassisch-hell (Standard) und modern-dunkel, umschaltbar in den Einstellungen |
@@ -101,6 +102,20 @@ ollama pull llama3.2
 
 > Das Modell kann im Einstellungs-Dialog jederzeit geändert werden (Feld „Modell").  
 > Ollama muss laufen, bevor Infi gestartet wird. Beim Fehler „Keine Verbindung" bitte in einer Eingabeaufforderung `ollama serve` ausführen.
+
+---
+
+## Fehler verstehen
+
+Stürzt ein Programm ab, zeigt NIT_Code unter der Fehlermeldung einen **verständlichen,
+deutschen Hinweis** an: was der Fehler bedeutet und worauf zu achten ist (z. B. bei
+`NameError`, `IndentationError`, `IndexError`, `TypeError` …). Das funktioniert
+vollständig lokal, ganz ohne KI.
+
+Ist zusätzlich der KI-Tutor **„Infi" aktiv**, erscheint der Knopf
+**🤖 Infi erklärt diesen Fehler**. Ein Klick schickt die Fehlermeldung zusammen mit
+dem eigenen Code an Infi, der den Fehler kindgerecht erklärt – mit Hinweisen statt
+fertiger Lösung, damit das eigene Nachdenken im Vordergrund bleibt.
 
 ---
 

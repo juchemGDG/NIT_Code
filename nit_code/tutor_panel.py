@@ -277,6 +277,17 @@ class TutorPanel(QWidget):
         return super().eventFilter(obj, event)
 
     # ── Nachricht senden ────────────────────────────────────────────────────
+    def ask(self, text: str):
+        """Programmatisch eine Frage an Infi stellen (z. B. „Fehler erklären").
+
+        Setzt den Text in das Eingabefeld und sendet ihn wie eine normale Frage,
+        sodass die Schülerin/der Schüler sieht, was gefragt wurde.
+        """
+        if not text or not text.strip():
+            return
+        self._input.setPlainText(text)
+        self._send_message()
+
     def _send_message(self):
         text = self._input.toPlainText().strip()
         if not text or self._worker is not None:

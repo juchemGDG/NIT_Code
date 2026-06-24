@@ -648,6 +648,9 @@ class MainWindow(QMainWindow):
         self._retired_threads: list = []   # hält QThread-Referenzen bis finished
         self._aux_workers: list = []   # kurzlebige Hilfs-Threads (Port-Scan, Geräte-Listing)
         self._port_scan_busy = False   # verhindert überlappende Port-Scans
+        self._run_stderr_buf: list[str] = []   # stderr des laufenden Programms (für Fehlerhinweis)
+        self._last_error_traceback = ""        # letzter Traceback (für „Infi erklärt")
+        self._user_stopped = False             # True wenn Lauf per Stopp-Knopf beendet
         self._port_busy = False     # verhindert gleichzeitige mpremote-Prozesse
         self._settings_font_size: int = 14
         self._settings_line_numbers: bool = True
@@ -940,6 +943,7 @@ class MainWindow(QMainWindow):
         # Konsole
         self._console = ConsolePanel()
         self._console.error_link_clicked.connect(self._jump_to_error)
+        self._console.explain_requested.connect(self._explain_error_with_infi)
         self._device_panel.refresh_started.connect(self._on_device_refresh_start)
         self._device_panel.refresh_done.connect(self._on_device_refresh_done)
         self._device_panel.firmware_info.connect(
@@ -1301,6 +1305,11 @@ class MainWindow(QMainWindow):
         tab.editor.clear_error_markers()
         self._console.clear_output()
         self._console.append_info(f"▶  Starte: {tab.filepath}\n")
+        # Fehler-Zustand für diesen Lauf zurücksetzen
+        self._run_stderr_buf = []
+        self._last_error_traceback = ""
+        self._user_stopped = False
+        self._console.set_explain_visible(False)
 
         self._retire_process()
         if self._mode == "python":
@@ -1328,6 +1337,7 @@ class MainWindow(QMainWindow):
 
     def _stop_program(self):
         if self._process and self._process.isRunning():
+            self._user_stopped = True   # kein Fehlerhinweis für bewussten Abbruch
             self._process.terminate_process()
             self._console.flush_now()
             self._console.append_info("\n■  Abgebrochen.\n")
@@ -1339,9 +1349,36 @@ class MainWindow(QMainWindow):
         """Blendet den Serial Plotter (Live-Graph der Zahlenausgabe) ein/aus."""
         self._console.set_plotter_visible(checked)
 
+    def _explain_error_with_infi(self):
+        """Schickt den letzten Fehler mit dem Schülercode an den Tutor „Infi"."""
+        tb = self._last_error_traceback
+        if not tb.strip():
+            return
+        if self._settings_tutor_mode != "ollama":
+            QMessageBox.information(
+                self, "Infi",
+                "Der KI-Tutor „Infi“ ist nicht aktiv.\n"
+                "Aktiviere ihn unter Datei → Einstellungen → KI-Tutor (Infi).",
+            )
+            return
+        tab = self._current_tab()
+        code = tab.editor.get_text() if tab else ""
+        from .error_hints import build_infi_error_prompt
+        prompt = build_infi_error_prompt(code, tb)
+        # Infi-Panel sicher einblenden (Index 0) – auch wenn der Splitter kollabiert war.
+        self._ai_stack.setCurrentIndex(0)
+        self._ai_stack.setVisible(True)
+        sizes = self._main_splitter.sizes()
+        if len(sizes) == 3 and sizes[2] == 0:
+            total = sum(sizes)
+            self._main_splitter.setSizes([sizes[0], max(200, total - sizes[0] - 320), 320])
+        self._tutor_panel.ask(prompt)
+        self._console.set_explain_visible(False)
+
     def _on_process_output(self, text: str, kind: str):
         if kind == "stderr":
             self._console.append_program_error(text)
+            self._run_stderr_buf.append(text)   # für Fehlerhinweis nach Programmende
             # Fehlerzeilen im Editor markieren
             import re
             for m in re.finditer(r'File "([^"]+)", line (\d+)', text):
@@ -1364,6 +1401,24 @@ class MainWindow(QMainWindow):
             self._console.append_success(f"\n✓  Programm beendet (Code {code})\n")
         else:
             self._console.append_error(f"\n✗  Programm beendet mit Code {code}\n")
+            self._handle_program_error()
+
+    def _handle_program_error(self):
+        """Nach einem Absturz: verständlichen Hinweis zeigen und (falls Infi aktiv)
+        den „Infi erklärt diesen Fehler"-Knopf anbieten."""
+        if self._user_stopped:
+            return   # vom Nutzer abgebrochen – kein echter Programmfehler
+        traceback_text = "".join(self._run_stderr_buf).strip()
+        if not traceback_text:
+            return
+        self._last_error_traceback = traceback_text
+        from .error_hints import explain
+        hint = explain(traceback_text)
+        if hint:
+            self._console.append_hint(hint)
+        # KI-Erklärung nur anbieten, wenn der Ollama-Tutor (Infi) eingerichtet ist.
+        if self._settings_tutor_mode == "ollama":
+            self._console.set_explain_visible(True)
 
     def _refresh_device_files_after_run(self):
         port = self._get_serial_port(silent=True)
