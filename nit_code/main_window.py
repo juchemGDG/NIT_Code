@@ -583,6 +583,58 @@ class EditorTab:
         return "Unbenannt"
 
 
+class _PortScanWorker(QThread):
+    """Scannt serielle Ports in einem Hintergrund-Thread.
+
+    Der Port-Scan (``comports()``) liest unter Windows die SetupAPI/Registry und
+    kann gelegentlich zehntel Sekunden dauern. Da er alle paar Sekunden läuft,
+    würde er im UI-Thread ein regelmäßiges Ruckeln verursachen.
+    """
+    result = pyqtSignal(list)   # list[(device, description)]
+
+    def run(self):
+        try:
+            import serial.tools.list_ports
+            ports = [(p.device, p.description) for p in serial.tools.list_ports.comports()]
+        except Exception:
+            ports = []
+        self.result.emit(ports)
+
+
+class _DeviceDirWorker(QThread):
+    """Liest die Ordnernamen im Wurzelverzeichnis des Controllers (best effort).
+
+    Läuft im Hintergrund, damit der Datei-Upload die Oberfläche nicht einfriert,
+    während mpremote die Raw-REPL betritt.
+    """
+    result = pyqtSignal(list)   # list[str] Ordnernamen
+
+    def __init__(self, port: str):
+        super().__init__()
+        self._port = port
+
+    def run(self):
+        code = (
+            "import os\n"
+            "for f in os.listdir():\n"
+            "    try:\n"
+            "        if os.stat(f)[0] & 0x4000: print('D:' + f)\n"
+            "    except: pass\n"
+        )
+        dirs: list[str] = []
+        try:
+            r = subprocess.run(
+                [*tool_command("mpremote"), "connect", self._port, "exec", code],
+                capture_output=True, text=True, timeout=8,
+            )
+            if r.returncode == 0:
+                dirs = [ln.strip()[2:] for ln in r.stdout.splitlines()
+                        if ln.strip().startswith("D:")]
+        except Exception:
+            pass
+        self.result.emit(dirs)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Haupt-Fenster
 # ──────────────────────────────────────────────────────────────────────────────
@@ -594,6 +646,8 @@ class MainWindow(QMainWindow):
         self._board = "ESP32"
         self._process: ProcessRunner | None = None
         self._retired_threads: list = []   # hält QThread-Referenzen bis finished
+        self._aux_workers: list = []   # kurzlebige Hilfs-Threads (Port-Scan, Geräte-Listing)
+        self._port_scan_busy = False   # verhindert überlappende Port-Scans
         self._port_busy = False     # verhindert gleichzeitige mpremote-Prozesse
         self._settings_font_size: int = 14
         self._settings_line_numbers: bool = True
@@ -1321,7 +1375,17 @@ class MainWindow(QMainWindow):
         if not port:
             return
 
-        folder = self._choose_device_folder(port)
+        # Ordnerliste des Controllers im Hintergrund holen, dann Auswahl + Upload
+        # fortsetzen – so friert die Oberfläche während des Raw-REPL-Zugriffs nicht ein.
+        self._console.append_info("↑  Ermittle Zielordner auf dem Controller …\n")
+        worker = _DeviceDirWorker(port)
+        worker.result.connect(lambda dirs: self._continue_upload(tab, port, dirs))
+        self._track_aux_worker(worker)
+        worker.start()
+
+    def _continue_upload(self, tab, port: str, dirs: list[str]):
+        """Zweiter Teil von :meth:`_upload_to_device` – läuft nach dem Geräte-Listing."""
+        folder = self._choose_device_folder(dirs)
         if folder is None:   # abgebrochen
             return
 
@@ -1355,36 +1419,15 @@ class MainWindow(QMainWindow):
         )
         self._process.start()
 
-    def _list_device_dirs(self, port: str) -> list[str]:
-        """Liest die Ordner im Wurzelverzeichnis des Controllers (best effort)."""
-        code = (
-            "import os\n"
-            "for f in os.listdir():\n"
-            "    try:\n"
-            "        if os.stat(f)[0] & 0x4000: print('D:' + f)\n"
-            "    except: pass\n"
-        )
-        try:
-            r = subprocess.run(
-                [*tool_command("mpremote"), "connect", port, "exec", code],
-                capture_output=True, text=True, timeout=8,
-            )
-        except Exception:
-            return []
-        if r.returncode != 0:
-            return []
-        return [ln.strip()[2:] for ln in r.stdout.splitlines()
-                if ln.strip().startswith("D:")]
-
-    def _choose_device_folder(self, port: str) -> str | None:
+    def _choose_device_folder(self, dirs: list[str]) -> str | None:
         """Lässt den Zielordner für den Upload wählen.
 
+        ``dirs`` ist die zuvor (im Hintergrund) gelesene Ordnerliste des Controllers.
         Rückgabe: "" für die Hauptebene, ein Ordnername, oder None bei Abbruch.
         """
         ROOT = "/ (Hauptebene)"
         NEW = "➕ Neuer Ordner …"
-        dirs = sorted(self._list_device_dirs(port))
-        items = [ROOT] + [f"📁 {d}" for d in dirs] + [NEW]
+        items = [ROOT] + [f"📁 {d}" for d in sorted(dirs)] + [NEW]
         choice, ok = self._ask_item_input(
             "Zielordner wählen",
             "In welchen Ordner auf dem Controller hochladen?",
@@ -1399,6 +1442,17 @@ class MainWindow(QMainWindow):
             name = name.strip().strip("/")
             return name if (ok2 and name) else None
         return choice[len("📁 "):]   # Emoji-Präfix entfernen
+
+    def _track_aux_worker(self, worker: QThread):
+        """Hält eine Referenz auf einen kurzlebigen Hilfs-Thread, bis er fertig ist.
+
+        Verhindert, dass Python den QThread per GC einsammelt, während er noch läuft
+        ('QThread destroyed while still running' → Absturz).
+        """
+        self._aux_workers.append(worker)
+        worker.finished.connect(
+            lambda w=worker: self._aux_workers.remove(w) if w in self._aux_workers else None
+        )
 
     def _flash_firmware(self):
         from .micropython_dialogs import FlashDialog
@@ -1966,6 +2020,23 @@ class MainWindow(QMainWindow):
             label=f"Neuen Branch '{name}' anlegen",
         )
 
+    def _git_fetch_then(self, repo: str, on_done):
+        """Holt den Remote-Stand (``fetch --all --prune``) im Hintergrund-Thread
+        und ruft danach ``on_done()`` im UI-Thread auf – ohne die Oberfläche
+        einzufrieren. Schlägt der Fetch fehl (z. B. offline), wird trotzdem mit
+        dem lokalen Stand fortgefahren.
+        """
+        if shutil.which("git") is None:
+            on_done()
+            return
+        self._console.append_info("[Git] Hole Remote-Stand …\n")
+        proc = ProcessRunner(["git", "-C", repo, "fetch", "--all", "--prune"], cwd=repo)
+        # on_done erst nach Rückkehr aus dem finished-Slot starten (sauberer Dialog).
+        proc.finished_run.connect(lambda code: QTimer.singleShot(0, on_done))
+        self._retire_process()
+        self._process = proc
+        proc.start()
+
     def _git_merge_branch(self):
         repo = self._require_git_repo()
         if not repo:
@@ -1980,14 +2051,11 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Aktuellen Fetch ausführen, damit Remote-Branches aktuell sind.
-        subprocess.run(
-            ["git", "-C", repo, "fetch", "--all", "--prune"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Remote-Stand im Hintergrund aktualisieren, dann die Auswahl zeigen.
+        self._git_fetch_then(repo, lambda: self._merge_branch_choose(repo, current))
 
+    def _merge_branch_choose(self, repo: str, current: str):
+        """Zeigt nach dem Hintergrund-Fetch die Branch-Auswahl und startet den Merge."""
         local = [b for b in self._get_local_branches(repo) if b != current]
         remote = self._get_remote_origin_branches(repo)
         candidates = local + remote
@@ -2075,15 +2143,11 @@ class MainWindow(QMainWindow):
         repo = self._require_git_repo()
         if not repo:
             return
+        # Remote-Stand im Hintergrund holen, dann die Vergleichsauswahl zeigen.
+        self._git_fetch_then(repo, lambda: self._git_diff_choose(repo))
 
-        # Fetch, damit der Vergleich gegen den Remote-Stand aktuell ist.
-        subprocess.run(
-            ["git", "-C", repo, "fetch", "--all", "--prune"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
+    def _git_diff_choose(self, repo: str):
+        """Zeigt nach dem Hintergrund-Fetch die Vergleichsauswahl und erzeugt den Diff."""
         current = self._get_current_branch(repo)
         working = "Eigene Änderungen (noch nicht committet)"
         options = [working]
@@ -2245,60 +2309,6 @@ class MainWindow(QMainWindow):
                 on_finish=lambda code: self._offer_conflict_resolution(repo),
             )
 
-    def _ensure_pull_upstream(self, repo: str) -> bool:
-        subprocess.run(
-            ["git", "-C", repo, "fetch", "--all", "--prune"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        current = self._get_current_branch(repo)
-        if not current or current == "HEAD":
-            return True
-
-        upstream = self._get_upstream_branch(repo)
-        remote_branches = self._get_remote_origin_branches(repo)
-        if not remote_branches:
-            return True
-
-        if upstream and upstream in remote_branches:
-            return True
-
-        if upstream and upstream.startswith("origin/"):
-            missing = upstream
-        elif upstream:
-            missing = upstream
-        else:
-            missing = "(kein Upstream gesetzt)"
-
-        msg = (
-            f"Für den lokalen Branch '{current}' ist der Upstream '{missing}' nicht verfügbar.\n\n"
-            "Bitte wähle einen Remote-Branch, der als neuer Upstream gesetzt werden soll."
-        )
-        selected, ok = self._ask_item_input(
-            "Git: Upstream reparieren",
-            msg,
-            remote_branches,
-            0,
-            False,
-        )
-        if not ok or not selected:
-            return False
-
-        self._run_git_process(
-            ["git", "branch", "--set-upstream-to", selected, current],
-            cwd=repo,
-            label=f"Upstream setzen ({current} -> {selected})",
-            on_success=lambda: self._run_git_process(
-                ["git", "pull", "origin", current],
-                cwd=repo,
-                label="Pull",
-                on_finish=lambda code: self._offer_conflict_resolution(repo),
-            ),
-        )
-        return False
-
     def _get_upstream_branch(self, repo: str) -> str | None:
         res = subprocess.run(
             ["git", "-C", repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
@@ -2401,13 +2411,31 @@ class MainWindow(QMainWindow):
         return python_executable()
 
     def _refresh_ports(self):
-        """Scannt serielle Ports und aktualisiert die Combo-Box in der Toolbar."""
-        try:
-            import serial.tools.list_ports
-            ports = [(p.device, p.description) for p in serial.tools.list_ports.comports()]
-        except Exception:
-            ports = []
+        """Stößt einen Port-Scan im Hintergrund-Thread an (kein I/O im UI-Thread)."""
+        if self._port_scan_busy:
+            return   # vorheriger Scan läuft noch – Ergebnis abwarten
+        self._port_scan_busy = True
+        worker = _PortScanWorker()
+        worker.result.connect(self._apply_port_scan)
+        worker.finished.connect(lambda: setattr(self, "_port_scan_busy", False))
+        self._track_aux_worker(worker)
+        worker.start()
+
+    def _apply_port_scan(self, ports: list):
+        """Übernimmt das Ergebnis eines Port-Scans in die Toolbar-Combo.
+
+        Baut die Liste nur neu auf, wenn sich die erkannten Geräte tatsächlich
+        geändert haben – das vermeidet unnötige UI-Arbeit beim Sekunden-Polling.
+        """
         current = self._port_combo.currentData()
+        existing = [self._port_combo.itemData(i) for i in range(self._port_combo.count())]
+        new_devices = [d for d, _ in ports] if ports else [None]
+        if existing == new_devices:
+            # Geräteliste unverändert – nur Trennungs-Status nachziehen.
+            if current and current not in new_devices:
+                self._status_mode.setText("MicroPython  –  ⚠ Gerät getrennt")
+            return
+
         self._port_combo.blockSignals(True)
         self._port_combo.clear()
         if not ports:
@@ -2750,6 +2778,9 @@ class MainWindow(QMainWindow):
             self._process.terminate_process()
             self._process.wait(2000)
         for t in list(self._retired_threads):
+            if t.isRunning():
+                t.wait(1000)
+        for t in list(self._aux_workers):
             if t.isRunning():
                 t.wait(1000)
         self._save_persistent_settings()
