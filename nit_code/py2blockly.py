@@ -631,18 +631,24 @@ def _augassign(node, st):
     return _blk("variables_set", fields={"VAR": {"name": name}}, inputs={"VALUE": _val(inner)})
 
 
+def _color_block(value, st):
+    """Farbe als Block: RGB-Literal ``(r, g, b)`` → kompakter nit_color_rgb-Block,
+    sonst der generische Ausdruck (eigenes Tupel, Variable, …)."""
+    if isinstance(value, ast.Tuple) and len(value.elts) == 3 \
+            and all(isinstance(e, ast.Constant) and isinstance(e.value, int) for e in value.elts):
+        r, g, b = (e.value for e in value.elts)
+        return _blk("nit_color_rgb", fields={"R": r, "G": g, "B": b})
+    return _expr(value, st)
+
+
 def _neopixel_set(target, value, st):
-    """``np[i] = (r, g, b)`` → nit_neopixel_set."""
+    """``np[i] = farbe`` → nit_neopixel_set (Farbe als (R, G, B)-Tupel)."""
     base = target.value
     if not (isinstance(base, ast.Name) and st.get(base.id, ("",))[0] == "neopixel"):
         return None
-    if not (isinstance(value, ast.Tuple) and len(value.elts) == 3
-            and all(isinstance(e, ast.Constant) and isinstance(e.value, int) for e in value.elts)):
-        return None
-    idx = target.slice
-    r, g, b = (e.value for e in value.elts)
-    return _blk("nit_neopixel_set", fields={"R": r, "G": g, "B": b},
-                inputs={"INDEX": _val(_expr(idx, st))})
+    return _blk("nit_neopixel_set",
+                inputs={"INDEX": _val(_expr(target.slice, st)),
+                        "COLOR": _val(_color_block(value, st))})
 
 
 def _expr_statement(value, st):
@@ -689,11 +695,9 @@ def _hw_call_stmt(call, st):
         return _DROP  # ADC-Konfig erzeugt der ADC-Block selbst – stillschweigend weglassen
     if k == "neopixel" and m == "write" and not call.args:
         return _blk("nit_neopixel_show")
-    if k == "neopixel" and m == "fill" and len(call.args) == 1 \
-            and isinstance(call.args[0], ast.Tuple) and len(call.args[0].elts) == 3 \
-            and all(isinstance(e, ast.Constant) for e in call.args[0].elts):
-        r, g, b = (e.value for e in call.args[0].elts)
-        return _blk("nit_neopixel_fill", fields={"R": r, "G": g, "B": b})
+    if k == "neopixel" and m == "fill" and len(call.args) == 1:
+        return _blk("nit_neopixel_fill",
+                    inputs={"COLOR": _val(_color_block(call.args[0], st))})
     return None
 
 

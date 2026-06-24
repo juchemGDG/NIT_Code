@@ -156,9 +156,13 @@
       <block type="nit_neopixel_init"></block>
       <block type="nit_neopixel_set">
         <value name="INDEX"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="COLOR"><shadow type="nit_color_rgb"></shadow></value>
       </block>
-      <block type="nit_neopixel_fill"></block>
+      <block type="nit_neopixel_fill">
+        <value name="COLOR"><shadow type="nit_color_rgb"></shadow></value>
+      </block>
       <block type="nit_neopixel_show"></block>
+      <block type="nit_color_rgb"></block>
     </category>
     <category name="nitbw-Bibliotheken" colour="290">
       <category name="OLED-Display" colour="290">

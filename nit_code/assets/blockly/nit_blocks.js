@@ -293,41 +293,60 @@
     return '';   // Instanz steht oben – kein Code im Hauptprogramm
   });
 
-  Blockly.Blocks['nit_neopixel_set'] = {
+  // Farbe als (R, G, B)-Tupel – kompakt mit Zahlenfeldern. Dient als Voreinstellung
+  // (Shadow) in den NeoPixel-Blöcken, kann aber durch ein eigenes Tupel oder eine
+  // Variable ersetzt werden. Gibt genau ein Python-Tupel aus.
+  Blockly.Blocks['nit_color_rgb'] = {
     init: function () {
-      this.appendValueInput('INDEX').setCheck('Number').appendField('NeoPixel LED');
       this.appendDummyInput()
         .appendField('Farbe R').appendField(new FNum(255, 0, 255, 1), 'R')
         .appendField('G').appendField(new FNum(0, 0, 255, 1), 'G')
         .appendField('B').appendField(new FNum(0, 0, 255, 1), 'B');
+      this.setOutput(true, null);
+      this.setInputsInline(true);
+      this.setColour(NIT_COLOUR);
+      this.setTooltip('Eine Farbe als (R, G, B)-Tupel. Jeder Wert von 0 bis 255.');
+    }
+  };
+  reg('nit_color_rgb', function (block) {
+    var r = block.getFieldValue('R'), g = block.getFieldValue('G'), b = block.getFieldValue('B');
+    return ['(' + r + ', ' + g + ', ' + b + ')', ord('ATOMIC')];
+  });
+
+  Blockly.Blocks['nit_neopixel_set'] = {
+    init: function () {
+      this.appendValueInput('INDEX').setCheck('Number').appendField('NeoPixel LED');
+      this.appendValueInput('COLOR');
       this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(NIT_COLOUR);
-      this.setTooltip('Setzt die Farbe einer einzelnen LED (erst "anzeigen" macht es sichtbar).');
+      this.setTooltip('Setzt die Farbe einer einzelnen LED als (R, G, B)-Tupel '
+        + '(erst "anzeigen" macht es sichtbar). Statt der R/G/B-Felder kannst du '
+        + 'auch ein eigenes Tupel oder eine Variable einsetzen.');
     }
   };
   reg('nit_neopixel_set', function (block) {
     var idx = P.valueToCode(block, 'INDEX', ord('NONE')) || '0';
-    var r = block.getFieldValue('R'), g = block.getFieldValue('G'), b = block.getFieldValue('B');
-    return 'np[' + idx + '] = (' + r + ', ' + g + ', ' + b + ')\n';
+    var color = P.valueToCode(block, 'COLOR', ord('NONE')) || '(0, 0, 0)';
+    return 'np[' + idx + '] = ' + color + '\n';
   });
 
   Blockly.Blocks['nit_neopixel_fill'] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField('NeoPixel alle Farbe R').appendField(new FNum(0, 0, 255, 1), 'R')
-        .appendField('G').appendField(new FNum(0, 0, 255, 1), 'G')
-        .appendField('B').appendField(new FNum(0, 0, 255, 1), 'B');
+      this.appendValueInput('COLOR').appendField('NeoPixel alle');
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(NIT_COLOUR);
-      this.setTooltip('Setzt alle LEDs auf dieselbe Farbe (erst "anzeigen" macht es sichtbar).');
+      this.setTooltip('Setzt alle LEDs auf dieselbe Farbe als (R, G, B)-Tupel '
+        + '(erst "anzeigen" macht es sichtbar). Statt der R/G/B-Felder kannst du '
+        + 'auch ein eigenes Tupel oder eine Variable einsetzen.');
     }
   };
   reg('nit_neopixel_fill', function (block) {
-    var r = block.getFieldValue('R'), g = block.getFieldValue('G'), b = block.getFieldValue('B');
-    return 'np.fill((' + r + ', ' + g + ', ' + b + '))\n';
+    var color = P.valueToCode(block, 'COLOR', ord('NONE')) || '(0, 0, 0)';
+    return 'np.fill(' + color + ')\n';
   });
 
   Blockly.Blocks['nit_neopixel_show'] = {
