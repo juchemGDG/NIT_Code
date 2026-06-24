@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QSpinBox, QCheckBox, QPushButton, QFrame,
+    QLabel, QSpinBox, QDoubleSpinBox, QCheckBox, QPushButton, QFrame,
     QComboBox, QLineEdit, QFileDialog, QWidget, QScrollArea,
 )
 
@@ -113,6 +113,12 @@ class SettingsDialog(QDialog):
         sketchbook_dir: str = "",
         theme: str = "modern_dark",
         blocks_enabled: bool = False,
+        plot_y_mode: str = "auto",
+        plot_y_min: float = 0.0,
+        plot_y_max: float = 100.0,
+        plot_x_mode: str = "sliding",
+        plot_x_min: int = 0,
+        plot_x_max: int = 500,
     ):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
@@ -195,7 +201,9 @@ class SettingsDialog(QDialog):
         self._build_ui(font_size, line_numbers, word_wrap, highlight_line,
                        autosave_secs, python_exec, scrollback,
                        tutor_mode, tutor_url, tutor_model, sketchbook_dir, theme,
-                       blocks_enabled)
+                       blocks_enabled,
+                       plot_y_mode, plot_y_min, plot_y_max,
+                       plot_x_mode, plot_x_min, plot_x_max)
 
     # ── Hilfsmethode: Abschnittsüberschrift ─────────────────────────────
     @staticmethod
@@ -225,6 +233,12 @@ class SettingsDialog(QDialog):
         sketchbook_dir: str = "",
         theme: str = "modern_dark",
         blocks_enabled: bool = False,
+        plot_y_mode: str = "auto",
+        plot_y_min: float = 0.0,
+        plot_y_max: float = 100.0,
+        plot_x_mode: str = "sliding",
+        plot_x_min: int = 0,
+        plot_x_max: int = 500,
     ):
         # Äußeres Layout: Scrollbereich (Inhalt) + feste Button-Leiste unten.
         outer = QVBoxLayout(self)
@@ -320,6 +334,77 @@ class SettingsDialog(QDialog):
 
         root.addLayout(form_run)
         root.addSpacing(6)
+
+        # ── Abschnitt: Serial Plotter ────────────────────────────────────
+        title_pl, sep_pl = self._section("SERIAL PLOTTER")
+        root.addWidget(title_pl)
+        root.addWidget(sep_pl)
+
+        form_pl = QFormLayout()
+        form_pl.setSpacing(8)
+        form_pl.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Hochachse (Y): automatisch oder feste Grenzen
+        self._combo_plot_y = QComboBox()
+        self._combo_plot_y.setFixedWidth(190)
+        self._combo_plot_y.addItem("Automatisch (gleitend)", "auto")
+        self._combo_plot_y.addItem("Feste Grenzen (Min/Max)", "fixed")
+        self._combo_plot_y.setCurrentIndex(max(0, self._combo_plot_y.findData(plot_y_mode)))
+        form_pl.addRow("Hochachse (Y):", self._combo_plot_y)
+
+        y_row = QHBoxLayout()
+        self._spin_plot_ymin = QDoubleSpinBox()
+        self._spin_plot_ymin.setRange(-1_000_000_000, 1_000_000_000)
+        self._spin_plot_ymin.setDecimals(2)
+        self._spin_plot_ymin.setFixedWidth(110)
+        self._spin_plot_ymin.setValue(plot_y_min)
+        self._spin_plot_ymax = QDoubleSpinBox()
+        self._spin_plot_ymax.setRange(-1_000_000_000, 1_000_000_000)
+        self._spin_plot_ymax.setDecimals(2)
+        self._spin_plot_ymax.setFixedWidth(110)
+        self._spin_plot_ymax.setValue(plot_y_max)
+        y_row.addWidget(self._spin_plot_ymin)
+        y_row.addWidget(QLabel("bis"))
+        y_row.addWidget(self._spin_plot_ymax)
+        y_row.addStretch()
+        form_pl.addRow("Y Min / Max:", y_row)
+
+        # Rechtsachse (X): gleitend oder fester Indexbereich (Sweep)
+        self._combo_plot_x = QComboBox()
+        self._combo_plot_x.setFixedWidth(190)
+        self._combo_plot_x.addItem("Gleitend (letzte Werte)", "sliding")
+        self._combo_plot_x.addItem("Fester Bereich (Sweep)", "sweep")
+        self._combo_plot_x.setCurrentIndex(max(0, self._combo_plot_x.findData(plot_x_mode)))
+        form_pl.addRow("Rechtsachse (X):", self._combo_plot_x)
+
+        x_row = QHBoxLayout()
+        self._spin_plot_xmin = QSpinBox()
+        self._spin_plot_xmin.setRange(0, 100_000_000)
+        self._spin_plot_xmin.setFixedWidth(110)
+        self._spin_plot_xmin.setValue(plot_x_min)
+        self._spin_plot_xmax = QSpinBox()
+        self._spin_plot_xmax.setRange(0, 100_000_000)
+        self._spin_plot_xmax.setFixedWidth(110)
+        self._spin_plot_xmax.setValue(plot_x_max)
+        x_row.addWidget(self._spin_plot_xmin)
+        x_row.addWidget(QLabel("bis"))
+        x_row.addWidget(self._spin_plot_xmax)
+        x_row.addStretch()
+        form_pl.addRow("X Min / Max:", x_row)
+
+        hint_pl = QLabel(
+            "Standardwerte – im Plotter selbst jederzeit live umstellbar."
+        )
+        hint_pl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px; padding:2px 0;")
+        hint_pl.setWordWrap(True)
+        form_pl.addRow("", hint_pl)
+
+        root.addLayout(form_pl)
+        root.addSpacing(6)
+
+        self._combo_plot_y.currentIndexChanged.connect(self._on_plot_axis_changed)
+        self._combo_plot_x.currentIndexChanged.connect(self._on_plot_axis_changed)
+        self._on_plot_axis_changed()
 
         # ── Abschnitt: Shell ─────────────────────────────────────────────
         title3, sep3 = self._section("SHELL")
@@ -656,6 +741,14 @@ class SettingsDialog(QDialog):
             self._combo_tutor_mode.currentData() in ("ollama", "coder")
         )
 
+    def _on_plot_axis_changed(self, *_):
+        y_fixed = self._combo_plot_y.currentData() == "fixed"
+        self._spin_plot_ymin.setEnabled(y_fixed)
+        self._spin_plot_ymax.setEnabled(y_fixed)
+        x_sweep = self._combo_plot_x.currentData() == "sweep"
+        self._spin_plot_xmin.setEnabled(x_sweep)
+        self._spin_plot_xmax.setEnabled(x_sweep)
+
     # ── Properties ──────────────────────────────────────────────────────────
 
     @property
@@ -709,3 +802,27 @@ class SettingsDialog(QDialog):
     @property
     def sketchbook_dir(self) -> str:
         return self._edit_sketchbook.text().strip()
+
+    @property
+    def plot_y_mode(self) -> str:
+        return self._combo_plot_y.currentData()
+
+    @property
+    def plot_y_min(self) -> float:
+        return self._spin_plot_ymin.value()
+
+    @property
+    def plot_y_max(self) -> float:
+        return self._spin_plot_ymax.value()
+
+    @property
+    def plot_x_mode(self) -> str:
+        return self._combo_plot_x.currentData()
+
+    @property
+    def plot_x_min(self) -> int:
+        return self._spin_plot_xmin.value()
+
+    @property
+    def plot_x_max(self) -> int:
+        return self._spin_plot_xmax.value()

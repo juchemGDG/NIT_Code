@@ -154,6 +154,15 @@ Der Plotter ist standardmäßig **ausgeblendet** und erzeugt erst dann Aufwand, 
 aktiviert wird. Bei jedem Programmstart beginnt er mit einem frischen Graph; mit
 **Pause** lässt sich der aktuelle Verlauf einfrieren und in Ruhe betrachten.
 
+**Achsen einstellen:** Die automatische Skalierung ist nicht immer erwünscht. Beide
+Achsen lassen sich daher umstellen – direkt in der Plotter-Leiste (sofort wirksam) und
+als gespeicherter Standard unter **Datei → Einstellungen → Serial Plotter**:
+
+- **Hochachse (Y):** *Automatisch* (gleitend) oder *Feste Grenzen* mit Min/Max.
+- **Rechtsachse (X):** *Gleitend* (zeigt die letzten Werte) oder *Sweep* – ein fester
+  Indexbereich von Min bis Max, der sich einmal füllt und dann stehen bleibt (wie eine
+  Einzelaufnahme).
+
 ---
 
 ## KI-Codegenerator (optional)

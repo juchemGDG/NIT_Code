@@ -666,6 +666,13 @@ class MainWindow(QMainWindow):
         self._settings_sketchbook: str = str(Path.home())
         self._settings_git_repo: str = ""
         self._settings_theme: str = "classic_light"
+        # Serial-Plotter-Achsen (Standardwerte; im Plotter live übersteuerbar)
+        self._settings_plot_y_mode: str = "auto"      # "auto" | "fixed"
+        self._settings_plot_y_min: float = 0.0
+        self._settings_plot_y_max: float = 100.0
+        self._settings_plot_x_mode: str = "sliding"   # "sliding" | "sweep"
+        self._settings_plot_x_min: int = 0
+        self._settings_plot_x_max: int = 500
         self._settings_store = QSettings()
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._autosave_all)
@@ -2573,6 +2580,12 @@ class MainWindow(QMainWindow):
             sketchbook_dir=self._settings_sketchbook,
             theme=self._settings_theme,
             blocks_enabled=self._settings_blocks_enabled,
+            plot_y_mode=self._settings_plot_y_mode,
+            plot_y_min=self._settings_plot_y_min,
+            plot_y_max=self._settings_plot_y_max,
+            plot_x_mode=self._settings_plot_x_mode,
+            plot_x_min=self._settings_plot_x_min,
+            plot_x_max=self._settings_plot_x_max,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
             self._settings_font_size = dlg.font_size
@@ -2588,6 +2601,12 @@ class MainWindow(QMainWindow):
             self._settings_sketchbook = self._normalize_sketchbook_dir(dlg.sketchbook_dir)
             self._settings_theme = dlg.theme
             self._settings_blocks_enabled = dlg.blocks_enabled
+            self._settings_plot_y_mode = dlg.plot_y_mode
+            self._settings_plot_y_min = dlg.plot_y_min
+            self._settings_plot_y_max = dlg.plot_y_max
+            self._settings_plot_x_mode = dlg.plot_x_mode
+            self._settings_plot_x_min = dlg.plot_x_min
+            self._settings_plot_x_max = dlg.plot_x_max
             try:
                 self._apply_settings()
                 self._apply_sketchbook_root()
@@ -2610,6 +2629,13 @@ class MainWindow(QMainWindow):
         raw = self._settings_store.value(key, default)
         try:
             return int(raw)
+        except (TypeError, ValueError):
+            return default
+
+    def _settings_float(self, key: str, default: float) -> float:
+        raw = self._settings_store.value(key, default)
+        try:
+            return float(raw)
         except (TypeError, ValueError):
             return default
 
@@ -2636,6 +2662,13 @@ class MainWindow(QMainWindow):
         )
         self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
         self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "classic_light")
+        # Serial-Plotter-Achsen
+        self._settings_plot_y_mode = str(self._settings_store.value("plot/y_mode", self._settings_plot_y_mode) or "auto")
+        self._settings_plot_y_min = self._settings_float("plot/y_min", self._settings_plot_y_min)
+        self._settings_plot_y_max = self._settings_float("plot/y_max", self._settings_plot_y_max)
+        self._settings_plot_x_mode = str(self._settings_store.value("plot/x_mode", self._settings_plot_x_mode) or "sliding")
+        self._settings_plot_x_min = self._settings_int("plot/x_min", self._settings_plot_x_min)
+        self._settings_plot_x_max = self._settings_int("plot/x_max", self._settings_plot_x_max)
         # Theme sofort anwenden, damit alle nachfolgenden UI-Elemente korrekte Farben erhalten
         set_theme(self._settings_theme)
 
@@ -2654,6 +2687,12 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("files/sketchbook_dir", self._settings_sketchbook)
         self._settings_store.setValue("git/repo_dir", self._settings_git_repo)
         self._settings_store.setValue("ui/theme", self._settings_theme)
+        self._settings_store.setValue("plot/y_mode", self._settings_plot_y_mode)
+        self._settings_store.setValue("plot/y_min", self._settings_plot_y_min)
+        self._settings_store.setValue("plot/y_max", self._settings_plot_y_max)
+        self._settings_store.setValue("plot/x_mode", self._settings_plot_x_mode)
+        self._settings_store.setValue("plot/x_min", self._settings_plot_x_min)
+        self._settings_store.setValue("plot/x_max", self._settings_plot_x_max)
         self._settings_store.sync()
 
     def _choose_sketchbook_dir(self):
@@ -2769,6 +2808,14 @@ class MainWindow(QMainWindow):
         self._aischat_panel.refresh_theme()
         self._console.set_font_size(self._settings_font_size)
         self._console.set_scrollback_limit(self._settings_scrollback)
+        self._console.set_plot_defaults({
+            "y_mode": self._settings_plot_y_mode,
+            "y_min":  self._settings_plot_y_min,
+            "y_max":  self._settings_plot_y_max,
+            "x_mode": self._settings_plot_x_mode,
+            "x_min":  self._settings_plot_x_min,
+            "x_max":  self._settings_plot_x_max,
+        })
         # Block-Editor (BETA) ein-/ausblenden
         self._apply_blocks_enabled()
         # Auto-Save-Timer

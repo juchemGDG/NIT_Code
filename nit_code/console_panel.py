@@ -638,6 +638,7 @@ class ConsolePanel(QWidget):
         # Serial Plotter (nur bei Bedarf eingeblendet, siehe set_plotter_visible).
         self._plot = None
         self._plot_active = False
+        self._plot_config: dict | None = None   # Achsen-Standardwerte aus den Einstellungen
         self._setup_ui()
 
     def _setup_ui(self):
@@ -858,6 +859,12 @@ class ConsolePanel(QWidget):
         """Zeigt/versteckt den „Infi erklärt diesen Fehler"-Knopf."""
         self._explain_bar.setVisible(visible)
 
+    def set_plot_defaults(self, config: dict):
+        """Achsen-Standardwerte des Plotters setzen (aus den Einstellungen)."""
+        self._plot_config = dict(config)
+        if self._plot is not None:
+            self._plot.apply_config(**config)
+
     def clear_output(self):
         self.output_console.clear_output()
         if self._plot is not None:
@@ -874,6 +881,8 @@ class ConsolePanel(QWidget):
             if self._plot is None:
                 from .serial_plot import SerialPlot
                 self._plot = SerialPlot()
+                if self._plot_config:
+                    self._plot.apply_config(**self._plot_config)
             if self.tabs.indexOf(self._plot) == -1:
                 self.tabs.addTab(self._plot, "📈 Plotter")
             self._plot_active = True
