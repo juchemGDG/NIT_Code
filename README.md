@@ -15,6 +15,7 @@ GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 | **Firmware flashen** | MicroPython-Firmware von lokaler Datei oder micropython.org flashen |
 | **Bibliotheks-Manager** | Bibliotheken aus [NIT_Bibliotheken](https://github.com/juchemGDG/NIT_Bibliotheken) direkt auf den Controller laden |
 | **Block-Editor** | Blockbasiert programmieren (wie Snap!/Scratch) und automatisch in lesbaren Python-/MicroPython-Code umwandeln – inkl. GPIO-, ADC-, DAC-, NeoPixel- und nitbw-Bibliotheks-Blöcken |
+| **Serial Plotter** | Zahlenausgabe eines laufenden Programms live als Graph – ideal für Sensorwerte (Temperatur, Abstand, Helligkeit). Bei Bedarf über „Ausführen → 📈 Serial Plotter" einblendbar |
 | **KI-Codegenerator** | Schülerinnen und Schüler spezifizieren Eingabe/Ablauf/Ausgabe/Variablen, die KI setzt es in Code um (lokal via Ollama) |
 | **Git-Integration** | Repository klonen, Status, Commit, Push, Pull, Branch wechseln und Merge-Konflikte lösen – direkt aus dem Menü „Git" |
 | **Syntax-Highlighting** | Farbige Python-Syntax, Zeilennummern, Klammernabgleich, Auto-Vervollständigung (Jedi) |
@@ -119,6 +120,24 @@ weil der Algorithmus im Vordergrund steht und keine Syntaxfehler entstehen.
 
 > Wird ein bereits umgewandeltes Block-Programm erneut umgewandelt, aktualisiert
 > NIT_Code den bestehenden Tab, statt einen neuen zu öffnen.
+
+---
+
+## Serial Plotter (Werte live als Graph)
+
+Über **Ausführen → 📈 Serial Plotter** (oder den gleichnamigen Knopf in der
+Werkzeugleiste) lässt sich bei Bedarf ein Live-Graph einblenden. Er zeichnet die
+Zahlen, die ein laufendes Programm zeilenweise ausgibt – besonders praktisch für
+Sensorexperimente (Temperatur, Abstand, Helligkeit) am Controller.
+
+- **Eine Zahl pro Zeile** → eine Kurve: `print(temp)`
+- **Mehrere Zahlen pro Zeile** (Leerzeichen/Komma getrennt) → mehrere Kurven: `print(temp, feuchte)`
+- **Benannte Kurven** mit `name:wert` oder `name=wert`: `print(f"temp:{t}")`
+- Zeilen mit gemischtem Text werden ignoriert und erscheinen weiter im Ausgabe-Tab.
+
+Der Plotter ist standardmäßig **ausgeblendet** und erzeugt erst dann Aufwand, wenn er
+aktiviert wird. Bei jedem Programmstart beginnt er mit einem frischen Graph; mit
+**Pause** lässt sich der aktuelle Verlauf einfrieren und in Ruhe betrachten.
 
 ---
 

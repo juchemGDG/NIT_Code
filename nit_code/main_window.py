@@ -740,6 +740,13 @@ class MainWindow(QMainWindow):
         self._add_action(m_run, "Programm starten",  self._run_program, "F5")
         self._add_action(m_run, "Stoppen",           self._stop_program, "F6")
         m_run.addSeparator()
+        # Serial Plotter – nur bei Bedarf einblendbar (gemeinsame Aktion mit der Toolbar).
+        self._act_plotter = QAction("📈  Serial Plotter", self)
+        self._act_plotter.setCheckable(True)
+        self._act_plotter.setToolTip("Zahlenausgabe eines laufenden Programms live als Graph anzeigen")
+        self._act_plotter.toggled.connect(self._toggle_plotter)
+        m_run.addAction(self._act_plotter)
+        m_run.addSeparator()
         self._act_upload = self._add_action(
             m_run, "Auf Controller hochladen", self._upload_to_device, "F7"
         )
@@ -818,6 +825,7 @@ class MainWindow(QMainWindow):
 
         tbtn("▶  Starten", self._run_program, "Programm ausführen (F5)")
         tbtn("■  Stoppen", self._stop_program, "Ausführung stoppen (F6)")
+        tb.addAction(self._act_plotter)   # checkbarer Plotter-Umschalter (in _setup_menubar erstellt)
         tb.addSeparator()
 
         # Modus-Auswahl
@@ -1326,6 +1334,10 @@ class MainWindow(QMainWindow):
         self._console.set_active_runner(None)
         if self._mode == "micropython":
             self._console.resume_shell()
+
+    def _toggle_plotter(self, checked: bool):
+        """Blendet den Serial Plotter (Live-Graph der Zahlenausgabe) ein/aus."""
+        self._console.set_plotter_visible(checked)
 
     def _on_process_output(self, text: str, kind: str):
         if kind == "stderr":

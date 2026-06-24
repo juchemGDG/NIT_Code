@@ -634,6 +634,9 @@ class ConsolePanel(QWidget):
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(40)
         self._flush_timer.timeout.connect(self._flush_pending)
+        # Serial Plotter (nur bei Bedarf eingeblendet, siehe set_plotter_visible).
+        self._plot = None
+        self._plot_active = False
         self._setup_ui()
 
     def _setup_ui(self):
@@ -733,6 +736,8 @@ class ConsolePanel(QWidget):
         )
         self.output_console.refresh_theme()
         self.shell.refresh_theme()
+        if self._plot is not None:
+            self._plot.refresh_theme()
 
     def _on_tab_changed(self, index: int):
         """mpremote-REPL erst starten wenn Shell-Tab aktiv wird."""
@@ -762,6 +767,8 @@ class ConsolePanel(QWidget):
     # ── Gepufferte Programmausgabe (hohe Frequenz) ──────────────────────────
     def append_program_output(self, text: str):
         """stdout eines laufenden Programms – gepuffert/gebündelt."""
+        if self._plot_active and self._plot is not None:
+            self._plot.feed(text)
         self._enqueue(text, "out")
 
     def append_program_error(self, text: str):
@@ -791,6 +798,15 @@ class ConsolePanel(QWidget):
             self.output_console.append_output(out_text)
         if err_text:
             self.output_console.append_error(err_text)
+        self._focus_output_tab()
+
+    def _focus_output_tab(self):
+        """Schaltet auf den Ausgabe-Tab – außer der Plotter ist gerade aktiv.
+
+        So reißt neue Programmausgabe den Lernenden nicht aus dem Live-Graph.
+        """
+        if self._plot_active and self.tabs.currentWidget() is self._plot:
+            return
         self.tabs.setCurrentIndex(0)
 
     def flush_now(self):
@@ -800,11 +816,11 @@ class ConsolePanel(QWidget):
     # Delegations-Methoden
     def append_output(self, text: str):
         self.output_console.append_output(text)
-        self.tabs.setCurrentIndex(0)
+        self._focus_output_tab()
 
     def append_error(self, text: str):
         self.output_console.append_error(text)
-        self.tabs.setCurrentIndex(0)
+        self._focus_output_tab()
 
     def append_info(self, text: str):
         self.output_console.append_info(text)
@@ -814,6 +830,30 @@ class ConsolePanel(QWidget):
 
     def clear_output(self):
         self.output_console.clear_output()
+        if self._plot is not None:
+            self._plot.clear()   # bei jedem Programmstart frischer Graph
+
+    def set_plotter_visible(self, visible: bool):
+        """Blendet den Serial-Plotter-Tab bei Bedarf ein bzw. wieder aus.
+
+        Solange er aus ist, fällt keinerlei Parsing-Aufwand an (siehe
+        :meth:`append_program_output`). Die Plot-Instanz bleibt erhalten, sodass
+        beim erneuten Einblenden die bisherigen Kurven nicht verloren gehen.
+        """
+        if visible:
+            if self._plot is None:
+                from .serial_plot import SerialPlot
+                self._plot = SerialPlot()
+            if self.tabs.indexOf(self._plot) == -1:
+                self.tabs.addTab(self._plot, "📈 Plotter")
+            self._plot_active = True
+            self.tabs.setCurrentWidget(self._plot)
+        else:
+            self._plot_active = False
+            if self._plot is not None:
+                idx = self.tabs.indexOf(self._plot)
+                if idx != -1:
+                    self.tabs.removeTab(idx)
 
     def pause_shell(self):
         """Port freigeben: Shell-Prozess beenden."""
