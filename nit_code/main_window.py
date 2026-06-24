@@ -964,6 +964,7 @@ class MainWindow(QMainWindow):
         # KI-Panel: TutorPanel (Ollama), AisChatPanel, CoderPanel im Stack
         self._ai_stack = QStackedWidget()
         self._tutor_panel    = TutorPanel()
+        self._tutor_panel.set_code_provider(self._current_editor_text)
         self._aischat_panel  = AisChatPanel()
         self._coder_panel    = CoderPanel()
         self._ai_stack.addWidget(self._tutor_panel)    # Index 0 → Infi/Ollama
@@ -1355,6 +1356,11 @@ class MainWindow(QMainWindow):
     def _toggle_plotter(self, checked: bool):
         """Blendet den Serial Plotter (Live-Graph der Zahlenausgabe) ein/aus."""
         self._console.set_plotter_visible(checked)
+
+    def _current_editor_text(self) -> str:
+        """Liefert den Code des aktuell aktiven Editor-Tabs (für Infis „Code zeigen")."""
+        tab = self._current_tab()
+        return tab.editor.get_text() if tab else ""
 
     def _explain_error_with_infi(self):
         """Schickt den letzten Fehler mit dem Schülercode an den Tutor „Infi"."""

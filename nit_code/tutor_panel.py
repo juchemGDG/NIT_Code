@@ -69,6 +69,14 @@ nach jedem Mini-Schritt testen und Ergebnis beschreiben.
 - Verweise bei Bedarf explizit auf das zugehörige Kapitel auf py.nitbw.de, \
 z. B. „Schau dir nochmal Kapitel 04 auf py.nitbw.de an."
 
+AKTUELLER CODE DER LERNENDEN
+- Lernende können dir per Knopf „Code zeigen" ihren aktuellen Editor-Code als \
+```python-Block schicken. Nutze ihn als Kontext, um gezielt auf konkrete Zeilen \
+einzugehen.
+- Schreibe den Code NICHT einfach fertig oder korrigiert zurück. Bleibe beim \
+didaktischen Vorgehen: benenne EINE Stelle, stelle eine leitende Frage, schlage \
+einen Mini-Test vor. Höchstens 2–3 Zeilen Beispielcode.
+
 GRENZEN UND SICHERHEIT
 - Keine Komplettlösungen; maximal 2–3 Zeilen Code, wenn nötig.
 - Kein Code außerhalb des py.nitbw.de-Curriculums (keine Klassen/OOP, \
@@ -165,6 +173,7 @@ class TutorPanel(QWidget):
         self._worker: OllamaWorker | None = None
         self._retired_workers: list = []   # hält OllamaWorker bis finished
         self._pending_response = ""
+        self._code_provider = None         # liefert den Code des aktuellen Editor-Tabs
         self._build_ui()
 
     # ── UI aufbauen ──────────────────────────────────────────────────────────
@@ -211,6 +220,13 @@ class TutorPanel(QWidget):
         ilay.addWidget(self._input)
 
         btn_row = QHBoxLayout()
+        self._code_btn = QPushButton("📄 Code zeigen")
+        self._code_btn.setToolTip(
+            "Sendet den Code aus dem aktuellen Editor-Tab einmalig an Infi."
+        )
+        self._code_btn.setEnabled(self._code_provider is not None)
+        self._code_btn.clicked.connect(self._send_current_code)
+        btn_row.addWidget(self._code_btn)
         self._clear_btn = QPushButton("Verlauf löschen")
         self._clear_btn.clicked.connect(self._clear_history)
         btn_row.addWidget(self._clear_btn)
@@ -258,6 +274,10 @@ class TutorPanel(QWidget):
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
             f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
         )
+        self._code_btn.setStyleSheet(
+            f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
+            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+        )
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
             f"border:none; border-radius:4px; padding:5px 18px;"
@@ -288,12 +308,62 @@ class TutorPanel(QWidget):
         self._input.setPlainText(text)
         self._send_message()
 
+    def set_code_provider(self, provider):
+        """Hinterlegt eine Funktion, die den Code des aktuellen Editor-Tabs liefert.
+
+        Aktiviert den Knopf „Code zeigen". ``provider`` wird ohne Argumente
+        aufgerufen und soll den aktuellen Editor-Text (str) zurückgeben.
+        """
+        self._code_provider = provider
+        if hasattr(self, "_code_btn"):
+            self._code_btn.setEnabled(provider is not None)
+
+    def _send_current_code(self):
+        """Schickt den Code aus dem aktuellen Editor-Tab einmalig an Infi."""
+        if self._worker is not None:
+            return
+        code = ""
+        if self._code_provider is not None:
+            try:
+                code = self._code_provider() or ""
+            except Exception:
+                code = ""
+        code = code.strip()
+        if not code:
+            self._append_infi(
+                "Im aktuellen Editor-Tab ist noch kein Code. Schreib zuerst etwas "
+                "und zeig es mir dann noch einmal. 🙂"
+            )
+            return
+        frage = self._input.toPlainText().strip() \
+            or "Hier ist mein aktueller Code. Schau ihn dir bitte an."
+        self._input.clear()
+        content = f"{frage}\n\n```python\n{code}\n```"
+        # Anzeige mit erhaltener Formatierung (Chat-View klappt Zeilenumbrüche sonst zusammen)
+        def esc(s):
+            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        display = (
+            f"<b style='color:{THEME['info']}'>Du:</b> {esc(frage)}"
+            f"<pre style='background:{THEME['bg_panel']}; border:1px solid {THEME['border']};"
+            f"border-radius:4px; padding:6px; white-space:pre-wrap;'>{esc(code)}</pre>"
+        )
+        self._send_text(content, display_html=display)
+
     def _send_message(self):
         text = self._input.toPlainText().strip()
         if not text or self._worker is not None:
             return
         self._input.clear()
-        self._append_user(text)
+        self._send_text(text)
+
+    def _send_text(self, text: str, display_html: str | None = None):
+        if not text or self._worker is not None:
+            return
+        if display_html is not None:
+            self._chat_view.append(display_html)
+            self._chat_view.append("")
+        else:
+            self._append_user(text)
         self._history.append({"role": "user", "content": text})
 
         self._send_btn.setEnabled(False)

@@ -342,4 +342,282 @@
   reg('nit_neopixel_show', function () {
     return 'np.write()\n';
   });
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  Datenstrukturen: Tupel und Dictionary
+  // ════════════════════════════════════════════════════════════════════════
+  // Beide werden über einen Mutator beliebig erweitert (wie die Standard-Liste).
+  // Die Serialisierung nutzt – passend zu Blockly-Standardblöcken und zum
+  // Rück-Mapping in py2blockly.py – den Zustand { itemCount: n }.
+  var TUPLE_COLOUR = 285;
+  var DICT_COLOUR  = 195;
+
+  // Generischer "create-with"-Block mit Mutator. prefixes = Value-Input-Präfixe
+  // je Element (Tupel: ['ADD'], Dictionary: ['KEY','VALUE']).
+  function installVariadic(blockType, itemType, containerType, cfg) {
+    var prefixes = cfg.prefixes;
+    var nameOf = function (pfx, i) { return pfx + i; };
+
+    // Mutator-Container (Kopf des Mutator-Popups)
+    Blockly.Blocks[containerType] = {
+      init: function () {
+        this.appendDummyInput().appendField(cfg.containerLabel);
+        this.appendStatementInput('STACK');
+        this.setColour(cfg.colour);
+        this.contextMenu = false;
+      }
+    };
+    // Mutator-Element (Flyout des Mutator-Popups)
+    Blockly.Blocks[itemType] = {
+      init: function () {
+        this.appendDummyInput().appendField(cfg.itemLabel);
+        this.setPreviousStatement(true);
+        this.setNextStatement(true);
+        this.setColour(cfg.colour);
+        this.contextMenu = false;
+      }
+    };
+
+    Blockly.Blocks[blockType] = {
+      init: function () {
+        this.itemCount_ = cfg.initCount;
+        this.updateShape_();
+        this.setOutput(true, cfg.output || null);
+        this.setInputsInline(true);
+        this.setColour(cfg.colour);
+        this.setMutator(new Blockly.icons.MutatorIcon([itemType], this));
+        this.setTooltip(cfg.tooltip);
+      },
+      saveExtraState: function () { return { itemCount: this.itemCount_ }; },
+      loadExtraState: function (state) {
+        this.itemCount_ = (state && state['itemCount']) || 0;
+        this.updateShape_();
+      },
+      decompose: function (workspace) {
+        var container = workspace.newBlock(containerType);
+        container.initSvg();
+        var conn = container.getInput('STACK').connection;
+        for (var i = 0; i < this.itemCount_; i++) {
+          var item = workspace.newBlock(itemType);
+          item.initSvg();
+          conn.connect(item.previousConnection);
+          conn = item.nextConnection;
+        }
+        return container;
+      },
+      compose: function (container) {
+        var item = container.getInputTargetBlock('STACK');
+        var saved = [];           // je Element: Array der Ziel-Verbindungen
+        while (item) {
+          if (item.isInsertionMarker()) { item = item.getNextBlock(); continue; }
+          saved.push(item.valueConnections_ ||
+            prefixes.map(function () { return null; }));
+          item = item.getNextBlock();
+        }
+        // Überzählige Kindblöcke trennen
+        for (var i = 0; i < this.itemCount_; i++) {
+          prefixes.forEach(function (pfx) {
+            var input = this.getInput(nameOf(pfx, i));
+            var target = input && input.connection.targetConnection;
+            if (target && !saved.some(function (cs) { return cs.indexOf(target) !== -1; })) {
+              target.disconnect();
+            }
+          }, this);
+        }
+        this.itemCount_ = saved.length;
+        this.updateShape_();
+        for (var i = 0; i < this.itemCount_; i++) {
+          for (var p = 0; p < prefixes.length; p++) {
+            var c = saved[i][p];
+            if (c) c.reconnect(this, nameOf(prefixes[p], i));
+          }
+        }
+      },
+      saveConnections: function (container) {
+        var item = container.getInputTargetBlock('STACK');
+        var i = 0;
+        while (item) {
+          if (item.isInsertionMarker()) { item = item.getNextBlock(); continue; }
+          item.valueConnections_ = prefixes.map(function (pfx) {
+            var input = this.getInput(nameOf(pfx, i));
+            return input && input.connection.targetConnection;
+          }, this);
+          i++;
+          item = item.getNextBlock();
+        }
+      },
+      updateShape_: function () {
+        if (this.itemCount_ && this.getInput('EMPTY')) {
+          this.removeInput('EMPTY');
+        } else if (!this.itemCount_ && !this.getInput('EMPTY')) {
+          this.appendDummyInput('EMPTY').appendField(cfg.emptyLabel);
+        }
+        for (var i = 0; i < this.itemCount_; i++) {
+          if (!this.getInput(nameOf(prefixes[0], i))) {
+            for (var p = 0; p < prefixes.length; p++) {
+              cfg.decorate(this.appendValueInput(nameOf(prefixes[p], i)), i, p);
+            }
+          }
+        }
+        for (var i = this.itemCount_; this.getInput(nameOf(prefixes[0], i)); i++) {
+          for (var p = 0; p < prefixes.length; p++) {
+            this.removeInput(nameOf(prefixes[p], i));
+          }
+        }
+      }
+    };
+  }
+
+  // ── Tupel ─────────────────────────────────────────────────────────────────
+  installVariadic('nit_tuple_create', 'nit_tuple_item', 'nit_tuple_container', {
+    colour: TUPLE_COLOUR, initCount: 2, output: null, prefixes: ['ADD'],
+    containerLabel: 'Tupel', itemLabel: 'Element', emptyLabel: 'leeres Tupel ()',
+    tooltip: 'Erzeugt ein Tupel – eine feste, unveränderliche Reihe von Werten, z. B. (3, 4).',
+    decorate: function (input, i) { input.appendField(i === 0 ? 'Tupel mit' : 'und'); }
+  });
+  reg('nit_tuple_create', function (block) {
+    var items = [];
+    for (var i = 0; i < block.itemCount_; i++) {
+      items.push(P.valueToCode(block, 'ADD' + i, ord('NONE')) || 'None');
+    }
+    if (items.length === 1) return ['(' + items[0] + ',)', ord('ATOMIC')];
+    return ['(' + items.join(', ') + ')', ord('ATOMIC')];
+  });
+
+  // ── Dictionary: erstellen ───────────────────────────────────────────────────
+  installVariadic('nit_dict_create', 'nit_dict_pair_item', 'nit_dict_container', {
+    colour: DICT_COLOUR, initCount: 2, output: null, prefixes: ['KEY', 'VALUE'],
+    containerLabel: 'Dictionary', itemLabel: 'Eintrag', emptyLabel: 'leeres Dictionary {}',
+    tooltip: 'Erzeugt ein Dictionary – Paare aus Schlüssel und Wert, z. B. {"name": "Anna"}.',
+    decorate: function (input, i, p) {
+      if (p === 0) input.appendField(i === 0 ? 'Dictionary mit' : 'und');
+      else input.appendField(':');
+    }
+  });
+  reg('nit_dict_create', function (block) {
+    var pairs = [];
+    for (var i = 0; i < block.itemCount_; i++) {
+      var k = P.valueToCode(block, 'KEY' + i, ord('NONE')) || "''";
+      var v = P.valueToCode(block, 'VALUE' + i, ord('NONE')) || 'None';
+      pairs.push(k + ': ' + v);
+    }
+    return ['{' + pairs.join(', ') + '}', ord('ATOMIC')];
+  });
+
+  // ── Dictionary: Zugriff & Methoden ──────────────────────────────────────────
+  Blockly.Blocks['nit_dict_get'] = {
+    init: function () {
+      this.appendValueInput('DICT').appendField('Wert aus');
+      this.appendValueInput('KEY').appendField('bei Schlüssel');
+      this.setInputsInline(true);
+      this.setOutput(true, null);
+      this.setColour(DICT_COLOUR);
+      this.setTooltip('Liest den Wert zu einem Schlüssel: dict[schluessel].');
+    }
+  };
+  reg('nit_dict_get', function (block) {
+    var d = P.valueToCode(block, 'DICT', ord('MEMBER')) || '{}';
+    var k = P.valueToCode(block, 'KEY', ord('NONE')) || "''";
+    return [d + '[' + k + ']', ord('MEMBER')];
+  });
+
+  Blockly.Blocks['nit_dict_set'] = {
+    init: function () {
+      this.appendValueInput('DICT').appendField('setze in');
+      this.appendValueInput('KEY').appendField('Schlüssel');
+      this.appendValueInput('VALUE').appendField('den Wert');
+      this.setInputsInline(true);
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(DICT_COLOUR);
+      this.setTooltip('Schreibt einen Wert: dict[schluessel] = wert.');
+    }
+  };
+  reg('nit_dict_set', function (block) {
+    var d = P.valueToCode(block, 'DICT', ord('MEMBER')) || 'd';
+    var k = P.valueToCode(block, 'KEY', ord('NONE')) || "''";
+    var v = P.valueToCode(block, 'VALUE', ord('NONE')) || 'None';
+    return d + '[' + k + '] = ' + v + '\n';
+  });
+
+  Blockly.Blocks['nit_dict_get_default'] = {
+    init: function () {
+      this.appendValueInput('DICT').appendField('Wert aus');
+      this.appendValueInput('KEY').appendField('bei Schlüssel');
+      this.appendValueInput('DEFAULT').appendField('sonst');
+      this.setInputsInline(true);
+      this.setOutput(true, null);
+      this.setColour(DICT_COLOUR);
+      this.setTooltip('Liest dict.get(schluessel, ersatz): fehlt der Schlüssel, kommt der Ersatzwert.');
+    }
+  };
+  reg('nit_dict_get_default', function (block) {
+    var d = P.valueToCode(block, 'DICT', ord('MEMBER')) || '{}';
+    var k = P.valueToCode(block, 'KEY', ord('NONE')) || "''";
+    var def = P.valueToCode(block, 'DEFAULT', ord('NONE')) || 'None';
+    return [d + '.get(' + k + ', ' + def + ')', ord('FUNCTION_CALL')];
+  });
+
+  Blockly.Blocks['nit_dict_remove'] = {
+    init: function () {
+      this.appendValueInput('DICT').appendField('entferne aus');
+      this.appendValueInput('KEY').appendField('den Schlüssel');
+      this.setInputsInline(true);
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(DICT_COLOUR);
+      this.setTooltip('Löscht einen Eintrag: del dict[schluessel].');
+    }
+  };
+  reg('nit_dict_remove', function (block) {
+    var d = P.valueToCode(block, 'DICT', ord('MEMBER')) || 'd';
+    var k = P.valueToCode(block, 'KEY', ord('NONE')) || "''";
+    return 'del ' + d + '[' + k + ']\n';
+  });
+
+  Blockly.Blocks['nit_dict_contains'] = {
+    init: function () {
+      this.appendValueInput('KEY').appendField('Schlüssel');
+      this.appendValueInput('DICT').appendField('kommt vor in');
+      this.setInputsInline(true);
+      this.setOutput(true, 'Boolean');
+      this.setColour(DICT_COLOUR);
+      this.setTooltip('Prüft, ob ein Schlüssel vorhanden ist: schluessel in dict.');
+    }
+  };
+  reg('nit_dict_contains', function (block) {
+    var k = P.valueToCode(block, 'KEY', ord('RELATIONAL')) || "''";
+    var d = P.valueToCode(block, 'DICT', ord('RELATIONAL')) || '{}';
+    return [k + ' in ' + d, ord('RELATIONAL')];
+  });
+
+  [['nit_dict_keys', 'Schlüssel von', 'keys'],
+   ['nit_dict_values', 'Werte von', 'values'],
+   ['nit_dict_items', 'Einträge von', 'items']].forEach(function (spec) {
+    Blockly.Blocks[spec[0]] = {
+      init: function () {
+        this.appendValueInput('DICT').appendField(spec[1]);
+        this.setOutput(true, null);
+        this.setColour(DICT_COLOUR);
+        this.setTooltip('Liefert ' + spec[1] + ' (z. B. für eine for-jede-Schleife).');
+      }
+    };
+    reg(spec[0], function (block) {
+      var d = P.valueToCode(block, 'DICT', ord('MEMBER')) || '{}';
+      return [d + '.' + spec[2] + '()', ord('FUNCTION_CALL')];
+    });
+  });
+
+  Blockly.Blocks['nit_dict_length'] = {
+    init: function () {
+      this.appendValueInput('DICT').appendField('Anzahl Einträge in');
+      this.setOutput(true, 'Number');
+      this.setColour(DICT_COLOUR);
+      this.setTooltip('Anzahl der Einträge: len(dict).');
+    }
+  };
+  reg('nit_dict_length', function (block) {
+    var d = P.valueToCode(block, 'DICT', ord('NONE')) || '{}';
+    return ['len(' + d + ')', ord('FUNCTION_CALL')];
+  });
 })();

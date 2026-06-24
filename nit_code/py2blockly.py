@@ -785,6 +785,10 @@ def _expr(node, st):
             return _blk("variables_get", fields={"VAR": {"name": node.id}})
         if isinstance(node, ast.JoinedStr):
             return _joinedstr(node, st)
+        if isinstance(node, ast.Tuple):
+            return _tuple_block(node, st)
+        if isinstance(node, ast.Dict):
+            return _dict_block(node, st)
         if isinstance(node, ast.BinOp):
             op = _BINOP.get(type(node.op))
             if op == "MODULO":
@@ -834,6 +838,26 @@ def _joinedstr(node, st):
         return parts[0]
     inputs = {"ADD%d" % i: _val(p) for i, p in enumerate(parts)}
     return _blk("text_join", extra_state={"itemCount": len(parts)}, inputs=inputs)
+
+
+def _tuple_block(node, st):
+    """``(a, b, c)`` → nit_tuple_create (variadisch, itemCount)."""
+    elts = node.elts
+    inputs = {"ADD%d" % i: _val(_expr(e, st)) for i, e in enumerate(elts)}
+    return _blk("nit_tuple_create", inputs=inputs or None,
+                extra_state={"itemCount": len(elts)})
+
+
+def _dict_block(node, st):
+    """``{k: v, …}`` → nit_dict_create (variadisch, itemCount)."""
+    if any(k is None for k in node.keys):     # {**andere} – nicht abbildbar
+        return _raw_expr(node)
+    inputs = {}
+    for i, (k, v) in enumerate(zip(node.keys, node.values)):
+        inputs["KEY%d" % i] = _val(_expr(k, st))
+        inputs["VALUE%d" % i] = _val(_expr(v, st))
+    return _blk("nit_dict_create", inputs=inputs or None,
+                extra_state={"itemCount": len(node.keys)})
 
 
 def _hw_call_expr(node, st):

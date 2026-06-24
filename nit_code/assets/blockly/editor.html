@@ -84,6 +84,44 @@
         <value name="LIST"><block type="variables_get"></block></value>
       </block>
     </category>
+    <category name="Tupel" colour="285">
+      <block type="nit_tuple_create"></block>
+    </category>
+    <category name="Dictionary" colour="195">
+      <block type="nit_dict_create"></block>
+      <block type="nit_dict_set">
+        <value name="DICT"><block type="variables_get"></block></value>
+        <value name="KEY"><shadow type="text"><field name="TEXT">name</field></shadow></value>
+      </block>
+      <block type="nit_dict_get">
+        <value name="DICT"><block type="variables_get"></block></value>
+        <value name="KEY"><shadow type="text"><field name="TEXT">name</field></shadow></value>
+      </block>
+      <block type="nit_dict_get_default">
+        <value name="DICT"><block type="variables_get"></block></value>
+        <value name="KEY"><shadow type="text"><field name="TEXT">name</field></shadow></value>
+      </block>
+      <block type="nit_dict_contains">
+        <value name="KEY"><shadow type="text"><field name="TEXT">name</field></shadow></value>
+        <value name="DICT"><block type="variables_get"></block></value>
+      </block>
+      <block type="nit_dict_remove">
+        <value name="DICT"><block type="variables_get"></block></value>
+        <value name="KEY"><shadow type="text"><field name="TEXT">name</field></shadow></value>
+      </block>
+      <block type="nit_dict_keys">
+        <value name="DICT"><block type="variables_get"></block></value>
+      </block>
+      <block type="nit_dict_values">
+        <value name="DICT"><block type="variables_get"></block></value>
+      </block>
+      <block type="nit_dict_items">
+        <value name="DICT"><block type="variables_get"></block></value>
+      </block>
+      <block type="nit_dict_length">
+        <value name="DICT"><block type="variables_get"></block></value>
+      </block>
+    </category>
     <sep></sep>
     <category name="Variablen" colour="330" custom="VARIABLE"></category>
     <category name="Funktionen" colour="290" custom="PROCEDURE"></category>
