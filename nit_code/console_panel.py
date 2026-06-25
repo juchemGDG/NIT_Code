@@ -141,46 +141,26 @@ class MicroPythonRunner(QThread):
 
     def run(self):
         import serial
-        import time as _t
         try:
             ser = serial.Serial(self._port, 115200, timeout=0.1)
             self._serial = ser
 
-            # Laufendes Programm unterbrechen
-            ser.write(b"\x03\x03")
-            _t.sleep(0.3)
-            ser.reset_input_buffer()
-
-            # Raw-REPL aktivieren (Ctrl+A)
-            ser.write(b"\x01")
-            if not self._read_until(ser, b">", timeout=4.0):
-                self.output.emit("⚠  Raw-REPL konnte nicht gestartet werden.\n", "stderr")
-                self.finished_run.emit(1)
-                ser.close()
-                return
-
-            # Skript übertragen + ausführen (Ctrl+D)
+            # Skript einlesen und an das Board übertragen. Der Handshake wird
+            # mehrfach versucht, weil viele Boards (v. a. ESP32) beim Öffnen des
+            # seriellen Ports über die DTR/RTS-Leitungen automatisch neu booten.
+            # Beim ersten Versuch ist das Board dann noch im Hochfahren und
+            # bestätigt den Programmstart nicht – ein erneuter Versuch nach einer
+            # kurzen Wartezeit fängt das zuverlässig ab.
             with open(self._script_path, "rb") as f:
                 code = f.read()
-            ser.write(code + b"\x04")
-
-            # Auf "OK" warten. Je nach Skriptgröße (z. B. I2C-Programme mit
-            # mehreren NIT-Bibliotheken) braucht der Controller dafür spürbar
-            # länger als ein einzelner read() – deshalb bis zu 5 s sammeln,
-            # aber genau 2 Bytes lesen, um keine Programmausgabe zu verschlucken.
-            ok       = b""
-            deadline = _t.time() + 5.0
-            while len(ok) < 2 and _t.time() < deadline:
-                ok += ser.read(2 - len(ok))
-            if ok != b"OK":
-                extra = ser.read(256)
-                self.output.emit(
-                    f"⚠  Der Controller hat den Programmstart nicht bestätigt "
-                    f"(Antwort: {(ok + extra)!r}).\n"
-                    f"   Bitte Controller über '↻' neu verbinden oder kurz "
-                    f"aus- und wieder einstecken und erneut starten.\n",
-                    "stderr",
-                )
+            if not self._handshake_and_send(ser, code):
+                if not self._abort:
+                    self.output.emit(
+                        "⚠  Der Controller hat den Programmstart nicht bestätigt.\n"
+                        "   Bitte Controller über '↻' neu verbinden oder kurz "
+                        "aus- und wieder einstecken und erneut starten.\n",
+                        "stderr",
+                    )
                 self.finished_run.emit(1)
                 ser.close()
                 return
@@ -241,6 +221,53 @@ class MicroPythonRunner(QThread):
         except Exception as exc:
             self.output.emit(f"⚠  Verbindungsfehler: {exc}\n", "stderr")
             self.finished_run.emit(1)
+
+    def _handshake_and_send(self, ser, code: bytes, attempts: int = 3) -> bool:
+        """Geht in den Raw-REPL und überträgt das Skript zur Ausführung.
+
+        Gibt ``True`` zurück, sobald das Board den Start mit ``OK`` bestätigt.
+        Der komplette Ablauf – laufendes Programm bzw. Boot unterbrechen →
+        Raw-REPL aktivieren → Skript senden → ``OK`` abwarten – wird bis zu
+        ``attempts``-mal wiederholt: Öffnet sich der serielle Port, lösen viele
+        Boards (ESP32 u. a.) über DTR/RTS einen Auto-Reset aus und sind beim
+        ersten Versuch noch im Boot. Zwischen den Versuchen bekommt das Board
+        kurz Zeit zum Hochfahren.
+        """
+        import time as _t
+        for _ in range(attempts):
+            if self._abort:
+                return False
+
+            # 1) Laufendes Programm / Boot-Vorgang unterbrechen (doppeltes Ctrl+C)
+            ser.write(b"\x03\x03")
+            _t.sleep(0.3)
+            ser.reset_input_buffer()
+
+            # 2) Raw-REPL aktivieren (Ctrl+A) und auf den '>'-Prompt warten
+            ser.write(b"\x01")
+            if not self._read_until(ser, b">", timeout=2.5):
+                _t.sleep(0.5)   # Board vermutlich noch am Booten → erneut versuchen
+                continue
+
+            # 3) Skript übertragen + ausführen (Ctrl+D)
+            ser.write(code + b"\x04")
+
+            # 4) Auf "OK" warten. Genau 2 Bytes lesen, um keine Programmausgabe
+            #    zu verschlucken; bis zu 4 s, da große Skripte (mehrere
+            #    NIT-Bibliotheken) spürbar länger brauchen als ein read().
+            ok       = b""
+            deadline = _t.time() + 4.0
+            while len(ok) < 2 and _t.time() < deadline:
+                ok += ser.read(2 - len(ok))
+            if ok == b"OK":
+                return True
+
+            # Keine Bestätigung – evtl. angefangene Übertragung abbrechen und
+            # den gesamten Handshake erneut versuchen.
+            ser.write(b"\x03\x03")
+            _t.sleep(0.3)
+
+        return False
 
     @staticmethod
     def _read_until(ser, needle: bytes, timeout: float) -> bool:

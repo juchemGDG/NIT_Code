@@ -86,6 +86,29 @@ def _find_logo() -> QIcon:
     return QIcon()
 
 
+def _install_truststore():
+    """Lässt Python (und damit ``requests``) den Zertifikatspeicher des
+    Betriebssystems verwenden statt des mitgelieferten certifi-Bundles.
+
+    Hintergrund: In Schul- und Firmennetzen wird HTTPS häufig über einen Proxy
+    mit TLS-Inspektion geführt, der die Verbindung mit einem eigenen
+    Root-Zertifikat neu signiert. Dieses Zertifikat ist auf den verwalteten
+    Rechnern im Windows-Zertifikatspeicher hinterlegt – ``requests`` kennt es
+    aber nicht und bricht den Download der NIT-Bibliotheken mit einem SSL-Fehler
+    ab, obwohl der Browser dieselbe Adresse problemlos öffnet. ``truststore``
+    verbindet Pythons ssl-Modul mit dem OS-Speicher und behebt genau das (der
+    eingebettete AIS-Chat nutzt über QtWebEngine ohnehin schon den Windows-Store).
+
+    Schlägt der Import fehl (z. B. truststore nicht installiert), läuft die App
+    unverändert mit certifi weiter – der Aufruf darf den Start nie verhindern.
+    """
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except Exception:
+        pass
+
+
 def _suppress_child_consoles():
     """Verhindert, dass unter Windows bei jedem Subprozess ein schwarzes
     Konsolenfenster aufpoppt.
@@ -113,6 +136,7 @@ def _suppress_child_consoles():
 
 
 def main():
+    _install_truststore()
     _suppress_child_consoles()
 
     # High-DPI Unterstützung

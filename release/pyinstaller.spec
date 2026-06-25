@@ -83,6 +83,12 @@ a = Analysis(
         'mpremote',
         'mpremote.main',
         'esptool',
+        # truststore lädt seine Backends (_windows/_macos/_openssl) erst zur
+        # Laufzeit plattformabhängig nach – statisch findet PyInstaller sie nicht.
+        'truststore',
+        'truststore._windows',
+        'truststore._macos',
+        'truststore._openssl',
     ] + tool_hiddenimports,
     hookspath=[],
     hooksconfig={},
