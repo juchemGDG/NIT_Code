@@ -165,10 +165,15 @@ class MicroPythonRunner(QThread):
                 ser.close()
                 return
 
-            # Ausgabe lesen bis ersten \x04 (stdout beendet)
-            stdout_done = False
-            stderr_buf  = b""
-            rc          = 0
+            # Ausgabe lesen. Das Board sendet im Raw-REPL:
+            #   OK <stdout> \x04 <stderr/Traceback> \x04
+            # Das erste \x04 trennt Programmausgabe von der Fehlermeldung, das
+            # zweite \x04 schließt sie ab und beendet damit den Lauf.
+            import time as _time
+            stdout_done  = False
+            stderr_buf   = b""
+            rc           = 0
+            err_deadline = None   # Sicherheits-Timeout für die Fehlerphase
 
             while not self._abort:
                 # Wird der Controller während des Laufs abgezogen, meldet
@@ -188,7 +193,18 @@ class MicroPythonRunner(QThread):
                         "stderr")
                     rc = 1
                     break
+
                 if not chunk:
+                    # Nach Programmende (erstes \x04) folgt die Fehlerausgabe
+                    # praktisch sofort. Bleibt das abschließende \x04 aus (z. B.
+                    # Board hat sich neu gestartet), nicht endlos warten, sondern
+                    # den bereits empfangenen Text ausgeben und beenden.
+                    if err_deadline is not None and _time.time() > err_deadline:
+                        rest = stderr_buf.decode("utf-8", errors="replace").strip()
+                        if rest and "KeyboardInterrupt" not in rest:
+                            self.output.emit(rest + "\n", "stderr")
+                            rc = 1
+                        break
                     continue
 
                 if not stdout_done:
@@ -197,19 +213,26 @@ class MicroPythonRunner(QThread):
                         head = chunk[:i]
                         if head:
                             self.output.emit(head.decode("utf-8", errors="replace"), "stdout")
-                        stdout_done = True
-                        stderr_buf  = chunk[i + 1:]
+                        stdout_done  = True
+                        stderr_buf   = chunk[i + 1:]
+                        err_deadline = _time.time() + 3.0
                     else:
                         self.output.emit(chunk.decode("utf-8", errors="replace"), "stdout")
+                        continue
                 else:
                     stderr_buf += chunk
-                    if b"\x04" in stderr_buf:
-                        i   = stderr_buf.index(b"\x04")
-                        err = stderr_buf[:i].decode("utf-8", errors="replace").strip()
-                        if err and "KeyboardInterrupt" not in err:
-                            self.output.emit(err + "\n", "stderr")
-                            rc = 1
-                        break
+
+                # Gemeinsame Prüfung auf das abschließende \x04 – auch wenn das
+                # erste und zweite \x04 im selben Lesepuffer ankommen (häufig bei
+                # schnellen Laufzeitfehlern mit wenig Ausgabe). Genau hier hing
+                # das Programm bisher: die fertige Fehlermeldung wurde nie geprüft.
+                if b"\x04" in stderr_buf:
+                    i   = stderr_buf.index(b"\x04")
+                    err = stderr_buf[:i].decode("utf-8", errors="replace").strip()
+                    if err and "KeyboardInterrupt" not in err:
+                        self.output.emit(err + "\n", "stderr")
+                        rc = 1
+                    break
 
             try:
                 ser.write(b"\x02")   # Zurück in normalen REPL (Ctrl+B)
