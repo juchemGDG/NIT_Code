@@ -243,7 +243,36 @@ class MicroPythonRunner(QThread):
 
         except Exception as exc:
             self.output.emit(f"⚠  Verbindungsfehler: {exc}\n", "stderr")
+            self._emit_permission_hint(exc)
             self.finished_run.emit(1)
+
+    def _emit_permission_hint(self, exc) -> None:
+        """Bei fehlender Port-Berechtigung unter Linux einen Lösungs-Hinweis zeigen.
+
+        Serielle Ports gehören dort der Gruppe ``dialout``; ist der Benutzer nicht
+        Mitglied, scheitert das Öffnen mit ``[Errno 13] Permission denied``. Die
+        Original-Meldung von pyserial ist für Schülerinnen und Schüler wenig
+        hilfreich – darum hier der konkrete Behebungs-Schritt.
+        """
+        import errno
+        import sys
+
+        if not sys.platform.startswith("linux"):
+            return
+        is_permission = (
+            getattr(exc, "errno", None) == errno.EACCES
+            or "Errno 13" in str(exc)
+            or "Permission denied" in str(exc)
+        )
+        if not is_permission:
+            return
+        self.output.emit(
+            "   → Keine Berechtigung für den seriellen Port. Unter Linux muss der\n"
+            "     eigene Benutzer einmalig zur Gruppe 'dialout' hinzugefügt werden:\n"
+            "         sudo usermod -a -G dialout $USER\n"
+            "     Danach ab- und wieder anmelden (oder neu starten).\n",
+            "stderr",
+        )
 
     def _handshake_and_send(self, ser, code: bytes, attempts: int = 3) -> bool:
         """Geht in den Raw-REPL und überträgt das Skript zur Ausführung.
