@@ -774,7 +774,7 @@ class MainWindow(QMainWindow):
         # ── Lernen ──
         m_learn = mb.addMenu("Lernen")
         self._add_action(
-            m_learn, "🧩  Parsons-Puzzle aus aktuellem Code …", self._open_parsons
+            m_learn, "🧩  Parsons-Puzzle …", self._open_parsons
         )
         self._add_action(
             m_learn, "🔮  Vorhersage-Modus (Programm starten) …", self._run_predict_mode
@@ -1280,14 +1280,12 @@ class MainWindow(QMainWindow):
 
     # ── Lernen: Parsons-Puzzle ────────────────────────────────────────────
     def _open_parsons(self):
-        """Öffnet das Parsons-Puzzle, erzeugt aus dem aktuell geöffneten Code."""
-        tab = self._current_tab()
-        code = tab.editor.get_text() if tab else ""
+        """Öffnet das Parsons-Puzzle (Puzzle-Datei laden oder aus Code erstellen)."""
         win = getattr(self, "_parsons_window", None)
         if win is None:
             win = ParsonsWindow(self)
+            win.set_code_provider(self._current_editor_text)
             self._parsons_window = win
-        win.load_code(code)
         win.show()
         win.raise_()
         win.activateWindow()
