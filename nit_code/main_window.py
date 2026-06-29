@@ -755,13 +755,6 @@ class MainWindow(QMainWindow):
         self._add_action(m_run, "Programm starten",  self._run_program, "F5")
         self._add_action(m_run, "Stoppen",           self._stop_program, "F6")
         m_run.addSeparator()
-        # Serial Plotter – nur bei Bedarf einblendbar (gemeinsame Aktion mit der Toolbar).
-        self._act_plotter = QAction("📈  Serial Plotter", self)
-        self._act_plotter.setCheckable(True)
-        self._act_plotter.setToolTip("Zahlenausgabe eines laufenden Programms live als Graph anzeigen")
-        self._act_plotter.toggled.connect(self._toggle_plotter)
-        m_run.addAction(self._act_plotter)
-        m_run.addSeparator()
         self._act_upload = self._add_action(
             m_run, "Auf Controller hochladen", self._upload_to_device, "F7"
         )
@@ -771,18 +764,15 @@ class MainWindow(QMainWindow):
         self._m_blocks = mb.addMenu("Blöcke")
         self._add_action(self._m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
 
-        # ── Lernen ──
-        m_learn = mb.addMenu("Lernen")
-        self._add_action(
-            m_learn, "🧩  Parsons-Puzzle …", self._open_parsons
-        )
-        self._add_action(
-            m_learn, "🔮  Vorhersage-Modus (Programm starten) …", self._run_predict_mode
-        )
-        m_learn.addSeparator()
-        self._add_action(
-            m_learn, "📊  CSV-Streudiagramm …", self._open_csv_plot
-        )
+        # ── Visualisieren ──
+        m_viz = mb.addMenu("Visualisieren")
+        # Serial Plotter – checkbare Aktion, gemeinsam mit der Toolbar genutzt.
+        self._act_plotter = QAction("📈  Serial Plotter", self)
+        self._act_plotter.setCheckable(True)
+        self._act_plotter.setToolTip("Zahlenausgabe eines laufenden Programms live als Graph anzeigen")
+        self._act_plotter.toggled.connect(self._toggle_plotter)
+        m_viz.addAction(self._act_plotter)
+        self._add_action(m_viz, "📊  CSV-Streudiagramm …", self._open_csv_plot)
 
         # ── Python ──
         self._m_python = mb.addMenu("Python")
