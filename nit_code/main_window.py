@@ -24,6 +24,8 @@ from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
 from .block_panel import BlockEditorWindow
+from .parsons_panel import ParsonsWindow
+from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
@@ -741,6 +743,9 @@ class MainWindow(QMainWindow):
         self._add_action(m_edit, "Kopieren",     self._copy,  "Ctrl+C")
         self._add_action(m_edit, "Einfügen",     self._paste, "Ctrl+V")
         m_edit.addSeparator()
+        self._add_action(m_edit, "Suchen …",            self._show_find,    "Ctrl+F")
+        self._add_action(m_edit, "Suchen und ersetzen …", self._show_replace, "Ctrl+H")
+        m_edit.addSeparator()
         self._add_action(m_edit, "Auskommentieren",      self._comment_selection,   "Ctrl+Shift+C")
         self._add_action(m_edit, "Einkommentieren",      self._uncomment_selection, "Ctrl+Shift+U")
         self._add_action(m_edit, "Kommentar umschalten", self._toggle_comment,      "Ctrl+/")
@@ -765,6 +770,19 @@ class MainWindow(QMainWindow):
         # ── Blöcke (BETA, über Einstellungen aktivierbar) ──
         self._m_blocks = mb.addMenu("Blöcke")
         self._add_action(self._m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
+
+        # ── Lernen ──
+        m_learn = mb.addMenu("Lernen")
+        self._add_action(
+            m_learn, "🧩  Parsons-Puzzle aus aktuellem Code …", self._open_parsons
+        )
+        self._add_action(
+            m_learn, "🔮  Vorhersage-Modus (Programm starten) …", self._run_predict_mode
+        )
+        m_learn.addSeparator()
+        self._add_action(
+            m_learn, "📊  CSV-Streudiagramm …", self._open_csv_plot
+        )
 
         # ── Python ──
         self._m_python = mb.addMenu("Python")
@@ -1189,6 +1207,16 @@ class MainWindow(QMainWindow):
         if tab and hasattr(tab.editor, "sci"):
             tab.editor.sci.paste()
 
+    def _show_find(self):
+        tab = self._current_tab()
+        if tab and hasattr(tab.editor, "show_find"):
+            tab.editor.show_find()
+
+    def _show_replace(self):
+        tab = self._current_tab()
+        if tab and hasattr(tab.editor, "show_replace"):
+            tab.editor.show_replace()
+
     def _comment_selection(self):
         tab = self._current_tab()
         if tab:
@@ -1250,6 +1278,43 @@ class MainWindow(QMainWindow):
         win.raise_()
         win.activateWindow()
 
+    # ── Lernen: Parsons-Puzzle ────────────────────────────────────────────
+    def _open_parsons(self):
+        """Öffnet das Parsons-Puzzle, erzeugt aus dem aktuell geöffneten Code."""
+        tab = self._current_tab()
+        code = tab.editor.get_text() if tab else ""
+        win = getattr(self, "_parsons_window", None)
+        if win is None:
+            win = ParsonsWindow(self)
+            self._parsons_window = win
+        win.load_code(code)
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def _open_csv_plot(self):
+        """Öffnet das CSV-Streudiagramm und lässt eine CSV-Datei auswählen."""
+        win = getattr(self, "_csv_window", None)
+        if win is None:
+            win = CsvPlotWindow(self)
+            self._csv_window = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        win._choose_file()
+
+    def _run_predict_mode(self):
+        """Vorhersage-Modus: erst Ausgabe vorhersagen, dann Programm starten."""
+        tab = self._current_tab()
+        if not tab:
+            return
+        from .predict_mode import PredictionDialog
+        dlg = PredictionDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._pending_prediction = dlg.prediction()
+        self._run_program()
+
     def _apply_blocks_enabled(self):
         """Blendet das Block-Editor-Feature (BETA) je nach Einstellung ein/aus."""
         enabled = self._settings_blocks_enabled
@@ -1298,6 +1363,11 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def _run_program(self):
+        # Vorhersage-Modus: am Anfang abgreifen, damit ein Abbruch (z. B.
+        # „Speichern als" verworfen) keine Vorhersage für den nächsten Lauf liegen lässt.
+        prediction = getattr(self, "_pending_prediction", None)
+        self._pending_prediction = None
+
         tab = self._current_tab()
         if not tab:
             return
@@ -1318,6 +1388,11 @@ class MainWindow(QMainWindow):
         self._last_error_traceback = ""
         self._user_stopped = False
         self._console.set_explain_visible(False)
+
+        # Vorhersage-Modus für diesen Lauf aktivieren (Ausgabe sammeln + vergleichen)
+        self._prediction = prediction
+        self._predict_mode = prediction is not None
+        self._run_stdout_buf = []
 
         self._retire_process()
         if self._mode == "python":
@@ -1401,6 +1476,8 @@ class MainWindow(QMainWindow):
                     tab.editor.mark_error_line(ln)
         else:
             self._console.append_program_output(text)
+            if getattr(self, "_predict_mode", False):
+                self._run_stdout_buf.append(text)
 
     def _on_process_done(self, code: int):
         # Restpuffer leeren, damit die Abschlussmeldung wirklich zuletzt erscheint
@@ -1415,6 +1492,17 @@ class MainWindow(QMainWindow):
         else:
             self._console.append_error(f"\n✗  Programm beendet mit Code {code}\n")
             self._handle_program_error()
+
+        # Vorhersage-Modus: Vorhersage mit tatsächlicher Ausgabe vergleichen
+        if getattr(self, "_predict_mode", False):
+            self._predict_mode = False
+            self._show_prediction_result()
+
+    def _show_prediction_result(self):
+        from .predict_mode import ResultDialog, compare_outputs
+        actual = "".join(getattr(self, "_run_stdout_buf", []))
+        matches, _, _ = compare_outputs(self._prediction or "", actual)
+        ResultDialog(self._prediction or "", actual, matches, self).exec()
 
     def _handle_program_error(self):
         """Nach einem Absturz: verständlichen Hinweis zeigen und (falls Infi aktiv)
@@ -2812,6 +2900,10 @@ class MainWindow(QMainWindow):
         self._tutor_panel.refresh_theme()
         self._coder_panel.refresh_theme()
         self._aischat_panel.refresh_theme()
+        for attr in ("_parsons_window", "_csv_window"):
+            win = getattr(self, attr, None)
+            if win is not None:
+                win.apply_theme()
         self._console.set_font_size(self._settings_font_size)
         self._console.set_scrollback_limit(self._settings_scrollback)
         self._console.set_plot_defaults({

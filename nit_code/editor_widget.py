@@ -1,7 +1,9 @@
 """Code-Editor-Widget auf Basis von QScintilla mit Python/MicroPython Syntax-Highlighting."""
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QKeySequence, QShortcut
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import (
+    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
+)
 
 try:
     from PyQt6.Qsci import (
@@ -28,6 +30,9 @@ class CodeEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._filepath: str | None = None
+        # Zustand der laufenden Suche (für Weitersuchen mit findNext)
+        self._search_active = False
+        self._search_key = None
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -45,9 +50,12 @@ class CodeEditor(QWidget):
             self._setup_completion()
             layout.addWidget(self.sci)
         else:
-            from PyQt6.QtWidgets import QPlainTextEdit
             self.sci = _FallbackEditor(self)
             layout.addWidget(self.sci)
+
+        # Such-/Ersetzen-Leiste (am unteren Rand, standardmäßig ausgeblendet)
+        self._find_bar = _FindReplaceBar(self)
+        layout.addWidget(self._find_bar)
 
     def _configure_scintilla(self):
         sci = self.sci
@@ -213,8 +221,124 @@ class CodeEditor(QWidget):
         if HAS_QSCI:
             self.sci.setCaretLineVisible(enabled)
 
+    # ------------------------------------------------------------------
+    # Suchen & Ersetzen
+    # ------------------------------------------------------------------
+    def show_find(self, with_replace: bool = False):
+        """Such-Leiste einblenden, ggf. mit der aktuellen Auswahl vorbelegt."""
+        preset = ""
+        if HAS_QSCI and self.sci.hasSelectedText():
+            sel = self.sci.selectedText()
+            if "\n" not in sel:        # nur einzeilige Auswahl als Suchbegriff
+                preset = sel
+        self._find_bar.open(with_replace=with_replace, preset=preset)
+
+    def show_replace(self):
+        """Such-/Ersetzen-Leiste einblenden."""
+        self.show_find(with_replace=True)
+
+    def search_reset(self):
+        """Laufende Suche verwerfen – nächster Treffer startet neu (findFirst)."""
+        self._search_active = False
+        self._search_key = None
+
+    def find_next(self, query: str, *, forward: bool = True,
+                  case: bool = False, whole: bool = False, regex: bool = False) -> bool:
+        """Nächsten Treffer suchen und markieren. Gibt True bei Erfolg zurück."""
+        if not query:
+            return False
+        if HAS_QSCI:
+            sci = self.sci
+            key = (query, case, whole, regex, forward)
+            if self._search_active and key == self._search_key:
+                found = sci.findNext()
+            else:
+                found = sci.findFirst(query, regex, case, whole, True, forward)
+                self._search_key = key
+            self._search_active = bool(found)
+            return bool(found)
+        return self._fallback_find(query, forward, case, whole)
+
+    def replace_current(self, query: str, repl: str, *,
+                        case: bool = False, whole: bool = False, regex: bool = False) -> bool:
+        """Aktuellen Treffer ersetzen und zum nächsten springen."""
+        if not query:
+            return False
+        if HAS_QSCI:
+            sci = self.sci
+            if self._search_active and sci.hasSelectedText():
+                sci.replace(repl)
+                self._search_active = False      # erzwingt findFirst ab neuer Position
+            return self.find_next(query, forward=True, case=case, whole=whole, regex=regex)
+        return self._fallback_replace_current(query, repl, case, whole)
+
+    def replace_all(self, query: str, repl: str, *,
+                    case: bool = False, whole: bool = False, regex: bool = False) -> int:
+        """Alle Treffer ersetzen. Gibt die Anzahl der Ersetzungen zurück."""
+        if not query:
+            return 0
+        if HAS_QSCI:
+            sci = self.sci
+            count = 0
+            sci.beginUndoAction()
+            try:
+                # wrap=False, Start bei (0,0) → terminiert sicher am Dateiende
+                found = sci.findFirst(query, regex, case, whole, False, True, 0, 0)
+                while found:
+                    sci.replace(repl)
+                    count += 1
+                    if count > 100000:           # Sicherung gegen Endlosschleifen
+                        break
+                    found = sci.findNext()
+            finally:
+                sci.endUndoAction()
+            self.search_reset()
+            return count
+        return self._fallback_replace_all(query, repl, case, whole)
+
+    # ── Fallback-Editor (ohne QScintilla) ────────────────────────────────
+    def _fallback_find(self, query: str, forward: bool, case: bool, whole: bool) -> bool:
+        from PyQt6.QtGui import QTextDocument
+        edit = self.sci._edit
+        flags = QTextDocument.FindFlag(0)
+        if not forward:
+            flags |= QTextDocument.FindFlag.FindBackward
+        if case:
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+        if whole:
+            flags |= QTextDocument.FindFlag.FindWholeWords
+        if edit.find(query, flags):
+            return True
+        # Am Dokumentende/-anfang umbrechen und erneut versuchen
+        cursor = edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start if forward else cursor.MoveOperation.End)
+        edit.setTextCursor(cursor)
+        return edit.find(query, flags)
+
+    def _fallback_replace_current(self, query: str, repl: str, case: bool, whole: bool) -> bool:
+        edit = self.sci._edit
+        cursor = edit.textCursor()
+        sel = cursor.selectedText()
+        if sel and (sel == query or (not case and sel.lower() == query.lower())):
+            cursor.insertText(repl)
+        return self._fallback_find(query, True, case, whole)
+
+    def _fallback_replace_all(self, query: str, repl: str, case: bool, whole: bool) -> int:
+        import re as _re
+        text = self.get_text()
+        if case:
+            count = text.count(query)
+            if count:
+                self.set_text(text.replace(query, repl))
+        else:
+            new, count = _re.compile(_re.escape(query), _re.IGNORECASE).subn(repl, text)
+            if count:
+                self.set_text(new)
+        return count
+
     def refresh_theme(self):
         """Farben nach Theme-Wechsel neu anwenden (ohne Margins neu zu definieren)."""
+        self._find_bar.apply_theme()
         if not HAS_QSCI:
             return
         t = THEME
@@ -414,6 +538,173 @@ class CodeEditor(QWidget):
             c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
             c.insertText(new_text)
         main_cursor.endEditBlock()
+
+
+# ------------------------------------------------------------------
+# Such-/Ersetzen-Leiste
+# ------------------------------------------------------------------
+class _FindReplaceBar(QWidget):
+    """Einklappbare Leiste am unteren Editorrand für Suchen & Ersetzen."""
+
+    def __init__(self, editor: "CodeEditor"):
+        super().__init__(editor)
+        self._editor = editor
+        self._build_ui()
+        self.hide()
+
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 4, 6, 4)
+        outer.setSpacing(4)
+
+        # ── Zeile 1: Suchen ──
+        row1 = QHBoxLayout()
+        row1.setSpacing(4)
+        self._find_edit = QLineEdit()
+        self._find_edit.setPlaceholderText("Suchen …")
+        self._find_edit.installEventFilter(self)        # Enter / Shift+Enter abfangen
+        self._find_edit.textChanged.connect(self._on_query_changed)
+        row1.addWidget(self._find_edit, 1)
+
+        self._prev_btn = QPushButton("▲")
+        self._prev_btn.setToolTip("Vorheriger Treffer (Shift+Enter)")
+        self._prev_btn.setFixedWidth(28)
+        self._prev_btn.clicked.connect(self.find_prev)
+        self._next_btn = QPushButton("▼")
+        self._next_btn.setToolTip("Nächster Treffer (Enter)")
+        self._next_btn.setFixedWidth(28)
+        self._next_btn.clicked.connect(self.find_next)
+        row1.addWidget(self._prev_btn)
+        row1.addWidget(self._next_btn)
+
+        self._cs_chk = QCheckBox("Aa")
+        self._cs_chk.setToolTip("Groß-/Kleinschreibung beachten")
+        self._ww_chk = QCheckBox("⊏⊐")
+        self._ww_chk.setToolTip("Nur ganze Wörter")
+        self._re_chk = QCheckBox(".*")
+        self._re_chk.setToolTip("Regulärer Ausdruck")
+        for chk in (self._cs_chk, self._ww_chk, self._re_chk):
+            chk.toggled.connect(self._on_query_changed)
+            row1.addWidget(chk)
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setMinimumWidth(80)
+        row1.addWidget(self._status_lbl)
+
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setFixedWidth(28)
+        self._close_btn.setToolTip("Schließen (Esc)")
+        self._close_btn.clicked.connect(self.hide_bar)
+        row1.addWidget(self._close_btn)
+        outer.addLayout(row1)
+
+        # ── Zeile 2: Ersetzen ──
+        self._replace_row = QWidget()
+        row2 = QHBoxLayout(self._replace_row)
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(4)
+        self._replace_edit = QLineEdit()
+        self._replace_edit.setPlaceholderText("Ersetzen durch …")
+        self._replace_edit.returnPressed.connect(self.replace_current)
+        row2.addWidget(self._replace_edit, 1)
+        self._replace_btn = QPushButton("Ersetzen")
+        self._replace_btn.clicked.connect(self.replace_current)
+        self._replace_all_btn = QPushButton("Alle ersetzen")
+        self._replace_all_btn.clicked.connect(self.replace_all)
+        row2.addWidget(self._replace_btn)
+        row2.addWidget(self._replace_all_btn)
+        outer.addWidget(self._replace_row)
+
+        # Esc schließt die Leiste (auch wenn der Fokus in einem Feld liegt)
+        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self.hide_bar)
+
+        self.apply_theme()
+
+    # ── Steuerung ─────────────────────────────────────────────────────
+    def open(self, *, with_replace: bool, preset: str):
+        if preset:
+            self._find_edit.setText(preset)
+        self._replace_row.setVisible(with_replace)
+        self._editor.search_reset()
+        self.show()
+        self._find_edit.setFocus()
+        self._find_edit.selectAll()
+        self._status_lbl.setText("")
+
+    def hide_bar(self):
+        self.hide()
+        if HAS_QSCI:
+            self._editor.sci.setFocus()
+
+    def eventFilter(self, obj, event):
+        if obj is self._find_edit and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    self.find_prev()
+                else:
+                    self.find_next()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _opts(self) -> dict:
+        return {
+            "case": self._cs_chk.isChecked(),
+            "whole": self._ww_chk.isChecked(),
+            "regex": self._re_chk.isChecked(),
+        }
+
+    def _on_query_changed(self, *_):
+        # Suchbegriff/Optionen geändert → laufende Suche zurücksetzen
+        self._editor.search_reset()
+        self._status_lbl.setText("")
+
+    def find_next(self):
+        self._report(self._editor.find_next(self._find_edit.text(), forward=True, **self._opts()))
+
+    def find_prev(self):
+        self._report(self._editor.find_next(self._find_edit.text(), forward=False, **self._opts()))
+
+    def replace_current(self):
+        if not self._replace_row.isVisible():
+            self.find_next()
+            return
+        self._report(self._editor.replace_current(
+            self._find_edit.text(), self._replace_edit.text(), **self._opts()))
+
+    def replace_all(self):
+        n = self._editor.replace_all(
+            self._find_edit.text(), self._replace_edit.text(), **self._opts())
+        self._status_lbl.setText(f"{n} ersetzt" if n else "Nicht gefunden")
+
+    def _report(self, found: bool):
+        self._status_lbl.setText("" if found else "Nicht gefunden")
+
+    # ── Theme ─────────────────────────────────────────────────────────
+    def apply_theme(self):
+        t = THEME
+        self.setStyleSheet(
+            f"background:{t['bg_panel']}; border-top:1px solid {t['border']};"
+        )
+        field = (
+            f"QLineEdit {{ background:{t['bg_editor']}; color:{t['text']};"
+            f" border:1px solid {t['border']}; border-radius:4px; padding:3px 6px; }}"
+        )
+        self._find_edit.setStyleSheet(field)
+        self._replace_edit.setStyleSheet(field)
+        btn = (
+            f"QPushButton {{ background:{t['bg_dark']}; color:{t['text']};"
+            f" border:1px solid {t['border']}; border-radius:4px; padding:3px 8px; }}"
+            f"QPushButton:hover {{ background:{t['accent']}; color:#fff; }}"
+        )
+        for b in (self._prev_btn, self._next_btn, self._close_btn,
+                  self._replace_btn, self._replace_all_btn):
+            b.setStyleSheet(btn)
+        chk = f"color:{t['text']};"
+        for c in (self._cs_chk, self._ww_chk, self._re_chk):
+            c.setStyleSheet(chk)
+        self._status_lbl.setStyleSheet(f"color:{t['text_dim']}; padding:0 4px;")
 
 
 # ------------------------------------------------------------------
