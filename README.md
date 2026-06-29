@@ -50,6 +50,30 @@ Aktuelle Versionen stehen auf der GitHub-Release-Seite bereit:
 - **macOS:** `NIT_Code-macos.dmg` öffnen, App in Programme ziehen, dann starten
 - **Linux:** Archiv entpacken und die enthaltene Startdatei im Ordner `NIT_Code` ausführen
 
+### Linux: Zugriff auf den seriellen Port (MicroPython)
+
+Unter Linux gehören serielle Ports (z. B. `/dev/ttyUSB0`, `/dev/ttyACM0`) der
+Gruppe `dialout`. Ist der eigene Benutzer nicht in dieser Gruppe, scheitert die
+Verbindung zum Controller mit:
+
+```
+Verbindungsfehler: [Errno 13] could not open port /dev/ttyUSB0:
+[Errno 13] Permission denied: '/dev/ttyUSB0'
+```
+
+Den eigenen Benutzer **einmalig** zur Gruppe `dialout` hinzufügen:
+
+```bash
+sudo usermod -a -G dialout $USER
+```
+
+Anschließend **ab- und wieder anmelden** (oder neu starten), damit die
+Gruppenzugehörigkeit wirksam wird. Prüfen lässt sie sich mit dem Befehl `groups`
+(die Ausgabe muss `dialout` enthalten).
+
+> Wird der USB-Seriell-Adapter (CH340 o. ä.) gar nicht erkannt, kann unter Ubuntu
+> der Dienst `brltty` den Port belegen. Abhilfe: `sudo apt remove brltty`.
+
 ---
 
 ## KI-Tutor „Infi" (optional)
