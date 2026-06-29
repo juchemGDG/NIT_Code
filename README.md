@@ -150,7 +150,12 @@ Programme – ähnlich wie in **Snap!** oder **Scratch** – aus Blöcken zusamm
 werden. Das ist besonders für Einsteigerinnen und Einsteiger (z. B. Klasse 7) geeignet,
 weil der Algorithmus im Vordergrund steht und keine Syntaxfehler entstehen.
 
-- Kategorien: Logik, Schleifen, Mathematik, Text, Listen, Variablen, Funktionen, Zeit
+- Kategorien: Logik, Schleifen, Mathematik, Text, Listen, Tupel, Dictionary,
+  Variablen, Funktionen, Zeit
+- Mathematik enthält die **Typumwandlung** `int()`/`float()`/`str()` (z. B. für
+  `int(input(...))`); Text bietet String-Methoden (Großschreibung, Teilstring,
+  ersetzen, suchen …) und einen **Kommentar**-Block, Listen zusätzlich sortieren,
+  umdrehen, Teilliste u. a.
 - MicroPython-Blöcke: digitale Ein-/Ausgänge, ADC, DAC, PWM, NeoPixel
 - **nitbw-Bibliotheken** als Blöcke (OLED, LCD, Töne, Servo, Ultraschall u. v. m.)
 - Knopf **„In Python umwandeln"** erzeugt sauberen, lesbaren Code in einem Editor-Tab

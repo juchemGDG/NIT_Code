@@ -4,6 +4,9 @@ Wird genutzt, um aus dem vom KI-Codegenerator erzeugten Python-Code Blöcke im
 Block-Editor zu erzeugen ("Coder → Blockly"). Erkannt werden:
 
 - Kontrollstrukturen: if/elif/else, while, for/range, for-each, break/continue
+- Funktionen: ``def`` → echte Funktions-Blöcke (procedures_def*) mit Parametern
+  und Rückgabe; Aufrufe eigener Funktionen → procedures_call*
+- Typumwandlung int()/float()/str() → nit_cast
 - Variablen (=, +=), Vergleiche, Arithmetik, Logik, print, sleep/sleep_ms
 - Hardware-BEFEHLE werden auf die echten Blöcke abgebildet (nicht Roh-Text):
   digitale Aus-/Eingänge (Pin), ADC, DAC, PWM, NeoPixel. Dafür wird vorab eine
@@ -31,18 +34,59 @@ def python_to_block_state(code: str) -> dict:
     try:
         tree = ast.parse(code)
         st = _build_symtab(tree)
-        blocks = [b for b in _suite(tree.body, st) if b]
+        if not isinstance(st, dict):
+            st = {}
+        # Hilfsdaten unter Nicht-Identifier-Schlüsseln (kollidieren nie mit
+        # ``name in st``-Prüfungen, die immer gültige Python-Namen verwenden):
+        #   " funcs" – eigene Funktionen für die Aufruf-Abbildung
+        #   " vars"  – Parameter-Variablen (Name → id) für das variables-Array
+        st[" funcs"], st[" vars"] = {}, {}
+        for n in tree.body:
+            if isinstance(n, ast.FunctionDef):
+                info = _analyze_func(n)
+                if info is not None:
+                    st[" funcs"][n.name] = {"params": info[0], "returns": info[2] is not None}
+
+        # Funktions-Definitionen werden zu eigenständigen Top-Level-Blöcken
+        # (procedures_def* haben keine vorherige/nächste Verbindung), der Rest
+        # bleibt eine verbundene Anweisungs-Kette (Hauptprogramm).
+        func_blocks, main_nodes = [], []
+        for n in tree.body:
+            if isinstance(n, ast.FunctionDef):
+                fb = _func_def_block(n, st)
+                if fb is not None:
+                    func_blocks.append(fb)
+                    continue   # abbildbar → eigener Block; sonst unten als Roh-Anweisung
+            main_nodes.append(n)
+        main_blocks = [b for b in _suite(main_nodes, st) if b]
+
         # Bleiben Roh-ANWEISUNGEN übrig (z. B. nicht abgebildete Bibliotheks-
         # methode), so werden die Original-Importe als Blöcke vorangestellt, damit
         # der erzeugte Code lauffähig bleibt. Roh-AUSDRÜCKE (z. B. int(input()))
         # zählen NICHT – sie nutzen nur Builtins/vorhandene Variablen und brauchen
         # keine Bibliotheks-Importe. Vollständig abgebildete Programme bleiben sauber.
-        if any('"nit_raw"' in _json.dumps(b) for b in blocks):
-            blocks = _collect_imports(tree) + blocks
-        head = _chain(blocks)
+        if any('"nit_raw"' in _json.dumps(b) for b in func_blocks + main_blocks):
+            main_blocks = _collect_imports(tree) + main_blocks
+        chain = _chain(main_blocks)
+
+        tops = list(func_blocks)
+        if chain:
+            tops.append(chain)
+        # Mehrere Top-Level-Blöcke positionieren: Funktionen untereinander, das
+        # Hauptprogramm darunter. Streng wachsendes y sichert die Code-Reihenfolge
+        # (Definitionen vor dem Hauptprogramm), da Blockly nach Position erzeugt.
+        if len(tops) > 1:
+            for i, fb in enumerate(func_blocks):
+                fb["x"], fb["y"] = 20, 20 + i * 260
+            if chain:
+                chain["x"], chain["y"] = 20, 20 + len(func_blocks) * 260
+        state = {"blocks": {"languageVersion": 0, "blocks": tops}}
+        if st[" vars"]:
+            state["variables"] = [{"name": n, "id": i} for n, i in st[" vars"].items()]
+        return state
     except Exception:
         head = _raw_stmt(code or "")
-    return {"blocks": {"languageVersion": 0, "blocks": [head] if head else []}}
+        return {"blocks": {"languageVersion": 0, "blocks": [head]}}
 
 
 def _collect_imports(tree):
@@ -86,6 +130,19 @@ def _val(block):
 
 def _arith(op, a, b):
     return _blk("math_arithmetic", fields={"OP": op}, inputs={"A": _val(a), "B": _val(b)})
+
+
+def _is_stringish(node) -> bool:
+    """Ausdruck, dessen Block-Output sicher "String" ist (Text-Literal/f-String)
+    und damit nicht in einen Number-Eingang passt."""
+    return (isinstance(node, ast.Constant) and isinstance(node.value, str)) \
+        or isinstance(node, ast.JoinedStr)
+
+
+def _text_join2(a, b):
+    """Zwei Teile zu einem 'verbinde'-Block (text_join) zusammensetzen."""
+    return _blk("text_join", extra_state={"itemCount": 2},
+                inputs={"ADD0": _val(a), "ADD1": _val(b)})
 
 
 def _chain(blocks):
@@ -554,6 +611,102 @@ def _usages_ok(tree, parents, var, kind):
     return True
 
 
+# ── Funktionen (def → procedures_def*) ────────────────────────────────────────
+def _func_returns(node):
+    """Alle ``return`` im Funktionsrumpf – ohne in verschachtelte Funktionen/
+    Lambdas zu steigen (deren returns gehören nicht zu dieser Funktion)."""
+    out = []
+
+    def walk(n):
+        for child in ast.iter_child_nodes(n):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef, ast.Lambda)):
+                continue
+            if isinstance(child, ast.Return):
+                out.append(child)
+            walk(child)
+
+    walk(node)
+    return out
+
+
+def _analyze_func(node):
+    """``def`` analysieren. Liefert (params, rumpf_stmts, return_ausdruck|None)
+    oder None, wenn Signatur/Rückgabe-Stil nicht sauber als Block darstellbar ist.
+
+    Bewusst konservativ: nur einfache Positionsparameter (keine Defaults, *args,
+    **kwargs, keyword-only). Eine Rückgabe wird nur als abschließendes
+    ``return wert`` akzeptiert – frühe/mehrfache returns blieben als Block
+    mehrdeutig und fallen auf den Roh-Block zurück (weiterhin lauffähig)."""
+    a = node.args
+    if (a.posonlyargs or a.kwonlyargs or a.vararg or a.kwarg
+            or a.defaults or a.kw_defaults):
+        return None
+    params = [arg.arg for arg in a.args]
+    body = list(node.body)
+    returns = _func_returns(node)
+    if not returns:
+        return (params, body, None)
+    if len(returns) == 1 and body and body[-1] is returns[0]:
+        ret = returns[0]
+        if ret.value is None:
+            return (params, body[:-1], None)      # nacktes ``return`` → ohne Rückgabe
+        return (params, body[:-1], ret.value)
+    return None                                    # frühe/mehrfache returns → Roh-Block
+
+
+def _func_def_block(node, st):
+    """``def`` → procedures_defnoreturn/-defreturn; None wenn nicht abbildbar."""
+    info = _analyze_func(node)
+    if info is None:
+        return None
+    params, body, ret = info
+    param_state = []
+    for p in params:
+        vid = st[" vars"].setdefault(p, "pid_" + p)   # deterministische id je Name
+        param_state.append({"name": p, "id": vid})
+    inputs = {}
+    stack = _chain([b for b in _suite(body, st) if b])
+    if stack:
+        inputs["STACK"] = _val(stack)
+    extra = {"params": param_state} if param_state else None
+    if ret is not None:
+        inputs["RETURN"] = _val(_expr(ret, st))
+        return _blk("procedures_defreturn", fields={"NAME": node.name},
+                    inputs=inputs or None, extra_state=extra)
+    return _blk("procedures_defnoreturn", fields={"NAME": node.name},
+                inputs=inputs or None, extra_state=extra)
+
+
+def _call_block(call, st, statement):
+    """Aufruf einer eigenen Funktion → procedures_call*; None wenn nicht passend.
+
+    Im Anweisungskontext nur void-Funktionen (callnoreturn ist ein
+    Anweisungsblock), im Ausdruckskontext nur Funktionen mit Rückgabe
+    (callreturn ist ein Wertblock)."""
+    if not (isinstance(call.func, ast.Name) and not call.keywords
+            and not any(isinstance(a, ast.Starred) for a in call.args)):
+        return None
+    info = st.get(" funcs", {}).get(call.func.id)
+    if info is None or len(call.args) != len(info["params"]):
+        return None
+    if statement == info["returns"]:
+        return None   # void als Ausdruck / Rückgabe als blosse Anweisung: nicht darstellbar
+    inputs = {"ARG%d" % i: _val(_expr(a, st)) for i, a in enumerate(call.args)}
+    extra = {"name": call.func.id, "params": list(info["params"])}
+    typ = "procedures_callnoreturn" if statement else "procedures_callreturn"
+    return _blk(typ, inputs=inputs or None, extra_state=extra)
+
+
+def _cast_block(call, st):
+    """``int(x)``/``float(x)``/``str(x)`` → nit_cast; None sonst."""
+    if (isinstance(call.func, ast.Name) and call.func.id in ("int", "float", "str")
+            and len(call.args) == 1 and not call.keywords):
+        return _blk("nit_cast", fields={"TYPE": call.func.id},
+                    inputs={"VALUE": _val(_expr(call.args[0], st))})
+    return None
+
+
 # ── Anweisungen ───────────────────────────────────────────────────────────────
 def _stmt(node, st):
     try:
@@ -669,6 +822,9 @@ def _expr_statement(value, st):
                 return _blk("nit_warte", inputs={"SEK": _val(_expr(args[0], st))})
             if fn == "sleep_ms" and len(args) == 1:
                 return _blk("nit_warte_ms", inputs={"MS": _val(_expr(args[0], st))})
+        cb = _call_block(value, st, statement=True)
+        if cb is not None:
+            return cb
     return _raw_stmt(value)
 
 
@@ -776,6 +932,14 @@ def _expr(node, st):
         hw = _hw_call_expr(node, st)
         if hw is not None:
             return hw
+        if isinstance(node, ast.Call):
+            cast = _cast_block(node, st)
+            if cast is not None:
+                return cast
+            cb = _call_block(node, st, statement=False)
+            if cb is not None:
+                return cb
+            return _raw_expr(node)
         if isinstance(node, ast.Constant):
             v = node.value
             if isinstance(v, bool):
@@ -795,6 +959,16 @@ def _expr(node, st):
             return _dict_block(node, st)
         if isinstance(node, ast.BinOp):
             op = _BINOP.get(type(node.op))
+            # math_arithmetic/math_modulo haben Number-typisierte Eingänge. Ein
+            # String-Literal (Output "String") würde die Verbindung beim Laden
+            # sprengen und damit das GANZE Programm verschlucken. Darum String-
+            # Verkettung ("a" + x) als "verbinde"-Block, anderes (z. B. "ab" * 3,
+            # "%d" % x) als Roh-Ausdruck.
+            stringish = _is_stringish(node.left) or _is_stringish(node.right)
+            if op == "ADD" and stringish:
+                return _text_join2(_expr(node.left, st), _expr(node.right, st))
+            if stringish:
+                return _raw_expr(node)
             if op == "MODULO":
                 return _blk("math_modulo", inputs={
                     "DIVIDEND": _val(_expr(node.left, st)), "DIVISOR": _val(_expr(node.right, st))})

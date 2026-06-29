@@ -60,6 +60,8 @@
         <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
         <value name="TO"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
       </block>
+      <label text="Typumwandlung"></label>
+      <block type="nit_cast"></block>
     </category>
     <category name="Text" colour="160">
       <block type="text"></block>
@@ -73,6 +75,30 @@
       <block type="text_prompt_ext">
         <value name="TEXT"><shadow type="text"><field name="TEXT">Wie heißt du?</field></shadow></value>
       </block>
+      <label text="Zerlegen &amp; verändern"></label>
+      <block type="text_changeCase">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Hallo</field></shadow></value>
+      </block>
+      <block type="text_trim">
+        <value name="TEXT"><shadow type="text"><field name="TEXT"> Hallo </field></shadow></value>
+      </block>
+      <block type="text_charAt">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="text_getSubstring">
+        <value name="STRING"><block type="variables_get"></block></value>
+      </block>
+      <block type="text_indexOf">
+        <value name="VALUE"><block type="variables_get"></block></value>
+        <value name="FIND"><shadow type="text"><field name="TEXT">a</field></shadow></value>
+      </block>
+      <block type="text_replace">
+        <value name="FROM"><shadow type="text"><field name="TEXT">alt</field></shadow></value>
+        <value name="TO"><shadow type="text"><field name="TEXT">neu</field></shadow></value>
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Hallo Welt</field></shadow></value>
+      </block>
+      <label text="Kommentar"></label>
+      <block type="nit_comment"></block>
     </category>
     <category name="Listen" colour="260">
       <block type="lists_create_with"></block>
@@ -82,6 +108,24 @@
       </block>
       <block type="lists_setIndex">
         <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_repeat">
+        <value name="NUM"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
+      </block>
+      <block type="lists_indexOf">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_getSublist">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_sort">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_reverse">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_isEmpty">
+        <value name="VALUE"><block type="variables_get"></block></value>
       </block>
     </category>
     <category name="Tupel" colour="285">

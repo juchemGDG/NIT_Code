@@ -121,6 +121,43 @@
   };
   reg('nit_raw_expr', function (block) { return [block.getFieldValue('CODE'), ord('ATOMIC')]; });
 
+  // ── Typumwandlung int()/float()/str() ─────────────────────────────────────
+  // Wichtigster Einstiegs-Block: input() liefert immer Text, für Rechnungen
+  // braucht man int(input(...)) bzw. float(...).
+  Blockly.Blocks['nit_cast'] = {
+    init: function () {
+      this.appendValueInput('VALUE').appendField('wandle');
+      this.appendDummyInput().appendField('in')
+        .appendField(new FDrop([['Ganzzahl', 'int'], ['Kommazahl', 'float'], ['Text', 'str']]), 'TYPE');
+      this.setInputsInline(true);
+      this.setOutput(true, null);
+      this.setColour(230);     // wie Mathematik
+      this.setTooltip('Wandelt einen Wert um: Ganzzahl int(), Kommazahl float() oder '
+        + 'Text str(). Typisch: eine Eingabe in eine Zahl umwandeln, z. B. int(input(...)).');
+    }
+  };
+  reg('nit_cast', function (block) {
+    var fn = block.getFieldValue('TYPE');
+    var val = P.valueToCode(block, 'VALUE', ord('NONE')) || '0';
+    return [fn + '(' + val + ')', ord('FUNCTION_CALL')];
+  });
+
+  // ── Kommentar ─────────────────────────────────────────────────────────────
+  Blockly.Blocks['nit_comment'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('#')
+        .appendField(new Blockly.FieldTextInput('Kommentar'), 'TEXT');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#7d8794');
+      this.setTooltip('Ein Kommentar – erklärt den Code und wird nicht ausgeführt.');
+    }
+  };
+  reg('nit_comment', function (block) {
+    return '# ' + block.getFieldValue('TEXT') + '\n';
+  });
+
   // ── Warten ────────────────────────────────────────────────────────────────
   Blockly.Blocks['nit_warte'] = {
     init: function () {
