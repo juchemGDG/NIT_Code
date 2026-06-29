@@ -120,7 +120,10 @@ class AisChatPanel(QWidget):
                     'html, body {{ max-width: 100% !important; overflow-x: hidden !important; }}',
                     '* {{ min-width: 0 !important; }}',
                     'pre {{ max-width: 100% !important; overflow-x: auto !important; box-sizing: border-box; }}',
-                    'pre code {{ white-space: pre; }}'
+                    'pre code {{ white-space: pre; }}',
+                    // Bilder/Medien skalieren auf die Panelbreite herunter, statt in
+                    // ihrer Originalbreite zu rendern und so die Seite zu verbreitern.
+                    'img, svg, video, canvas {{ max-width: 100% !important; height: auto !important; }}'
                 ].join('\\n');
 
                 function applyStyle() {{
