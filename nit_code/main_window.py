@@ -661,7 +661,7 @@ class MainWindow(QMainWindow):
         self._settings_autosave_secs: int = 0
         self._settings_python_exec: str = ""
         self._settings_scrollback: int = 5000
-        self._settings_blocks_enabled: bool = False   # Block-Editor (BETA), Standard: aus
+        self._settings_blocks_enabled: bool = True    # Block-Editor, Standard: an
         self._settings_tutor_mode: str = "none"
         self._settings_tutor_url: str = ""
         self._settings_tutor_model: str = ""
@@ -760,7 +760,7 @@ class MainWindow(QMainWindow):
         )
         self._act_upload.setVisible(False)
 
-        # ── Blöcke (BETA, über Einstellungen aktivierbar) ──
+        # ── Blöcke (in Einstellungen abschaltbar) ──
         self._m_blocks = mb.addMenu("Blöcke")
         self._add_action(self._m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
 
@@ -1304,7 +1304,7 @@ class MainWindow(QMainWindow):
         self._run_program()
 
     def _apply_blocks_enabled(self):
-        """Blendet das Block-Editor-Feature (BETA) je nach Einstellung ein/aus."""
+        """Blendet das Block-Editor-Feature je nach Einstellung ein/aus."""
         enabled = self._settings_blocks_enabled
         if hasattr(self, "_m_blocks"):
             self._m_blocks.menuAction().setVisible(enabled)
@@ -2735,7 +2735,16 @@ class MainWindow(QMainWindow):
         self._settings_autosave_secs = self._settings_int("editor/autosave_secs", self._settings_autosave_secs)
         self._settings_python_exec = str(self._settings_store.value("python/executable", self._settings_python_exec) or "")
         self._settings_scrollback = self._settings_int("console/scrollback", self._settings_scrollback)
-        self._settings_blocks_enabled = self._settings_bool("blocks/enabled", self._settings_blocks_enabled)
+        # Block-Editor ist seit dem Ende der BETA standardmäßig an. Bestehende
+        # Installationen haben durch den früheren Standard („aus") ein
+        # blocks/enabled=False persistiert (closeEvent speichert alle Settings).
+        # Darum einmalig auf an setzen; eine spätere bewusste Abwahl bleibt erhalten.
+        if self._settings_bool("blocks/default_on_migrated", False):
+            self._settings_blocks_enabled = self._settings_bool("blocks/enabled", self._settings_blocks_enabled)
+        else:
+            self._settings_blocks_enabled = True
+            self._settings_store.setValue("blocks/enabled", True)
+            self._settings_store.setValue("blocks/default_on_migrated", True)
         self._settings_tutor_mode = str(self._settings_store.value("tutor/mode", self._settings_tutor_mode) or "none")
         self._settings_tutor_url = str(self._settings_store.value("tutor/url", self._settings_tutor_url) or "")
         self._settings_tutor_model = str(self._settings_store.value("tutor/model", self._settings_tutor_model) or "")
@@ -2902,7 +2911,7 @@ class MainWindow(QMainWindow):
             "x_min":  self._settings_plot_x_min,
             "x_max":  self._settings_plot_x_max,
         })
-        # Block-Editor (BETA) ein-/ausblenden
+        # Block-Editor ein-/ausblenden
         self._apply_blocks_enabled()
         # Auto-Save-Timer
         self._autosave_timer.stop()

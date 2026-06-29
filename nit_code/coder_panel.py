@@ -1233,7 +1233,7 @@ class CoderPanel(QWidget):
             self.open_as_blocks_requested.emit(self._last_code_block)
 
     def set_blocks_feature_enabled(self, enabled: bool):
-        """Blendet den „Als Blöcke öffnen"-Button ein/aus (Block-Editor BETA)."""
+        """Blendet den „Als Blöcke öffnen"-Button ein/aus (Block-Editor)."""
         if hasattr(self, "_blocks_btn"):
             self._blocks_btn.setVisible(bool(enabled))
 

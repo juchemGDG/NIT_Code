@@ -112,7 +112,7 @@ class SettingsDialog(QDialog):
         tutor_model: str = "",
         sketchbook_dir: str = "",
         theme: str = "modern_dark",
-        blocks_enabled: bool = False,
+        blocks_enabled: bool = True,
         plot_y_mode: str = "auto",
         plot_y_min: float = 0.0,
         plot_y_max: float = 100.0,
@@ -232,7 +232,7 @@ class SettingsDialog(QDialog):
         tutor_model: str = "",
         sketchbook_dir: str = "",
         theme: str = "modern_dark",
-        blocks_enabled: bool = False,
+        blocks_enabled: bool = True,
         plot_y_mode: str = "auto",
         plot_y_min: float = 0.0,
         plot_y_max: float = 100.0,
@@ -297,7 +297,7 @@ class SettingsDialog(QDialog):
         form_func.setSpacing(8)
         form_func.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        self._chk_blocks = QCheckBox("  Block-Editor aktivieren  (BETA)")
+        self._chk_blocks = QCheckBox("  Block-Editor aktivieren")
         self._chk_blocks.setChecked(blocks_enabled)
         self._chk_blocks.setToolTip(
             "Blendet das Menü „Blöcke“ und „Als Blöcke öffnen“ ein. "
@@ -305,8 +305,8 @@ class SettingsDialog(QDialog):
         form_func.addRow("", self._chk_blocks)
 
         hint_blocks = QLabel(
-            "Befindet sich noch in der Erprobung (BETA). "
-            "Standardmäßig deaktiviert.")
+            "Standardmäßig aktiviert. Haken entfernen, um Menü und Button "
+            "auszublenden.")
         hint_blocks.setWordWrap(True)
         hint_blocks.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
         form_func.addRow("", hint_blocks)
