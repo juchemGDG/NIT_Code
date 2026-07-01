@@ -26,30 +26,40 @@ Ordner **komplett offline lauffähig** – nichts muss mehr nachgeladen werden.
 > einmal hier). Eine gemeinsame `shared-blocks/`-Quelle ist als späterer
 > Aufräumschritt vorgesehen, sobald der Prototyp auf Hardware bestätigt ist.
 
-## Deployment (lokaler Rechner mit angeschlossenem ESP32)
+## Deployment auf den ESP32
 
-> **Wichtig:** Diese Schritte brauchen USB-Zugriff auf das Board und laufen
-> deshalb **nur lokal** – nicht im Cloud-Codespace. Port-Namen:
-> ESP32-C3 mit nativem USB meist `/dev/ttyACM0` (Linux) bzw.
-> `/dev/cu.usbmodemXXXX` (macOS), mit USB-Serial-Chip `/dev/ttyUSB0`.
+> **Wichtig:** Das braucht USB-Zugriff auf das Board und läuft deshalb **nur
+> lokal** – nicht im Cloud-Codespace. Port-Namen: ESP32-C3 mit nativem USB
+> meist `/dev/ttyACM0` (Linux) bzw. `/dev/cu.usbmodemXXXX` (macOS), mit
+> USB-Serial-Chip `/dev/ttyUSB0`.
 
-1. **MicroPython flashen** – am einfachsten über den NIT_Code-Flash-Dialog
-   (Board „ESP32-C3" wählen, neueste Firmware automatisch). Alternativ manuell:
-   ```bash
-   esptool --chip esp32c3 --port /dev/ttyACM0 --baud 460800 \
-       write_flash -e -z 0x0 ESP32_GENERIC_C3-*.bin
-   ```
-2. **Dateien aufs Board kopieren:**
-   ```bash
-   pip install mpremote
-   cd firmware
-   mpremote connect /dev/ttyACM0 cp boot.py main.py :
-   mpremote connect /dev/ttyACM0 cp -r www :
-   mpremote connect /dev/ttyACM0 reset
-   ```
+Zuerst muss **MicroPython** auf dem Board sein – am einfachsten über den
+NIT_Code-Flash-Dialog (Board „ESP32-C3" wählen, neueste Firmware automatisch).
+Manuell:
 
-Dann mit Laptop/iPad im WLAN "NIT-ESP32-Blockly" (Passwort: mint2026)
-einloggen und `http://192.168.4.1/` öffnen.
+```bash
+esptool --chip esp32c3 --port /dev/ttyACM0 --baud 460800 \
+    write_flash -e -z 0x0 ESP32_GENERIC_C3-*.bin
+```
+
+### Weg A – direkt in NIT_Code (empfohlen)
+
+Menü **MicroPython → 📲 iPad-Blockly aufs Board spielen**. Kopiert `boot.py`,
+`main.py` und `www/` automatisch auf den angeschlossenen Controller und startet
+ihn neu – kein Terminal nötig.
+
+### Weg B – manuell per mpremote
+
+```bash
+pip install mpremote
+cd firmware
+mpremote connect /dev/ttyACM0 cp boot.py main.py :
+mpremote connect /dev/ttyACM0 cp -r www :
+mpremote connect /dev/ttyACM0 reset
+```
+
+Danach mit Laptop/iPad ins WLAN "NIT-ESP32-Blockly" (Passwort: `mint2026`)
+und `http://192.168.4.1/` öffnen.
 
 ## Bekannte Einschränkungen von V1
 
