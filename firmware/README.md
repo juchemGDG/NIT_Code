@@ -1,15 +1,20 @@
 # NIT ESP32 Blockly – Prototyp
 
-Standalone-IDE auf dem ESP32: Board als eigener Accesspoint, Blockly-Oberfläche
-wird direkt vom Board ausgeliefert, kein Schulnetz/Internet nötig.
+Standalone-IDE auf dem ESP32: Board als eigener Accesspoint, Oberfläche wird
+direkt vom Board ausgeliefert, kein Schulnetz/Internet nötig.
+
+Die Web-Oberfläche zeigt drei Bereiche nebeneinander (auf dem iPad hochkant
+untereinander): links die **Blöcke**, rechts oben den **Python-Code** (live aus
+den Blöcken erzeugt, per „✏️ bearbeiten“ auch manuell editierbar) und rechts
+unten eine **Konsole** mit den Ausgaben und Fehlermeldungen des Programms.
 
 ## Dateistruktur
 
 ```
 boot.py                          Richtet WLAN-Accesspoint ein
-main.py                          Webserver (uasyncio), liefert /www aus, nimmt Code entgegen
-www/index.html                   Blockly-Oberfläche + Toolbox (aus NIT_Code übernommen)
-www/app.js                       Verdrahtung: "Ausführen" -> POST /api/upload, "Stopp" -> POST /api/stop
+main.py                          Webserver (uasyncio): liefert /www aus, führt Code im Thread aus, sammelt Ausgaben
+www/index.html                   Oberfläche: Blöcke + Python-Editor + Konsole (Toolbox aus NIT_Code)
+www/app.js                       Live-Codegen, Ausführen -> /api/run, Konsole pollt /api/output, Stopp -> /api/stop
 www/blockly/*.js                 Blockly-Core + geteilte Blockdefinitionen (nit_blocks.js, nitbw_blocks.js)
 www/blockly/msg/de.js            Deutsche Übersetzung
 www/blockly/media/               Sprites/Sounds (offline)
@@ -76,11 +81,12 @@ und `http://192.168.4.1/` öffnen.
 
 ## Bekannte Einschränkungen von V1
 
-1. **Kein echtes Multitasking**: Nutzercode (z. B. Blink-Endlosschleife)
-   blockiert den Webserver. Workflow ist "Hochladen → Reset → Läuft".
-   Über den Stopp-Button bzw. die physische Reset-Taste kommt man zurück
-   in den Programmiermodus. Ausbaustufe 2: `_thread` (zweiter Kern) für
-   echtes Nebeneinander von Webserver und Nutzerprogramm.
+1. **Ausführung im Hintergrund-Thread**: `main.py` startet den Nutzercode per
+   `_thread`, fängt `print`-Ausgaben und Fehler ab (Ringpuffer) und liefert sie
+   über `/api/output`; der Webserver bleibt erreichbar. „Stopp" beendet das
+   Programm per Board-Reset. Einschränkung des einzelnen C3-Kerns: Eine reine
+   Endlosschleife **ohne** `time.sleep(_ms)` kann den Webserver ausbremsen –
+   in Schülerprogrammen ist praktisch immer ein `sleep` enthalten.
 2. **Ein Client pro Board**: AP-Client-Limit ist bei 1:1-Zuordnung
    (ein ESP32 pro Schüler:in) unkritisch.
 3. **Kein Captive Portal** in V1 – man muss die IP manuell aufrufen.

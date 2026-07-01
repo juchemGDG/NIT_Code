@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>NIT ESP32 Blockly</title>
 <style>
-  html, body { margin: 0; height: 100%; font-family: -apple-system, Segoe UI, Arial, sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+               font-family: -apple-system, Segoe UI, Arial, sans-serif; }
   #topbar {
     height: 52px; display: flex; align-items: center; gap: 10px;
-    padding: 0 12px; background: #263238; color: #fff;
+    padding: 0 12px; background: #263238; color: #fff; box-sizing: border-box;
   }
   #topbar h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
   button {
@@ -17,8 +18,43 @@
   }
   #btnRun { background: #43a047; color: white; }
   #btnStop { background: #e53935; color: white; }
-  #status { font-size: 13px; color: #cfd8dc; min-width: 160px; }
-  #blocklyDiv { position: absolute; top: 52px; bottom: 0; left: 0; right: 0; }
+  #status { font-size: 13px; color: #cfd8dc; min-width: 150px; }
+
+  /* Hauptbereich: links Blöcke, rechts Code + Konsole */
+  #main { position: absolute; top: 52px; bottom: 0; left: 0; right: 0; display: flex; }
+  #blocklyDiv { flex: 1 1 60%; position: relative; }
+  #right { flex: 0 0 40%; display: flex; flex-direction: column;
+           border-left: 2px solid #cfd8dc; min-width: 260px; }
+
+  .pane { display: flex; flex-direction: column; min-height: 0; }
+  #codepane { flex: 1 1 60%; }
+  #consolepane { flex: 1 1 40%; border-top: 2px solid #cfd8dc; }
+  .pane-head {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    background: #eceff1; font-size: 13px; font-weight: 600; color: #37474f;
+  }
+  .pane-head span { flex: 1; }
+  .pane-head button { padding: 4px 10px; font-size: 12px; background: #b0bec5; color: #263238; }
+  #code {
+    flex: 1; width: 100%; box-sizing: border-box; border: none; resize: none;
+    padding: 8px; font-family: 'SF Mono', Consolas, monospace; font-size: 13px;
+    line-height: 1.45; tab-size: 4; outline: none;
+  }
+  #code[readonly] { background: #fafafa; color: #455a64; }
+  #console {
+    flex: 1; margin: 0; padding: 8px; overflow: auto; background: #1e1e1e;
+    color: #d4d4d4; font-family: 'SF Mono', Consolas, monospace; font-size: 13px;
+    line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+  }
+  #console .err { color: #ff6b68; }
+  #console .sys { color: #7fd1b9; }
+
+  /* Hochkant (iPad Portrait): untereinander statt nebeneinander */
+  @media (max-width: 820px) {
+    #main { flex-direction: column; }
+    #blocklyDiv { flex: 1 1 55%; }
+    #right { flex: 1 1 45%; border-left: none; border-top: 2px solid #cfd8dc; }
+  }
 </style>
 
 <!-- Blockly-Bundles + geteilte Blockdefinitionen aus NIT_Code.
@@ -38,10 +74,28 @@
   <h1>ESP32 programmieren</h1>
   <span id="status">Bereit</span>
   <button id="btnRun">▶ Ausführen</button>
-  <button id="btnStop">■ Stopp / Bearbeiten</button>
+  <button id="btnStop">■ Stopp</button>
 </div>
 
-<div id="blocklyDiv"></div>
+<div id="main">
+  <div id="blocklyDiv"></div>
+  <div id="right">
+    <div id="codepane" class="pane">
+      <div class="pane-head">
+        <span>Python-Code</span>
+        <button id="btnEdit">✏️ bearbeiten</button>
+      </div>
+      <textarea id="code" readonly spellcheck="false"></textarea>
+    </div>
+    <div id="consolepane" class="pane">
+      <div class="pane-head">
+        <span>Konsole</span>
+        <button id="btnClear">löschen</button>
+      </div>
+      <pre id="console"></pre>
+    </div>
+  </div>
+</div>
 
 <!-- TOOLBOX:START (auto-generiert aus editor.html via sync_from_nit_code.py – nicht von Hand aendern) -->
 <xml id="toolbox" style="display: none">

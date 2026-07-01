@@ -1,18 +1,30 @@
 # main.py
-# Laeuft nach boot.py. Startet einen einfachen Webserver, der
-#  1) die Blockly-Oberflaeche aus /www ausliefert
-#  2) per POST /api/upload generierten MicroPython-Code entgegennimmt,
-#     als /user_code.py speichert und das Board neu startet
-#  3) per POST /api/stop zurueck in den Programmiermodus wechselt
-#     (naechster Boot fuehrt user_code.py NICHT aus)
+# Laeuft nach boot.py. Startet einen Webserver, der
+#  1) die Blockly-/Editor-Oberflaeche aus /www ausliefert
+#  2) per POST /api/run Python-Code entgegennimmt und ihn in einem
+#     Hintergrund-Thread ausfuehrt – print-Ausgaben und Fehler werden
+#     abgefangen und in einem Ringpuffer gesammelt
+#  3) per GET /api/output?since=N neue Ausgabezeilen liefert (die Weboberflaeche
+#     pollt diesen Endpunkt und zeigt sie in der Konsole)
+#  4) per POST /api/stop das laufende Programm durch einen Reset beendet
+#
+# Der Webserver bleibt waehrend der Ausfuehrung erreichbar (eigener Thread).
+# Hinweis: Der ESP32-C3 hat nur einen Kern – ein Nutzerprogramm mit einer
+# reinen Endlosschleife OHNE sleep kann den Webserver ausbremsen. In der Praxis
+# enthalten Schuelerprogramme fast immer ein time.sleep(_ms), das anderen
+# Tasks Rechenzeit gibt.
 
 import uasyncio as asyncio
 import os
+import sys
+import io
+import json
+import _thread
 import machine
 
 STATIC_DIR = "/www"
 CODE_FILE = "/user_code.py"
-RUN_FLAG = "/run_flag.txt"   # Existenz dieser Datei = "beim naechsten Boot ausfuehren"
+MAX_LINES = 800   # Ringpuffer-Groesse fuer Konsolenausgaben
 
 MIME_TYPES = {
     ".html": "text/html",
@@ -20,9 +32,67 @@ MIME_TYPES = {
     ".css": "text/css",
     ".json": "application/json",
     ".svg": "image/svg+xml",
+    ".mp3": "audio/mpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
 }
 
+# ── Konsolen-Ausgabepuffer (thread-sicher) ────────────────────────────────
+_out_lock = _thread.allocate_lock()
+_out_lines = []     # gesammelte Ausgabezeilen
+_out_base = 0       # wie viele Zeilen vorne bereits verworfen wurden
+_running = False     # laeuft gerade ein Nutzerprogramm?
 
+
+def _append(text):
+    global _out_base
+    with _out_lock:
+        _out_lines.append(text)
+        if len(_out_lines) > MAX_LINES:
+            drop = len(_out_lines) - MAX_LINES
+            del _out_lines[:drop]
+            _out_base += drop
+
+
+def _reset_output():
+    global _out_base
+    with _out_lock:
+        _out_lines.clear()
+        _out_base = 0
+
+
+def _snapshot(since):
+    """Liefert (neue_zeilen, gesamtzahl) ab absolutem Index ``since``."""
+    with _out_lock:
+        total = _out_base + len(_out_lines)
+        start = since - _out_base
+        if start < 0:
+            start = 0
+        return _out_lines[start:], total
+
+
+def _user_print(*args, **kwargs):
+    sep = kwargs.get("sep", " ")
+    end = kwargs.get("end", "\n")
+    _append(sep.join(str(a) for a in args) + end)
+
+
+def _run_code(code):
+    """Fuehrt den Nutzercode aus (im Hintergrund-Thread)."""
+    global _running
+    _running = True
+    try:
+        g = {"__name__": "__main__", "print": _user_print}
+        exec(code, g)
+    except Exception as e:
+        buf = io.StringIO()
+        sys.print_exception(e, buf)
+        _append(buf.getvalue())
+    finally:
+        _running = False
+
+
+# ── HTTP-Hilfen ───────────────────────────────────────────────────────────
 def guess_mime(path):
     for ext, mime in MIME_TYPES.items():
         if path.endswith(ext):
@@ -38,7 +108,8 @@ async def send_file(writer, path):
         await writer.drain()
         return
     mime = guess_mime(path)
-    header = "HTTP/1.0 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n".format(mime, size)
+    header = ("HTTP/1.0 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n"
+              "Connection: close\r\n\r\n").format(mime, size)
     writer.write(header.encode())
     await writer.drain()
     with open(path, "rb") as f:
@@ -48,6 +119,16 @@ async def send_file(writer, path):
                 break
             writer.write(chunk)
             await writer.drain()
+
+
+async def send_text(writer, body, status="200 OK", mime="text/plain"):
+    if isinstance(body, str):
+        body = body.encode()
+    header = ("HTTP/1.0 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n"
+              "Connection: close\r\n\r\n").format(status, mime, len(body))
+    writer.write(header.encode())
+    writer.write(body)
+    await writer.drain()
 
 
 async def read_headers(reader):
@@ -62,11 +143,22 @@ async def read_headers(reader):
     return headers
 
 
-async def restart_soon():
+async def read_body(reader, n):
+    body = b""
+    while len(body) < n:
+        chunk = await reader.read(n - len(body))
+        if not chunk:
+            break
+        body += chunk
+    return body
+
+
+async def reset_soon():
     await asyncio.sleep_ms(300)
     machine.reset()
 
 
+# ── Request-Handler ───────────────────────────────────────────────────────
 async def handle_client(reader, writer):
     try:
         request_line = await reader.readline()
@@ -79,40 +171,46 @@ async def handle_client(reader, writer):
         headers = await read_headers(reader)
         content_length = int(headers.get("content-length", 0))
 
-        if method == "GET":
+        if method == "GET" and path.startswith("/api/output"):
+            since = 0
+            if "?" in path:
+                for kv in path.split("?", 1)[1].split("&"):
+                    if kv.startswith("since="):
+                        try:
+                            since = int(kv[6:])
+                        except ValueError:
+                            since = 0
+            lines, total = _snapshot(since)
+            payload = json.dumps({"lines": lines, "next": total, "running": _running})
+            await send_text(writer, payload, mime="application/json")
+
+        elif method == "GET":
             if path == "/":
                 path = "/index.html"
             await send_file(writer, STATIC_DIR + path)
 
-        elif method == "POST" and path == "/api/upload":
-            body = b""
-            while len(body) < content_length:
-                chunk = await reader.read(content_length - len(body))
-                if not chunk:
-                    break
-                body += chunk
+        elif method == "POST" and path == "/api/run":
+            body = await read_body(reader, content_length)
             code = body.decode("utf-8")
-            with open(CODE_FILE, "w") as f:
-                f.write(code)
-            with open(RUN_FLAG, "w") as f:
-                f.write("1")
-
-            writer.write(b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nOK - Board startet neu und fuehrt den Code aus")
-            await writer.drain()
-            asyncio.create_task(restart_soon())
+            if _running:
+                await send_text(writer, "Es laeuft bereits ein Programm – erst Stopp.",
+                                status="409 Conflict")
+            else:
+                _reset_output()
+                try:
+                    with open(CODE_FILE, "w") as f:
+                        f.write(code)
+                except OSError:
+                    pass
+                _thread.start_new_thread(_run_code, (code,))
+                await send_text(writer, "OK")
 
         elif method == "POST" and path == "/api/stop":
-            try:
-                os.remove(RUN_FLAG)
-            except OSError:
-                pass
-            writer.write(b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nOK - zurueck im Programmiermodus")
-            await writer.drain()
-            asyncio.create_task(restart_soon())
+            await send_text(writer, "OK - Board startet neu")
+            asyncio.create_task(reset_soon())
 
         else:
-            writer.write(b"HTTP/1.0 404 Not Found\r\nConnection: close\r\n\r\nNot found")
-            await writer.drain()
+            await send_text(writer, "Not found", status="404 Not Found")
 
     except Exception as e:
         print("Fehler im Request-Handler:", e)
@@ -123,28 +221,6 @@ async def handle_client(reader, writer):
             pass
 
 
-def should_run_user_code():
-    try:
-        os.stat(RUN_FLAG)
-        os.stat(CODE_FILE)
-        return True
-    except OSError:
-        return False
-
-
-def run_user_code():
-    print("Fuehre gespeicherten Blockly-Code aus (user_code.py) ...")
-    try:
-        import user_code  # fuehrt die Datei einmal aus
-    except Exception as e:
-        print("Fehler im Nutzercode:", e)
-        # Bei Fehler zurueck in den Programmiermodus, damit man nicht ausgesperrt ist
-        try:
-            os.remove(RUN_FLAG)
-        except OSError:
-            pass
-
-
 async def main():
     server = await asyncio.start_server(handle_client, "0.0.0.0", 80)
     print("Webserver laeuft: http://<AP-IP>/  (Standard: 192.168.4.1)")
@@ -152,13 +228,4 @@ async def main():
         await server.wait_closed()
 
 
-if should_run_user_code():
-    # Nutzercode blockiert hier bewusst (z.B. Endlosschleife mit Blinken).
-    # Der Webserver startet danach nicht mehr - Reset-Taste oder Neustart
-    # bringt das Board zurueck (RUN_FLAG wird dann erneut geprueft).
-    run_user_code()
-    # Falls der Nutzercode durchlaeuft (kein while True), zur Sicherheit
-    # trotzdem den Server starten, damit man weiterarbeiten kann:
-    asyncio.run(main())
-else:
-    asyncio.run(main())
+asyncio.run(main())
