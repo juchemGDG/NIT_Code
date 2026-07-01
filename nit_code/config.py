@@ -211,10 +211,47 @@ LIB_REPO_RAW = "https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/mai
 MICROPYTHON_DOWNLOAD_BASE = "https://micropython.org/download/"
 
 SUPPORTED_BOARDS = {
+    # ESP-Familie: alle über esptool geflasht (flash_cmd "esp32"). Chip-Typ und
+    # Bootloader-Offset unterscheiden sich je Variante – der originale ESP32 und
+    # der S2 haben den Bootloader bei 0x1000, die neueren RISC-V-/S3-Chips bei 0x0.
     "ESP32": {
         "label": "ESP32",
         "download_page": "ESP32_GENERIC",
         "flash_cmd": "esp32",
+        "chip": "esp32",
+        "flash_offset": "0x1000",
+        "baud": 115200,
+    },
+    "ESP32-C3": {
+        "label": "ESP32-C3",
+        "download_page": "ESP32_GENERIC_C3",
+        "flash_cmd": "esp32",
+        "chip": "esp32c3",
+        "flash_offset": "0x0",
+        "baud": 115200,
+    },
+    "ESP32-S3": {
+        "label": "ESP32-S3",
+        "download_page": "ESP32_GENERIC_S3",
+        "flash_cmd": "esp32",
+        "chip": "esp32s3",
+        "flash_offset": "0x0",
+        "baud": 115200,
+    },
+    "ESP32-C6": {
+        "label": "ESP32-C6",
+        "download_page": "ESP32_GENERIC_C6",
+        "flash_cmd": "esp32",
+        "chip": "esp32c6",
+        "flash_offset": "0x0",
+        "baud": 115200,
+    },
+    "ESP32-S2": {
+        "label": "ESP32-S2",
+        "download_page": "ESP32_GENERIC_S2",
+        "flash_cmd": "esp32",
+        "chip": "esp32s2",
+        "flash_offset": "0x1000",
         "baud": 115200,
     },
     "micro:bit": {
@@ -231,7 +268,7 @@ SUPPORTED_BOARDS = {
     },
     "RPI Pico 2W": {
         "label": "Raspberry Pi Pico 2W",
-        "download_page": "RPI_PICO2W",
+        "download_page": "RPI_PICO2_W",
         "flash_cmd": "rp2",
         "baud": 115200,
     },

@@ -122,12 +122,17 @@ class FlashWorker(QThread):
         # "-e" / --erase-all löscht vor dem Schreiben den kompletten Flash
         # (inkl. Dateisystem), sodass ein sauberer, leerer Controller entsteht.
         if flash_cmd == "esp32":
+            # Chip-Typ und Bootloader-Offset kommen aus der Board-Definition, weil
+            # sie sich je ESP-Variante unterscheiden (z. B. ESP32 → esp32/0x1000,
+            # ESP32-C3 → esp32c3/0x0). Defaults = originaler ESP32.
+            chip = board_info.get("chip", "esp32")
+            offset = board_info.get("flash_offset", "0x1000")
             cmd = [
                 *tool_command("esptool"),
-                "--chip", "esp32",
+                "--chip", chip,
                 "--port", self.port,
                 "--baud", str(baud),
-                "write_flash", "-e", "-z", "0x1000",
+                "write_flash", "-e", "-z", offset,
                 self.firmware_path,
             ]
         elif flash_cmd == "rp2":
@@ -402,20 +407,68 @@ class FlashWorker(QThread):
 # ──────────────────────────────────────────────────────────────────────────────
 # Download-Worker für Firmware
 # ──────────────────────────────────────────────────────────────────────────────
+MICROPYTHON_BASE = "https://micropython.org"
+
+
+def resolve_latest_firmware_url(download_page: str, ext: str = ".bin"):
+    """Ermittelt die neueste *stabile* Firmware-Datei eines Boards.
+
+    Lädt die Download-Seite von micropython.org und wählt daraus die Basis-
+    Firmware aus: Der Dateiname muss die Board-ID sein, direkt gefolgt vom
+    Build-Datum (``<ID>-<YYYYMMDD>-v<Version><ext>``). Dadurch werden Varianten
+    mit Zusatz-Suffix (z. B. ``-SPIRAM``, ``-OTA``, ``-UNICORE``, ``-RISCV``)
+    sowie ``preview``-Builds übersprungen. Es gewinnt der jüngste Build.
+
+    Rückgabe: ``(url, version, build_datum)``. Wirft bei Netzwerkfehler oder
+    wenn keine passende Datei gefunden wird.
+    """
+    import re
+    page_url = f"{MICROPYTHON_BASE}/download/{download_page}/"
+    resp = requests.get(page_url, timeout=30)
+    resp.raise_for_status()
+    pat = re.compile(
+        r'/resources/firmware/' + re.escape(download_page)
+        + r'-(\d{8})-v([^\s"\'/]+?)' + re.escape(ext)
+    )
+    best = None  # (build_datum, version, pfad)
+    for m in pat.finditer(resp.text):
+        build, version = m.group(1), m.group(2)
+        if "preview" in version.lower():
+            continue
+        if best is None or build > best[0]:
+            best = (build, version, m.group(0))
+    if best is None:
+        raise RuntimeError(
+            f"Auf {page_url} wurde keine stabile Firmware ({ext}) gefunden."
+        )
+    return f"{MICROPYTHON_BASE}{best[2]}", best[1], best[0]
+
+
 class FirmwareDownloader(QThread):
     log = pyqtSignal(str)
     progress = pyqtSignal(int)
     done = pyqtSignal(bool, str)   # (success, filepath_or_error)
 
-    def __init__(self, url: str, dest: str):
+    def __init__(self, dest: str, url: str | None = None,
+                 download_page: str | None = None, ext: str = ".bin"):
         super().__init__()
-        self.url = url
         self.dest = dest
+        self.url = url
+        self.download_page = download_page
+        self.ext = ext
 
     def run(self):
         try:
-            self.log.emit(f"Lade Firmware von {self.url} ...\n")
-            resp = requests.get(self.url, stream=True, timeout=30)
+            url = self.url
+            if not url:
+                # Kein direkter Link angegeben → neueste stabile Version ermitteln.
+                self.log.emit("Ermittle neueste stabile Firmware …\n")
+                url, version, build = resolve_latest_firmware_url(
+                    self.download_page, self.ext
+                )
+                self.log.emit(f"Neueste Version: v{version} (Build {build})\n")
+            self.log.emit(f"Lade Firmware von {url} ...\n")
+            resp = requests.get(url, stream=True, timeout=30)
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
             downloaded = 0
@@ -493,7 +546,7 @@ class FlashDialog(QDialog):
         fg = QVBoxLayout(fw_group)
         self._rb_local = QRadioButton("Lokale Datei")
         self._rb_local.setChecked(True)
-        self._rb_online = QRadioButton("Von micropython.org herunterladen")
+        self._rb_online = QRadioButton("Neueste Firmware automatisch von micropython.org laden")
         fg.addWidget(self._rb_local)
         fg.addWidget(self._rb_online)
 
@@ -595,10 +648,13 @@ class FlashDialog(QDialog):
 
         ext = ".uf2" if self._flash_cmd == "rp2" else ".hex" if self._flash_cmd == "microbit" else ".bin"
         self._local_path.setPlaceholderText(f"Pfad zur {ext} Datei ...")
-        board_page = board_info.get("download_page", "")
-        url = f"https://micropython.org/download/{board_page}/"
-        self._online_url.setText(url)
-        self._url_lbl.setText(f"Download-URL ({ext} direkt):")
+        # Online-Modus lädt automatisch die neueste stabile Version für dieses Board.
+        # Das URL-Feld ist nur ein optionaler Override für eine bestimmte Version.
+        self._online_url.clear()
+        self._online_url.setPlaceholderText(
+            f"leer lassen = neueste Version · oder eigener {ext}-Direktlink"
+        )
+        self._url_lbl.setText("Erweitert (optional): eigene Download-URL")
 
     def _refresh_ports(self):
         import serial.tools.list_ports
@@ -639,15 +695,29 @@ class FlashDialog(QDialog):
         if self._rb_online.isChecked():
             url = self._online_url.text().strip()
             ext = ".uf2" if self._flash_cmd == "rp2" else ".hex" if self._flash_cmd == "microbit" else ".bin"
-            if not any(url.endswith(e) for e in (".bin", ".uf2", ".hex")):
-                QMessageBox.information(
-                    self, "Hinweis",
-                    f"Bitte die direkte {ext}-Download-URL von micropython.org eingeben.\n"
-                    "Öffne die Download-Seite im Browser und kopiere den direkten Download-Link."
-                )
-                return
             dest = str(Path.home() / f"micropython_firmware{ext}")
-            self._downloader = FirmwareDownloader(url, dest)
+            if url:
+                # Optionaler manueller Override: muss ein direkter Datei-Link sein.
+                if not any(url.endswith(e) for e in (".bin", ".uf2", ".hex")):
+                    QMessageBox.information(
+                        self, "Hinweis",
+                        f"Das Feld „Eigene URL“ muss ein direkter {ext}-Download-Link sein.\n"
+                        "Leer lassen, um automatisch die neueste Version zu laden."
+                    )
+                    return
+                self._downloader = FirmwareDownloader(dest, url=url)
+            else:
+                # Standard: neueste stabile Firmware für dieses Board automatisch holen.
+                download_page = board_info.get("download_page", "")
+                if not download_page:
+                    QMessageBox.warning(
+                        self, "Kein Board",
+                        "Für dieses Board ist keine Download-Seite hinterlegt."
+                    )
+                    return
+                self._downloader = FirmwareDownloader(
+                    dest, download_page=download_page, ext=ext
+                )
             self._downloader.log.connect(self._log_append)
             self._downloader.progress.connect(self._progress.setValue)
             self._downloader.done.connect(
