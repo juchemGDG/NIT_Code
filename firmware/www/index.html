@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>NIT ESP32 Blockly</title>
+<style>
+  html, body { margin: 0; height: 100%; font-family: -apple-system, Segoe UI, Arial, sans-serif; }
+  #topbar {
+    height: 52px; display: flex; align-items: center; gap: 10px;
+    padding: 0 12px; background: #263238; color: #fff;
+  }
+  #topbar h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
+  button {
+    border: none; border-radius: 6px; padding: 10px 16px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+  #btnRun { background: #43a047; color: white; }
+  #btnStop { background: #e53935; color: white; }
+  #status { font-size: 13px; color: #cfd8dc; min-width: 160px; }
+  #blocklyDiv { position: absolute; top: 52px; bottom: 0; left: 0; right: 0; }
+</style>
+
+<!-- Lokal auf dem ESP32 abgelegte Blockly-Bundles.
+     Diese Dateien musst du einmalig von https://www.npmjs.com/package/blockly
+     (dist/*.js, ~100-200 KB gzip) in diesen Ordner kopieren -->
+<script src="/blockly/blockly_compressed.js"></script>
+<script src="/blockly/blocks_compressed.js"></script>
+<script src="/blockly/python_compressed.js"></script>
+<script src="/blockly/msg/de.js"></script>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>ESP32 programmieren</h1>
+  <span id="status">Bereit</span>
+  <button id="btnRun">▶ Ausführen</button>
+  <button id="btnStop">■ Stopp / Bearbeiten</button>
+</div>
+
+<div id="blocklyDiv"></div>
+
+<xml id="toolbox" style="display: none">
+  <category name="Steuerung" colour="120">
+    <block type="nit_wait"></block>
+    <block type="controls_repeat_ext">
+      <value name="TIMES">
+        <shadow type="math_number"><field name="NUM">10</field></shadow>
+      </value>
+    </block>
+    <block type="controls_whileUntil"></block>
+    <block type="controls_if"></block>
+  </category>
+  <category name="GPIO" colour="200">
+    <block type="nit_pin_write"></block>
+    <block type="nit_pin_read"></block>
+  </category>
+  <category name="Logik" colour="210">
+    <block type="logic_compare"></block>
+    <block type="logic_operation"></block>
+    <block type="logic_boolean"></block>
+  </category>
+  <category name="Mathe" colour="230">
+    <block type="math_number"></block>
+    <block type="math_arithmetic"></block>
+  </category>
+  <category name="Variablen" colour="330" custom="VARIABLE"></category>
+</xml>
+
+<script src="/blocks.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
