@@ -46,7 +46,7 @@
       "Read(//usr/local/python/3.12.1/lib/python3.12/site-packages/**)"
     ],
     "additionalDirectories": [
-      "/workspaces/NIT_PyEd"
+      "/workspaces/NIT_Code"
     ]
   }
 }

@@ -4,7 +4,7 @@ Dieser Ordner enthaelt alles, um automatisch downloadbare Pakete zu bauen.
 
 ## Neue Version veroeffentlichen (Schnellanleitung)
 
-Beispiel: Version `1.3.2`. Im Terminal des Codespace (Ordner `/workspaces/NIT_PyEd`):
+Beispiel: Version `1.3.2`. Im Terminal des Codespace (Ordner `/workspaces/NIT_Code`):
 
 1. Versionsnummer aendern in `nit_code/config.py` (einzige Quelle der Wahrheit):
    `APP_VERSION = "1.3.2"`
