@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QStackedWidget, QTabWidget, QLabel, QStatusBar, QToolBar, QToolButton,
     QComboBox, QFileDialog, QMessageBox, QInputDialog, QMenu,
     QDialog, QPushButton, QTextEdit, QLineEdit, QFormLayout, QGroupBox,
-    QListWidget, QListWidgetItem,
+    QListWidget, QListWidgetItem, QCheckBox,
 )
 
 from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, python_executable, tool_command, set_theme
@@ -1648,23 +1648,33 @@ class MainWindow(QMainWindow):
                 "gefunden werden."
             )
             return
-        reply = QMessageBox.question(
-            self, "iPad-Blockly aufspielen",
+        box = QMessageBox(self)
+        box.setWindowTitle("iPad-Blockly aufspielen")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(
             "Auf dem angeschlossenen Controller werden boot.py, main.py und der "
-            "Ordner www/ mit der Blockly-Oberfläche angelegt bzw. überschrieben.\n\n"
-            "Voraussetzung: Auf dem Board läuft bereits MicroPython – sonst zuerst "
-            "„Firmware flashen …“ ausführen.\n\n"
-            "Fortfahren?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            "Ordner www/ mit der Blockly-Oberfläche angelegt bzw. überschrieben."
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        box.setInformativeText(
+            "Voraussetzung: Auf dem Board läuft bereits MicroPython – sonst zuerst "
+            "„Firmware flashen …“ ausführen.\n\nFortfahren?"
+        )
+        cb = QCheckBox("Auch die Sensor-Bibliotheken (nitbw_) installieren – "
+                       "nötig für die Sensor-Blöcke, dauert einige Minuten")
+        cb.setChecked(True)
+        box.setCheckBox(cb)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
             return
+        install_libs = cb.isChecked()
         if not self._acquire_port():
             return
         from .micropython_dialogs import IpadDeployWorker
         self._console.append_info("📲  Spiele iPad-Blockly auf den Controller …\n")
-        worker = IpadDeployWorker(port, fw_dir)
+        worker = IpadDeployWorker(port, fw_dir, install_libs=install_libs)
         worker.log.connect(self._console.append_info)
         worker.done.connect(self._on_ipad_deploy_done)
         self._track_aux_worker(worker)

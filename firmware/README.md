@@ -8,23 +8,34 @@ wird direkt vom Board ausgeliefert, kein Schulnetz/Internet nötig.
 ```
 boot.py                          Richtet WLAN-Accesspoint ein
 main.py                          Webserver (uasyncio), liefert /www aus, nimmt Code entgegen
-www/index.html                   Blockly-Oberfläche (Toolbox: Steuerung, GPIO, Logik, Mathe, Variablen)
-www/blocks.js                    Eigene GPIO-Blöcke + Python-Codegenerator
+www/index.html                   Blockly-Oberfläche + Toolbox (aus NIT_Code übernommen)
 www/app.js                       Verdrahtung: "Ausführen" -> POST /api/upload, "Stopp" -> POST /api/stop
-www/blockly/*.js                 Blockly-Binaries (Core, Blocks, Python-Generator)
+www/blockly/*.js                 Blockly-Core + geteilte Blockdefinitionen (nit_blocks.js, nitbw_blocks.js)
 www/blockly/msg/de.js            Deutsche Übersetzung
 www/blockly/media/               Sprites/Sounds (offline)
+sync_from_nit_code.py            Hält www/ mit nit_code/assets/blockly/ synchron
 ```
 
-## Blockly-Binaries sind enthalten
+## Blöcke: eine gemeinsame Quelle
 
-Die Blockly-Dateien in `www/blockly/` wurden aus `nit_code/assets/blockly/`
-übernommen (identische Version wie im NIT_Code-Block-Editor). Damit ist der
-Ordner **komplett offline lauffähig** – nichts muss mehr nachgeladen werden.
+Der iPad-Modus nutzt **dieselben Blöcke wie der NIT_Code-Block-Editor** – exakt
+die Dateien aus `nit_code/assets/blockly/` (`nit_blocks.js`, `nitbw_blocks.js`)
+und dieselbe Toolbox aus `editor.html`. `www/blockly/` ist eine gespiegelte
+Kopie davon; die Oberfläche ist damit komplett offline lauffähig.
 
-> Hinweis: Aktuell liegen diese ~700 KB doppelt im Repo (einmal für NIT_Code,
-> einmal hier). Eine gemeinsame `shared-blocks/`-Quelle ist als späterer
-> Aufräumschritt vorgesehen, sobald der Prototyp auf Hardware bestätigt ist.
+Wenn du in NIT_Code Blöcke oder die Toolbox änderst, danach einmal ausführen:
+
+```bash
+python firmware/sync_from_nit_code.py
+```
+
+Das kopiert Binaries + Blockdefinitionen und übernimmt die Toolbox in
+`index.html`. So ist jeder neue Block **automatisch auch im iPad-Modus** da –
+keine Doppelpflege.
+
+> **Sensor-Blöcke** (BME280, OLED, Servo, …) erzeugen `from nitbw_xxx import …`
+> und laufen nur, wenn die passenden `nitbw_`-Bibliotheken in `/lib` auf dem
+> Board liegen. Der Deploy (Weg A) kann sie auf Wunsch mitinstallieren.
 
 ## Deployment auf den ESP32
 
@@ -46,7 +57,9 @@ esptool --chip esp32c3 --port /dev/ttyACM0 --baud 460800 \
 
 Menü **MicroPython → 📲 iPad-Blockly aufs Board spielen**. Kopiert `boot.py`,
 `main.py` und `www/` automatisch auf den angeschlossenen Controller und startet
-ihn neu – kein Terminal nötig.
+ihn neu – kein Terminal nötig. Im Dialog kann man per Häkchen zusätzlich die
+**Sensor-Bibliotheken (`nitbw_`)** nach `/lib` installieren lassen (nötig, damit
+die Sensor-Blöcke laufen; dauert einige Minuten, braucht Internet).
 
 ### Weg B – manuell per mpremote
 
@@ -72,8 +85,10 @@ und `http://192.168.4.1/` öffnen.
    (ein ESP32 pro Schüler:in) unkritisch.
 3. **Kein Captive Portal** in V1 – man muss die IP manuell aufrufen.
    Lässt sich später per simplem DNS-Spoofing nachrüsten.
-4. **Codegenerator ist bewusst minimal** (nur GPIO read/write, wait) –
-   als Fundament für spätere `nitbw_`-Bausteine (Sensoren, MQTT, etc.).
+4. **Sensor-Blöcke brauchen Bibliotheken auf dem Board**: Die `nitbw_`-Blöcke
+   (BME280, OLED, Servo, …) erzeugen `import nitbw_...`; die zugehörigen Module
+   müssen in `/lib` liegen (Deploy-Häkchen oder „Bibliotheken installieren …“).
+   Reine MicroPython-Blöcke (GPIO, PWM, ADC, NeoPixel) laufen ohne Zusatz.
 
 ## Integration in NIT_Code (später)
 

@@ -778,46 +778,115 @@ class IpadDeployWorker(QThread):
     log = pyqtSignal(str)
     done = pyqtSignal(bool, str)
 
-    def __init__(self, port: str, firmware_dir):
+    def __init__(self, port: str, firmware_dir, install_libs: bool = False):
         super().__init__()
         self.port = port
         self.firmware_dir = Path(firmware_dir)
+        # nitbw_-Bibliotheken mitinstallieren (nötig, damit die Sensor-Blöcke laufen)
+        self.install_libs = install_libs
+
+    def _run(self, desc: str, cmd):
+        """Fuehrt einen mpremote-Befehl aus; Rueckgabe (ok, fehlermeldung)."""
+        import subprocess
+        self.log.emit(desc + "\n")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except FileNotFoundError:
+            return False, "mpremote nicht gefunden. Bitte installieren: pip install mpremote"
+        except Exception as e:
+            return False, str(e)
+        if proc.stdout:
+            self.log.emit(proc.stdout)
+        if proc.returncode != 0:
+            return False, (proc.stderr or proc.stdout or "Unbekannter Fehler").strip()
+        return True, ""
 
     def run(self):
-        import subprocess
+        mp = tool_command("mpremote")
         boot_py = str(self.firmware_dir / "boot.py")
         main_py = str(self.firmware_dir / "main.py")
         www_dir = str(self.firmware_dir / "www")
-        mp = tool_command("mpremote")
-        steps = [
-            ("Kopiere boot.py und main.py ...",
-             [*mp, "connect", self.port, "cp", boot_py, main_py, ":"]),
-            ("Kopiere die Blockly-Oberflaeche (www/) – das dauert ~1 Minute ...",
-             [*mp, "connect", self.port, "cp", "-r", www_dir, ":"]),
-            ("Starte den Controller neu ...",
-             [*mp, "connect", self.port, "reset"]),
-        ]
-        for desc, cmd in steps:
-            self.log.emit(desc + "\n")
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            except FileNotFoundError:
-                self.done.emit(False, "mpremote nicht gefunden. Bitte installieren: pip install mpremote")
-                return
-            except Exception as e:
-                self.done.emit(False, str(e))
-                return
-            if proc.stdout:
-                self.log.emit(proc.stdout)
-            if proc.returncode != 0:
-                err = (proc.stderr or proc.stdout or "Unbekannter Fehler").strip()
-                self.done.emit(False, err)
-                return
+
+        ok, err = self._run("Kopiere boot.py und main.py ...",
+                            [*mp, "connect", self.port, "cp", boot_py, main_py, ":"])
+        if not ok:
+            self.done.emit(False, err); return
+        ok, err = self._run("Kopiere die Blockly-Oberflaeche (www/) – das dauert ~1 Minute ...",
+                            [*mp, "connect", self.port, "cp", "-r", www_dir, ":"])
+        if not ok:
+            self.done.emit(False, err); return
+
+        if self.install_libs:
+            ok, err = self._install_libraries(mp)
+            if not ok:
+                self.done.emit(False, err); return
+
+        ok, err = self._run("Starte den Controller neu ...",
+                            [*mp, "connect", self.port, "reset"])
+        if not ok:
+            self.done.emit(False, err); return
+
         self.done.emit(
             True,
             "iPad-Blockly wurde aufgespielt. Verbinde Laptop/iPad mit dem WLAN "
             "'NIT-ESP32-Blockly' und oeffne http://192.168.4.1/",
         )
+
+    def _install_libraries(self, mp):
+        """Laedt alle nitbw_-Bibliotheken aus dem NIT-Repo und legt sie in :lib ab.
+
+        Noetig, damit der von den Sensor-Bloecken erzeugte Code
+        (``from nitbw_xxx import ...``) auf dem Board importierbar ist.
+        """
+        import subprocess, tempfile
+        self.log.emit("Installiere nitbw_-Bibliotheken (für die Sensor-Blöcke) ...\n")
+        try:
+            resp = requests.get(LIB_REPO_API, timeout=15)
+            resp.raise_for_status()
+            entries = resp.json()
+        except Exception as e:
+            return False, f"Bibliotheks-Liste konnte nicht geladen werden: {e}"
+
+        # Ordner :lib sicherstellen (EEXIST ist ok)
+        subprocess.run([*mp, "connect", self.port, "mkdir", ":lib"],
+                       capture_output=True, text=True, timeout=30)
+
+        # .py-Dateien im Repo-Root und in Unterordnern sammeln (ohne Beispiele)
+        files = []  # (name, download_url)
+        for e in entries:
+            if e.get("type") == "file" and e["name"].endswith(".py"):
+                files.append((e["name"], e["download_url"]))
+            elif e.get("type") == "dir":
+                try:
+                    sub = requests.get(e["url"], timeout=15).json()
+                except Exception:
+                    continue
+                for f in sub:
+                    if (f.get("type") == "file" and f["name"].endswith(".py")
+                            and not f["name"].lower().startswith("beispiel")):
+                        files.append((f["name"], f["download_url"]))
+
+        if not files:
+            self.log.emit("⚠ Keine Bibliotheks-Dateien gefunden – übersprungen.\n")
+            return True, ""
+
+        for name, url in files:
+            try:
+                r = requests.get(url, timeout=15)
+                r.raise_for_status()
+                with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as tmp:
+                    tmp.write(r.content)
+                    tmp_path = tmp.name
+                res = subprocess.run([*mp, "connect", self.port, "cp", tmp_path, f":lib/{name}"],
+                                     capture_output=True, text=True, timeout=30)
+                os.unlink(tmp_path)
+                if res.returncode != 0:
+                    return False, f"Fehler bei lib/{name}: {res.stderr.strip()}"
+                self.log.emit(f"  ✓ lib/{name}\n")
+            except Exception as e:
+                return False, f"Fehler bei {name}: {e}"
+        self.log.emit(f"✓ {len(files)} Bibliotheks-Dateien installiert.\n")
+        return True, ""
 
 
 # ──────────────────────────────────────────────────────────────────────────────

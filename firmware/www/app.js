@@ -1,11 +1,16 @@
 // app.js
 
+// Inject-Optionen identisch zu NIT_Codes editor.html (gleiche Optik im iPad-Modus).
+// media zeigt auf die lokal vom ESP32 ausgelieferten Sprites/Sounds.
 const workspace = Blockly.inject('blocklyDiv', {
   toolbox: document.getElementById('toolbox'),
-  media: '/blockly/media/',   // lokale Sprites/Sounds vom ESP32 – verhindert "Failed to fetch" offline
+  media: '/blockly/media/',
+  renderer: 'zelos',
   trashcan: true,
-  zoom: { controls: true, wheel: true, startScale: 1.0 },
-  grid: { spacing: 20, length: 3, colour: '#eee', snap: true }
+  sounds: true,
+  grid: { spacing: 22, length: 3, colour: '#e6e6ee', snap: true },
+  zoom: { controls: true, wheel: true, startScale: 0.95, maxScale: 2, minScale: 0.4 },
+  move: { scrollbars: true, drag: true, wheel: true }
 });
 
 const statusEl = document.getElementById('status');
