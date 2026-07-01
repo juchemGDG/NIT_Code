@@ -43,6 +43,13 @@ assets_dir = os.path.join(project_root, 'nit_code', 'assets')
 if os.path.isdir(assets_dir):
     datas.append((assets_dir, os.path.join('nit_code', 'assets')))
 
+# Standalone-Blockly-Firmware (boot.py, main.py, www/) mitnehmen, damit die
+# Menü-Aktion „iPad-Blockly aufs Board spielen“ auch im gepackten Programm
+# die Dateien findet (analog _ipad_firmware_dir()).
+firmware_dir = os.path.join(project_root, 'firmware')
+if os.path.isdir(firmware_dir):
+    datas.append((firmware_dir, 'firmware'))
+
 icon_file = None
 if sys.platform == 'win32' and os.path.exists(logo_path):
     from PIL import Image

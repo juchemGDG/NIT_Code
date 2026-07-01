@@ -1,12 +1,15 @@
 // blocks.js
 // Eigene, einfache Bloecke fuer den GPIO-Einstieg.
 // Spaeter 1:1 erweiterbar um deine nitbw_-Funktionen (Sensoren etc.)
+//
+// Pin-Bereich 0-21: gueltige GPIOs des ESP32-C3. Fuer den klassischen ESP32
+// (GPIO 0-39) hier ggf. den Maximalwert der FieldNumber-Felder anpassen.
 
 Blockly.Blocks['nit_pin_write'] = {
   init: function () {
     this.appendDummyInput()
         .appendField("Pin")
-        .appendField(new Blockly.FieldNumber(2, 0, 39, 1), "PIN")
+        .appendField(new Blockly.FieldNumber(2, 0, 21, 1), "PIN")
         .appendField("setzen auf")
         .appendField(new Blockly.FieldDropdown([
           ["HIGH (1)", "1"],
@@ -23,7 +26,7 @@ Blockly.Blocks['nit_pin_read'] = {
   init: function () {
     this.appendDummyInput()
         .appendField("Pin")
-        .appendField(new Blockly.FieldNumber(4, 0, 39, 1), "PIN")
+        .appendField(new Blockly.FieldNumber(4, 0, 21, 1), "PIN")
         .appendField("lesen");
     this.setOutput(true, "Boolean");
     this.setColour(200);

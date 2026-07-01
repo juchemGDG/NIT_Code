@@ -783,6 +783,9 @@ class MainWindow(QMainWindow):
         self._act_flash = self._add_action(
             self._m_upy, "Firmware flashen …", self._flash_firmware
         )
+        self._act_flash_ipad = self._add_action(
+            self._m_upy, "📲  iPad-Blockly aufs Board spielen …", self._deploy_ipad_firmware
+        )
         self._act_libs = self._add_action(
             self._m_upy, "Bibliotheken installieren …", self._open_library_manager
         )
@@ -1614,6 +1617,65 @@ class MainWindow(QMainWindow):
         from .micropython_dialogs import FlashDialog
         dlg = FlashDialog(self._board, self)
         dlg.exec()
+
+    def _ipad_firmware_dir(self):
+        """Findet den 'firmware'-Ordner (Dev-Modus wie im PyInstaller-Bundle)."""
+        candidates = []
+        if getattr(sys, "frozen", False):
+            if hasattr(sys, "_MEIPASS"):
+                candidates.append(Path(sys._MEIPASS) / "firmware")
+            candidates.append(Path(sys.executable).resolve().parent / "firmware")
+        candidates.append(Path(__file__).resolve().parent.parent / "firmware")
+        for c in candidates:
+            if (c / "main.py").is_file() and (c / "www").is_dir():
+                return c
+        return None
+
+    def _deploy_ipad_firmware(self):
+        """Spielt die Standalone-Blockly-Oberfläche (firmware/) aufs Board.
+
+        Setzt ein bereits geflashtes MicroPython voraus; kopiert boot.py,
+        main.py und www/ per mpremote und startet den Controller neu.
+        """
+        port = self._get_serial_port()
+        if not port:
+            return
+        fw_dir = self._ipad_firmware_dir()
+        if fw_dir is None:
+            QMessageBox.warning(
+                self, "Dateien nicht gefunden",
+                "Die iPad-Blockly-Dateien (Ordner 'firmware') konnten nicht "
+                "gefunden werden."
+            )
+            return
+        reply = QMessageBox.question(
+            self, "iPad-Blockly aufspielen",
+            "Auf dem angeschlossenen Controller werden boot.py, main.py und der "
+            "Ordner www/ mit der Blockly-Oberfläche angelegt bzw. überschrieben.\n\n"
+            "Voraussetzung: Auf dem Board läuft bereits MicroPython – sonst zuerst "
+            "„Firmware flashen …“ ausführen.\n\n"
+            "Fortfahren?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if not self._acquire_port():
+            return
+        from .micropython_dialogs import IpadDeployWorker
+        self._console.append_info("📲  Spiele iPad-Blockly auf den Controller …\n")
+        worker = IpadDeployWorker(port, fw_dir)
+        worker.log.connect(self._console.append_info)
+        worker.done.connect(self._on_ipad_deploy_done)
+        self._track_aux_worker(worker)
+        worker.start()
+
+    def _on_ipad_deploy_done(self, ok: bool, msg: str):
+        self._release_port()
+        if ok:
+            self._console.append_success(f"✓  {msg}\n")
+        else:
+            self._console.append_error(f"✗  {msg}\n")
 
     def _query_firmware_version(self):
         port = self._get_serial_port()

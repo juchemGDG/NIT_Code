@@ -767,6 +767,60 @@ class FlashDialog(QDialog):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Deploy-Worker: iPad-Blockly (Standalone-Firmware) auf den Controller spielen
+# ──────────────────────────────────────────────────────────────────────────────
+class IpadDeployWorker(QThread):
+    """Kopiert boot.py, main.py und den Ordner www/ per mpremote auf ein Board,
+    auf dem bereits MicroPython laeuft, und startet es anschliessend neu.
+
+    Setzt kein Flashen voraus – nur ein laufendes MicroPython (mpremote-faehig).
+    """
+    log = pyqtSignal(str)
+    done = pyqtSignal(bool, str)
+
+    def __init__(self, port: str, firmware_dir):
+        super().__init__()
+        self.port = port
+        self.firmware_dir = Path(firmware_dir)
+
+    def run(self):
+        import subprocess
+        boot_py = str(self.firmware_dir / "boot.py")
+        main_py = str(self.firmware_dir / "main.py")
+        www_dir = str(self.firmware_dir / "www")
+        mp = tool_command("mpremote")
+        steps = [
+            ("Kopiere boot.py und main.py ...",
+             [*mp, "connect", self.port, "cp", boot_py, main_py, ":"]),
+            ("Kopiere die Blockly-Oberflaeche (www/) – das dauert ~1 Minute ...",
+             [*mp, "connect", self.port, "cp", "-r", www_dir, ":"]),
+            ("Starte den Controller neu ...",
+             [*mp, "connect", self.port, "reset"]),
+        ]
+        for desc, cmd in steps:
+            self.log.emit(desc + "\n")
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            except FileNotFoundError:
+                self.done.emit(False, "mpremote nicht gefunden. Bitte installieren: pip install mpremote")
+                return
+            except Exception as e:
+                self.done.emit(False, str(e))
+                return
+            if proc.stdout:
+                self.log.emit(proc.stdout)
+            if proc.returncode != 0:
+                err = (proc.stderr or proc.stdout or "Unbekannter Fehler").strip()
+                self.done.emit(False, err)
+                return
+        self.done.emit(
+            True,
+            "iPad-Blockly wurde aufgespielt. Verbinde Laptop/iPad mit dem WLAN "
+            "'NIT-ESP32-Blockly' und oeffne http://192.168.4.1/",
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Bibliotheks-Worker
 # ──────────────────────────────────────────────────────────────────────────────
 class LibInstallWorker(QThread):
