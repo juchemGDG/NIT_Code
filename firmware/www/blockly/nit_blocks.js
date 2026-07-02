@@ -676,4 +676,17 @@
     var d = P.valueToCode(block, 'DICT', ord('NONE')) || '{}';
     return ['len(' + d + ')', ord('FUNCTION_CALL')];
   });
+
+  // ── math_change ("erhöhe/erniedrige VAR um N") überschreiben ───────────────
+  // Standard-Blockly erzeugt "VAR = (VAR if isinstance(VAR, Number) else 0) + N"
+  // und bindet dafür "from numbers import Number" ein. Das ist für den
+  // Unterricht unnötig kompliziert. Wir erzeugen stattdessen schlichtes
+  //   VAR += N   bzw. bei negativem N   VAR -= N
+  reg('math_change', function (block) {
+    var delta = (P.valueToCode(block, 'DELTA', ord('ADDITIVE')) || '0').trim();
+    var name = P.getVariableName(block.getFieldValue('VAR'));
+    var m = /^-\s*(.+)$/.exec(delta);          // negatives Literal → -=
+    if (m) return name + ' -= ' + m[1] + '\n';
+    return name + ' += ' + delta + '\n';
+  });
 })();
