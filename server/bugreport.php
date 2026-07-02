@@ -47,7 +47,33 @@ if (file_exists($rl) && (time() - filemtime($rl)) < 30) {
 }
 @touch($rl);
 
+// Globales Stunden-Limit: schuetzt das Postfach vor Flutung auch dann, wenn ein
+// Angreifer viele verschiedene IPs nutzt (das Pro-IP-Limit oben greift dann nicht).
+$MAX_PER_HOUR = 60;
+$gc = sys_get_temp_dir() . '/nitcode_global_count';
+$windowStart = time();
+$count = 0;
+if (file_exists($gc)) {
+    $parts = explode(':', trim((string)@file_get_contents($gc)));
+    if (count($parts) === 2) {
+        $windowStart = (int)$parts[0];
+        $count = (int)$parts[1];
+    }
+    if (time() - $windowStart >= 3600) {   // Zeitfenster abgelaufen -> zuruecksetzen
+        $windowStart = time();
+        $count = 0;
+    }
+}
+if ($count >= $MAX_PER_HOUR) {
+    http_response_code(429);
+    echo 'Stundenlimit erreicht – bitte spaeter erneut.';
+    exit;
+}
+@file_put_contents($gc, $windowStart . ':' . ($count + 1), LOCK_EX);
+
 $clip = function ($v, $n) { return mb_substr(trim((string)$v), 0, $n); };
+// Fuer Header/Betreff: Zeilenumbrueche entfernen -> verhindert Header-Injection.
+$hdr = function ($v) { return trim(str_replace(array("\r", "\n"), ' ', (string)$v)); };
 
 $desc = $clip($data['description'] ?? '', 5000);
 if ($desc === '') {
@@ -71,7 +97,9 @@ $body .= "IP:        $ip\n\n";
 $body .= "----- Code -----\n$code\n\n";
 $body .= "----- Konsole -----\n$console\n";
 
-$subject = 'NIT_Code Fehlerbericht (' . ($ver !== '' ? $ver : '?') . ')';
+// $ver kommt aus dem Request und geht in den Betreff (Header!) -> CR/LF entfernen.
+$verH = $hdr($ver);
+$subject = 'NIT_Code Fehlerbericht (' . ($verH !== '' ? $verH : '?') . ')';
 
 $headers  = "From: $FROM\r\n";
 if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
