@@ -784,7 +784,7 @@ class MainWindow(QMainWindow):
             self._m_upy, "Firmware flashen …", self._flash_firmware
         )
         self._act_flash_ipad = self._add_action(
-            self._m_upy, "📲  iPad-Blockly aufs Board spielen …", self._deploy_ipad_firmware
+            self._m_upy, "📲  iPad-Blockly aufs Board spielen …  (BETA)", self._deploy_ipad_firmware
         )
         self._act_libs = self._add_action(
             self._m_upy, "Bibliotheken installieren …", self._open_library_manager
