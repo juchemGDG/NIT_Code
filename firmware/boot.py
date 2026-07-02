@@ -3,19 +3,42 @@
 # Richtet den ESP32 als eigenen WLAN-Accesspoint ein.
 
 import network
+import machine
+import ubinascii
 
-AP_SSID = "NIT-ESP32-Blockly"
-AP_PASSWORD = "mint2026"   # min. 8 Zeichen fuer WPA2, gerne anpassen
+AP_PASSWORD = "mint2026"   # min. 8 Zeichen fuer WPA2, fuer alle Boards gleich
 AP_CHANNEL = 6
+NAME_FILE = "ap_name.txt"   # optionaler, beim Deploy gesetzter Board-Name
 
 # WPA2-PSK. Die Namens-Konstante existiert nicht in jeder MicroPython-Version,
 # der Zahlwert 3 (WPA2-PSK) ist aber stabil – daher mit Fallback.
 AUTHMODE_WPA2_PSK = getattr(network, "AUTH_WPA2_PSK", 3)
 
+
+def ap_ssid():
+    """SSID dieses Boards.
+
+    Reihenfolge fuer eindeutige Namen im Klassensatz:
+      1. Inhalt von ``ap_name.txt`` (beim Aufspielen gesetzt) -> NIT-ESP32-<Name>
+      2. sonst automatisch die letzten 4 Hex-Stellen der eindeutigen Chip-ID
+         -> z. B. NIT-ESP32-A1B2 (nie zwei gleiche SSIDs, auch ohne Konfiguration)
+    """
+    name = ""
+    try:
+        with open(NAME_FILE) as f:
+            name = f.read().strip()
+    except OSError:
+        name = ""
+    if not name:
+        name = ubinascii.hexlify(machine.unique_id()).decode().upper()[-4:]
+    return "NIT-ESP32-" + name
+
+
 def start_ap():
+    ssid = ap_ssid()
     ap = network.WLAN(network.AP_IF)
     ap.active(True)
-    ap.config(essid=AP_SSID, password=AP_PASSWORD,
+    ap.config(essid=ssid, password=AP_PASSWORD,
               authmode=AUTHMODE_WPA2_PSK, channel=AP_CHANNEL)
 
     # Eigenes Wifi (Station-Modus) sicherheitshalber abschalten,
@@ -27,9 +50,10 @@ def start_ap():
         pass
 
     print("Accesspoint aktiv")
-    print("SSID:    ", AP_SSID)
+    print("SSID:    ", ssid)
     print("Passwort:", AP_PASSWORD)
     print("IP:      ", ap.ifconfig()[0])
     return ap
+
 
 start_ap()

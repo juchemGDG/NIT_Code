@@ -21,6 +21,7 @@ import io
 import json
 import _thread
 import machine
+import network
 
 STATIC_DIR = "/www"
 CODE_FILE = "/user_code.py"
@@ -183,6 +184,13 @@ async def handle_client(reader, writer):
             lines, total = _snapshot(since)
             payload = json.dumps({"lines": lines, "next": total, "running": _running})
             await send_text(writer, payload, mime="application/json")
+
+        elif method == "GET" and path == "/api/info":
+            try:
+                ssid = network.WLAN(network.AP_IF).config("essid")
+            except Exception:
+                ssid = ""
+            await send_text(writer, json.dumps({"ssid": ssid}), mime="application/json")
 
         elif method == "GET":
             if path == "/":

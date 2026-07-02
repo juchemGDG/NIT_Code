@@ -18,6 +18,9 @@
   }
   #btnRun { background: #43a047; color: white; }
   #btnStop { background: #e53935; color: white; }
+  #board { font-size: 13px; font-weight: 600; color: #80cbc4; padding: 3px 8px;
+           border: 1px solid #455a64; border-radius: 5px; }
+  #board:empty { display: none; }
   #status { font-size: 13px; color: #cfd8dc; min-width: 150px; }
 
   /* Hauptbereich: links Blöcke, rechts Code + Konsole */
@@ -72,6 +75,7 @@
 
 <div id="topbar">
   <h1>ESP32 programmieren</h1>
+  <span id="board"></span>
   <span id="status">Bereit</span>
   <button id="btnRun">▶ Ausführen</button>
   <button id="btnStop">■ Stopp</button>

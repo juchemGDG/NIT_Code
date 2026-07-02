@@ -16,6 +16,17 @@ const statusEl  = document.getElementById('status');
 const codeEl    = document.getElementById('code');
 const consoleEl = document.getElementById('console');
 const btnEdit   = document.getElementById('btnEdit');
+const boardEl   = document.getElementById('board');
+
+// SSID dieses Boards anzeigen (hilft im Klassensatz, das richtige Board zu erkennen)
+(async function showBoardName() {
+  try {
+    const res = await fetch('/api/info');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ssid) boardEl.textContent = '📶 ' + data.ssid;
+  } catch (e) { /* im Browser-Vorschaumodus ohne Board ignorieren */ }
+})();
 
 // manualMode = true: der Editor ist die Quelle (Blöcke überschreiben nicht mehr)
 let manualMode = false;

@@ -1648,16 +1648,28 @@ class MainWindow(QMainWindow):
                 "gefunden werden."
             )
             return
+        # Board-Name/Nummer für die WLAN-SSID (eindeutig im Klassensatz).
+        board_name, ok = QInputDialog.getText(
+            self, "Board-Name",
+            "Nummer/Name für dieses Board (wird zur WLAN-SSID „NIT-ESP32-<Name>“).\n"
+            "Leer lassen = automatisch eindeutige SSID aus der Chip-Kennung:"
+        )
+        if not ok:
+            return
+        board_name = board_name.strip()
+
         box = QMessageBox(self)
         box.setWindowTitle("iPad-Blockly aufspielen")
         box.setIcon(QMessageBox.Icon.Question)
+        ssid_hint = ("„NIT-ESP32-%s“" % board_name) if board_name else "automatisch (Chip-Kennung)"
         box.setText(
             "Auf dem angeschlossenen Controller werden boot.py, main.py und der "
             "Ordner www/ mit der Blockly-Oberfläche angelegt bzw. überschrieben."
         )
         box.setInformativeText(
+            "WLAN-SSID dieses Boards: %s\n\n"
             "Voraussetzung: Auf dem Board läuft bereits MicroPython – sonst zuerst "
-            "„Firmware flashen …“ ausführen.\n\nFortfahren?"
+            "„Firmware flashen …“ ausführen.\n\nFortfahren?" % ssid_hint
         )
         cb = QCheckBox("Auch die Sensor-Bibliotheken (nitbw_) installieren – "
                        "nötig für die Sensor-Blöcke, dauert einige Minuten")
@@ -1674,7 +1686,8 @@ class MainWindow(QMainWindow):
             return
         from .micropython_dialogs import IpadDeployWorker
         self._console.append_info("📲  Spiele iPad-Blockly auf den Controller …\n")
-        worker = IpadDeployWorker(port, fw_dir, install_libs=install_libs)
+        worker = IpadDeployWorker(port, fw_dir, install_libs=install_libs,
+                                  board_name=board_name)
         worker.log.connect(self._console.append_info)
         worker.done.connect(self._on_ipad_deploy_done)
         self._track_aux_worker(worker)

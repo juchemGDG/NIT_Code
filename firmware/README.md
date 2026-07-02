@@ -62,9 +62,10 @@ esptool --chip esp32c3 --port /dev/ttyACM0 --baud 460800 \
 
 Menü **MicroPython → 📲 iPad-Blockly aufs Board spielen**. Kopiert `boot.py`,
 `main.py` und `www/` automatisch auf den angeschlossenen Controller und startet
-ihn neu – kein Terminal nötig. Im Dialog kann man per Häkchen zusätzlich die
-**Sensor-Bibliotheken (`nitbw_`)** nach `/lib` installieren lassen (nötig, damit
-die Sensor-Blöcke laufen; dauert einige Minuten, braucht Internet).
+ihn neu – kein Terminal nötig. Der Dialog fragt nach einer **Nummer/Name für das
+Board** (→ WLAN-SSID, siehe unten) und kann per Häkchen zusätzlich die
+**Sensor-Bibliotheken (`nitbw_`)** nach `/lib` installieren (nötig, damit die
+Sensor-Blöcke laufen; dauert einige Minuten, braucht Internet).
 
 ### Weg B – manuell per mpremote
 
@@ -76,8 +77,27 @@ mpremote connect /dev/ttyACM0 cp -r www :
 mpremote connect /dev/ttyACM0 reset
 ```
 
-Danach mit Laptop/iPad ins WLAN "NIT-ESP32-Blockly" (Passwort: `mint2026`)
-und `http://192.168.4.1/` öffnen.
+Danach mit Laptop/iPad ins jeweilige Board-WLAN (Passwort: `mint2026`) und
+`http://192.168.4.1/` öffnen. Die SSID steht oben in der Oberfläche.
+
+## Eindeutige SSIDs im Klassensatz
+
+Damit sich bei 10+ Boards niemand ins falsche WLAN verbindet, hat jedes Board
+eine eindeutige SSID:
+
+- **Name gesetzt** (Deploy-Dialog, Weg A): SSID = `NIT-ESP32-<Name>`, z. B.
+  `NIT-ESP32-01`. Board am besten gleich mit derselben Nummer bekleben.
+- **Kein Name**: `boot.py` bildet automatisch `NIT-ESP32-<Chip-ID>` aus den
+  letzten 4 Stellen der eindeutigen Chip-Kennung (z. B. `NIT-ESP32-A1B2`). So
+  gibt es **nie zwei gleiche SSIDs**, auch ohne Konfiguration.
+
+Der Deploy-Dialog zeigt die resultierende SSID an; zusätzlich steht sie in der
+Web-Oberfläche und wird beim Boot seriell ausgegeben. Der Name liegt auf dem
+Board in `ap_name.txt` – bei Weg B (manuell) kann man ihn selbst setzen:
+
+```bash
+echo -n "01" | mpremote connect /dev/ttyACM0 fs cp - :ap_name.txt   # oder Datei anlegen
+```
 
 ## Bekannte Einschränkungen von V1
 

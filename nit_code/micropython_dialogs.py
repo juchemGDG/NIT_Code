@@ -778,17 +778,27 @@ class IpadDeployWorker(QThread):
     log = pyqtSignal(str)
     done = pyqtSignal(bool, str)
 
-    def __init__(self, port: str, firmware_dir, install_libs: bool = False):
+    def __init__(self, port: str, firmware_dir, install_libs: bool = False,
+                 board_name: str = ""):
         super().__init__()
         self.port = port
         self.firmware_dir = Path(firmware_dir)
         # nitbw_-Bibliotheken mitinstallieren (nötig, damit die Sensor-Blöcke laufen)
         self.install_libs = install_libs
+        # Board-Name für die SSID (NIT-ESP32-<Name>). Leer -> automatisch (Chip-ID).
+        self.board_name = self._sanitize_name(board_name)
+
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        """Nur SSID-taugliche Zeichen; Leerzeichen -> '-'; max. 24 Zeichen."""
+        name = (name or "").strip().replace(" ", "-")
+        return "".join(c for c in name if c.isalnum() or c in "-_")[:24]
 
     def _run(self, desc: str, cmd):
         """Fuehrt einen mpremote-Befehl aus; Rueckgabe (ok, fehlermeldung)."""
         import subprocess
-        self.log.emit(desc + "\n")
+        if desc:
+            self.log.emit(desc + "\n")
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except FileNotFoundError:
@@ -816,6 +826,12 @@ class IpadDeployWorker(QThread):
         if not ok:
             self.done.emit(False, err); return
 
+        # Board-Namen für die SSID setzen bzw. auf automatisch (Chip-ID) zurücksetzen
+        ok, err = self._apply_board_name(mp)
+        if not ok:
+            self.done.emit(False, err); return
+        ssid = self._resolve_ssid(mp)
+
         if self.install_libs:
             ok, err = self._install_libraries(mp)
             if not ok:
@@ -826,11 +842,55 @@ class IpadDeployWorker(QThread):
         if not ok:
             self.done.emit(False, err); return
 
+        wlan = ssid or "NIT-ESP32-…"
         self.done.emit(
             True,
-            "iPad-Blockly wurde aufgespielt. Verbinde Laptop/iPad mit dem WLAN "
-            "'NIT-ESP32-Blockly' und oeffne http://192.168.4.1/",
+            "iPad-Blockly wurde aufgespielt. WLAN dieses Boards: '{}'. "
+            "Board am besten damit beschriften. Verbinde Laptop/iPad mit diesem "
+            "WLAN und oeffne http://192.168.4.1/".format(wlan),
         )
+
+    def _apply_board_name(self, mp):
+        """Schreibt ap_name.txt (bei gesetztem Namen) oder entfernt sie (automatisch)."""
+        import subprocess, tempfile
+        if self.board_name:
+            self.log.emit("Setze Board-Name '{}' ...\n".format(self.board_name))
+            try:
+                with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
+                    tmp.write(self.board_name)
+                    tmp_path = tmp.name
+            except Exception as e:
+                return False, str(e)
+            ok, err = self._run("", [*mp, "connect", self.port, "cp", tmp_path, ":ap_name.txt"])
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return ok, err
+        # Kein Name: evtl. vorhandene ap_name.txt entfernen -> automatische Chip-ID
+        self.log.emit("Kein Name gesetzt – Board bekommt automatisch eine eindeutige SSID.\n")
+        subprocess.run([*mp, "connect", self.port, "fs", "rm", ":ap_name.txt"],
+                       capture_output=True, text=True, timeout=30)
+        return True, ""
+
+    def _resolve_ssid(self, mp):
+        """Ermittelt die SSID, die boot.py verwenden wird (Name bzw. Chip-ID)."""
+        import subprocess
+        if self.board_name:
+            return "NIT-ESP32-" + self.board_name
+        # Automatisch: Chip-ID vom Board holen (gleiche Logik wie boot.py)
+        try:
+            proc = subprocess.run(
+                [*mp, "connect", self.port, "exec",
+                 "import machine,ubinascii;"
+                 "print('ID='+ubinascii.hexlify(machine.unique_id()).decode().upper()[-4:])"],
+                capture_output=True, text=True, timeout=30)
+            for line in (proc.stdout or "").splitlines():
+                if line.startswith("ID="):
+                    return "NIT-ESP32-" + line[3:].strip()
+        except Exception:
+            pass
+        return ""
 
     def _install_libraries(self, mp):
         """Laedt alle nitbw_-Bibliotheken aus dem NIT-Repo und legt sie in :lib ab.
