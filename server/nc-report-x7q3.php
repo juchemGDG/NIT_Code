@@ -1,12 +1,13 @@
 <?php
-// bugreport.php – Relay-Endpoint für NIT_Code-Fehlerberichte
+// nc-report-x7q3.php – Relay-Endpoint für NIT_Code-Fehlerberichte
 // ---------------------------------------------------------------------------
 // Empfängt den JSON-POST aus "Hilfe → Fehler melden" und leitet ihn als E-Mail
 // an $RECIPIENT weiter. Dadurch liegen KEINE Mail-Zugangsdaten im Programm.
 //
 // Installation:
 //   1. Diese Datei auf den Webspace von mint-checker.de legen, z. B. unter
-//      https://mint-checker.de/nitcode/bugreport.php
+//      https://mint-checker.de/nitcode/nc-report-x7q3.php
+//      (bewusst unauffaelliger Name statt "bugreport.php")
 //   2. Dieselbe URL in nit_code/config.py als BUG_REPORT_URL eintragen.
 //   3. Sicherstellen, dass PHP mail() (oder ein SMTP-Ersatz) funktioniert.
 // ---------------------------------------------------------------------------
