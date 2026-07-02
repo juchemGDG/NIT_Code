@@ -40,6 +40,13 @@ TOOLBOX_START = ("<!-- TOOLBOX:START (auto-generiert aus editor.html via "
                  "sync_from_nit_code.py – nicht von Hand aendern) -->")
 TOOLBOX_END = "<!-- TOOLBOX:END -->"
 
+# Kategorien, die im iPad-Modus KEINEN Sinn ergeben und daher aus der Toolbox
+# entfernt werden. Das WLAN dient hier als Accesspoint fuer das iPad – MQTT und
+# ESP-NOW brauchen aber eine andere WLAN-Nutzung und funktionieren nicht.
+EXCLUDE_CATEGORIES = [
+    "Funk (ESP-NOW / MQTT)",
+]
+
 
 def main() -> None:
     if not SRC.is_dir():
@@ -66,6 +73,13 @@ def main() -> None:
     if not m:
         sys.exit("Toolbox (<xml id=\"toolbox\">) in editor.html nicht gefunden")
     toolbox = m.group(0)
+
+    # Im iPad-Modus nicht nutzbare Kategorien entfernen (z. B. Funk).
+    for cat in EXCLUDE_CATEGORIES:
+        toolbox, removed = re.subn(
+            r'\s*<category name="' + re.escape(cat) + r'".*?</category>',
+            "", toolbox, flags=re.S)
+        print("Kategorie entfernt:" if removed else "Kategorie nicht gefunden:", cat)
 
     index = INDEX.read_text(encoding="utf-8")
     pattern = re.escape(TOOLBOX_START) + r".*?" + re.escape(TOOLBOX_END)

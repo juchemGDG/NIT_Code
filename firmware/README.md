@@ -38,9 +38,27 @@ Das kopiert Binaries + Blockdefinitionen und übernimmt die Toolbox in
 `index.html`. So ist jeder neue Block **automatisch auch im iPad-Modus** da –
 keine Doppelpflege.
 
+Das Sync-Skript **entfernt für den iPad-Modus die Kategorie „Funk (ESP-NOW /
+MQTT)"** (Liste `EXCLUDE_CATEGORIES`): Das WLAN dient hier als Accesspoint fürs
+iPad, deshalb funktionieren MQTT und ESP-NOW nicht. Der Desktop-Editor behält
+diese Blöcke.
+
 > **Sensor-Blöcke** (BME280, OLED, Servo, …) erzeugen `from nitbw_xxx import …`
 > und laufen nur, wenn die passenden `nitbw_`-Bibliotheken in `/lib` auf dem
 > Board liegen. Der Deploy (Weg A) kann sie auf Wunsch mitinstallieren.
+
+## Speichern & Laden (im Browser)
+
+Die Arbeit wird **automatisch im Browser gesichert** (localStorage) und beim
+erneuten Öffnen wiederhergestellt – ein Reload verliert also nichts. Zusätzlich:
+
+- **💾 Speichern** – legt das aktuelle Programm unter einem Namen ab.
+- **📂 Projekte** – Liste der gespeicherten Programme zum Laden/Löschen; darin
+  auch **„Als Datei sichern"** (lädt eine `.blocks`-Datei zum Mitnehmen herunter)
+  und **„Datei laden"** (importiert eine solche Datei).
+
+> Hinweis: localStorage hängt am jeweiligen Gerät/Browser. Für ein echtes,
+> geräteübergreifendes Backup die `.blocks`-Datei exportieren.
 
 ## Deployment auf den ESP32
 

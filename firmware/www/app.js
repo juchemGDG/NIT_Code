@@ -43,7 +43,35 @@ function refreshCodeFromBlocks() {
   if (manualMode) return;
   codeEl.value = generateCode();
 }
-workspace.addChangeListener(refreshCodeFromBlocks);
+
+// ── Speichern / Laden (Blockly-Serialisierung als JSON) ───────────────────
+const AUTOSAVE_KEY = 'nit_autosave';
+const PROJECTS_KEY = 'nit_projects';
+
+function saveState() {
+  return JSON.stringify(Blockly.serialization.workspaces.save(workspace));
+}
+function loadState(text) {
+  const state = (typeof text === 'string') ? JSON.parse(text) : text;
+  Blockly.serialization.workspaces.load(state, workspace);
+}
+function getProjects() {
+  try { return JSON.parse(localStorage.getItem(PROJECTS_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function setProjects(obj) { localStorage.setItem(PROJECTS_KEY, JSON.stringify(obj)); }
+
+// Beim Start: zuletzt bearbeiteten Stand automatisch wiederherstellen
+try {
+  const auto = localStorage.getItem(AUTOSAVE_KEY);
+  if (auto) loadState(auto);
+} catch (e) { /* beschädigter Stand -> ignorieren */ }
+
+// Nach jeder Änderung: Code aktualisieren + automatisch sichern
+workspace.addChangeListener(function () {
+  refreshCodeFromBlocks();
+  try { localStorage.setItem(AUTOSAVE_KEY, saveState()); } catch (e) {}
+});
 refreshCodeFromBlocks();
 
 // Umschalten zwischen "aus Blöcken" und "manuell bearbeiten"
@@ -149,3 +177,84 @@ async function fetchOutput() {
 
 document.getElementById('btnRun').addEventListener('click', runProgram);
 document.getElementById('btnStop').addEventListener('click', stopProgram);
+
+// ── Projekte: Speichern / Laden / Löschen / Datei-Export-Import ───────────
+const modal    = document.getElementById('projModal');
+const projList = document.getElementById('projList');
+const fileInput = document.getElementById('fileInput');
+let lastName = '';
+
+document.getElementById('btnSave').addEventListener('click', () => {
+  const name = (prompt('Projektname zum Speichern:', lastName) || '').trim();
+  if (!name) return;
+  const projects = getProjects();
+  if (projects[name] && !confirm('„' + name + '“ überschreiben?')) return;
+  projects[name] = saveState();
+  setProjects(projects);
+  lastName = name;
+  setStatus('Gespeichert: ' + name);
+});
+
+document.getElementById('btnProjects').addEventListener('click', () => {
+  renderProjects();
+  modal.hidden = false;
+});
+document.getElementById('projClose').addEventListener('click', () => { modal.hidden = true; });
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+
+function renderProjects() {
+  const projects = getProjects();
+  const names = Object.keys(projects).sort();
+  projList.innerHTML = '';
+  if (!names.length) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="empty">Noch keine Projekte gespeichert.</span>';
+    projList.appendChild(li);
+    return;
+  }
+  for (const name of names) {
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.className = 'pname';
+    label.textContent = name;
+    const load = document.createElement('button');
+    load.className = 'load'; load.textContent = 'Laden';
+    load.addEventListener('click', () => {
+      try { loadState(projects[name]); lastName = name; modal.hidden = true; setStatus('Geladen: ' + name); }
+      catch (e) { alert('Konnte „' + name + '“ nicht laden.'); }
+    });
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = '🗑';
+    del.addEventListener('click', () => {
+      if (!confirm('„' + name + '“ löschen?')) return;
+      const p = getProjects(); delete p[name]; setProjects(p); renderProjects();
+    });
+    li.appendChild(label); li.appendChild(load); li.appendChild(del);
+    projList.appendChild(li);
+  }
+}
+
+// Als Datei sichern (herunterladen) – echtes, geräteübergreifendes Backup
+document.getElementById('projExport').addEventListener('click', () => {
+  const blob = new Blob([saveState()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (lastName || 'projekt') + '.blocks';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+// Datei laden (importieren)
+document.getElementById('projImportBtn').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { loadState(reader.result); modal.hidden = true; setStatus('Datei geladen: ' + file.name); }
+    catch (e) { alert('Datei konnte nicht gelesen werden.'); }
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+});
