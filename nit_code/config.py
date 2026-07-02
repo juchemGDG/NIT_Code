@@ -210,6 +210,13 @@ LIB_REPO_RAW = "https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/mai
 # MicroPython Download-Seite
 MICROPYTHON_DOWNLOAD_BASE = "https://micropython.org/download/"
 
+# Fehlerbericht ("Hilfe → Fehler melden"). Der Dialog schickt einen HTTPS-POST
+# (JSON) an BUG_REPORT_URL; ein kleines Server-Skript (siehe server/bugreport.php)
+# leitet ihn als E-Mail an BUG_REPORT_EMAIL weiter. So liegen KEINE Mail-
+# Zugangsdaten im Programm. URL an den eigenen Endpoint anpassen.
+BUG_REPORT_URL = "https://mint-checker.de/nitcode/bugreport.php"
+BUG_REPORT_EMAIL = "nitcode@mint-checker.de"
+
 SUPPORTED_BOARDS = {
     # ESP-Familie: alle über esptool geflasht (flash_cmd "esp32"). Chip-Typ und
     # Bootloader-Offset unterscheiden sich je Variante – der originale ESP32 und

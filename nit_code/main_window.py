@@ -820,6 +820,8 @@ class MainWindow(QMainWindow):
 
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
+        self._add_action(m_help, "🐞  Fehler melden …", self._report_bug)
+        m_help.addSeparator()
         self._add_action(m_help, f"Über {APP_NAME}", self._show_about)
 
     def _add_action(self, menu, label: str, slot, shortcut: str | None = None):
@@ -2720,6 +2722,27 @@ class MainWindow(QMainWindow):
                 "Bitte Controller anschließen und in der Toolbar auswählen."
             )
         return port
+
+    def _report_bug(self):
+        """Öffnet den Fehlerbericht-Dialog (Code + letzte Konsolenausgabe werden angehängt)."""
+        from .bug_report import BugReportDialog
+        code = ""
+        tab = self._current_tab()
+        if tab is not None:
+            try:
+                code = tab.editor.get_text()
+            except Exception:
+                code = ""
+        console = ""
+        try:
+            console = self._console.output_console.toPlainText()
+        except Exception:
+            console = ""
+        # Nur die letzten ~4000 Zeichen – der letzte Fehler steht meist am Ende.
+        if len(console) > 4000:
+            console = "… (gekürzt) …\n" + console[-4000:]
+        dlg = BugReportDialog(code=code, console=console, parent=self)
+        dlg.exec()
 
     def _show_about(self):
         QMessageBox.about(
