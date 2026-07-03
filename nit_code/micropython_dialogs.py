@@ -1,6 +1,5 @@
 """MicroPython-Dialoge: Flash-Dialog & Bibliotheks-Manager."""
 import os
-import threading
 from pathlib import Path
 
 import requests
@@ -14,6 +13,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont, QColor
 
 from .config import THEME, SUPPORTED_BOARDS, LIB_REPO_API, LIB_REPO_RAW, python_executable, tool_command
+from .net_hints import with_network_hint
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Hilfsstil
@@ -480,7 +480,7 @@ class FirmwareDownloader(QThread):
                         self.progress.emit(int(downloaded / total * 100))
             self.done.emit(True, self.dest)
         except Exception as e:
-            self.done.emit(False, str(e))
+            self.done.emit(False, with_network_hint(e))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -833,7 +833,7 @@ class IpadDeployWorker(QThread):
         ssid = self._resolve_ssid(mp)
 
         if self.install_libs:
-            ok, err = self._install_libraries(mp)
+            ok, err = self._install_libraries()
             if not ok:
                 self.done.emit(False, err); return
 
@@ -892,24 +892,23 @@ class IpadDeployWorker(QThread):
             pass
         return ""
 
-    def _install_libraries(self, mp):
+    def _install_libraries(self):
         """Laedt alle nitbw_-Bibliotheken aus dem NIT-Repo und legt sie in :lib ab.
 
         Noetig, damit der von den Sensor-Bloecken erzeugte Code
         (``from nitbw_xxx import ...``) auf dem Board importierbar ist.
+        Download + Übertragung laufen über dieselben Helfer wie der
+        Bibliotheks-Manager (:func:`_install_remote_lib`).
         """
-        import subprocess, tempfile
         self.log.emit("Installiere nitbw_-Bibliotheken (für die Sensor-Blöcke) ...\n")
         try:
             resp = requests.get(LIB_REPO_API, timeout=15)
             resp.raise_for_status()
             entries = resp.json()
         except Exception as e:
-            return False, f"Bibliotheks-Liste konnte nicht geladen werden: {e}"
+            return False, with_network_hint(e, "Bibliotheks-Liste konnte nicht geladen werden: ")
 
-        # Ordner :lib sicherstellen (EEXIST ist ok)
-        subprocess.run([*mp, "connect", self.port, "mkdir", ":lib"],
-                       capture_output=True, text=True, timeout=30)
+        self.log.emit(_ensure_remote_lib_dir(self.port) + "\n")
 
         # .py-Dateien im Repo-Root und in Unterordnern sammeln (ohne Beispiele)
         files = []  # (name, download_url)
@@ -931,22 +930,171 @@ class IpadDeployWorker(QThread):
             return True, ""
 
         for name, url in files:
-            try:
-                r = requests.get(url, timeout=15)
-                r.raise_for_status()
-                with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as tmp:
-                    tmp.write(r.content)
-                    tmp_path = tmp.name
-                res = subprocess.run([*mp, "connect", self.port, "cp", tmp_path, f":lib/{name}"],
-                                     capture_output=True, text=True, timeout=30)
-                os.unlink(tmp_path)
-                if res.returncode != 0:
-                    return False, f"Fehler bei lib/{name}: {res.stderr.strip()}"
-                self.log.emit(f"  ✓ lib/{name}\n")
-            except Exception as e:
-                return False, f"Fehler bei {name}: {e}"
+            ok, err = _install_remote_lib(self.port, name, url)
+            if not ok:
+                return False, f"Fehler bei lib/{name}: {err}"
+            self.log.emit(f"  ✓ lib/{name}\n")
         self.log.emit(f"✓ {len(files)} Bibliotheks-Dateien installiert.\n")
         return True, ""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Gemeinsame Helfer: NIT-Bibliotheken auf den Controller installieren
+# (genutzt von LibInstallWorker und IpadDeployWorker)
+# ──────────────────────────────────────────────────────────────────────────────
+def _ensure_remote_lib_dir(port: str) -> str:
+    """Stellt den Ordner ``:lib`` auf dem Controller sicher; liefert eine Log-Zeile.
+
+    EEXIST gilt als Erfolg. Andere Fehler werden nur gemeldet – die
+    nachfolgenden cp-Befehle melden ein echtes Problem ohnehin.
+    """
+    import subprocess
+    try:
+        mk = subprocess.run(
+            [*tool_command("mpremote"), "connect", port, "mkdir", ":lib"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception as e:
+        return f"⚠ Ordner 'lib' konnte nicht geprüft werden: {e}"
+    if mk.returncode == 0:
+        return "✓ Ordner 'lib' angelegt."
+    stderr = mk.stderr or ""
+    if "EEXIST" in stderr or "exist" in stderr.lower():
+        return "✓ Ordner 'lib' ist bereits vorhanden."
+    return f"⚠ Konnte 'lib' nicht anlegen: {stderr.strip()}"
+
+
+def _copy_to_remote_lib(port: str, name: str, local_path: str) -> tuple[bool, str]:
+    """Kopiert eine lokale Datei nach ``:lib/<name>`` auf den Controller.
+
+    Rückgabe ``(ok, fehlermeldung)``.
+    """
+    import subprocess
+    try:
+        res = subprocess.run(
+            [*tool_command("mpremote"), "connect", port,
+             "cp", local_path, f":lib/{name}"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        return False, "mpremote nicht gefunden. Bitte installieren: pip install mpremote"
+    except Exception as e:
+        return False, str(e)
+    if res.returncode != 0:
+        return False, (res.stderr or "").strip() or "Übertragung fehlgeschlagen"
+    return True, ""
+
+
+def _install_remote_lib(port: str, name: str, url: str) -> tuple[bool, str]:
+    """Lädt ``url`` herunter und kopiert die Datei nach ``:lib/<name>``.
+
+    Rückgabe ``(ok, fehlermeldung)``.
+    """
+    import tempfile
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        with tempfile.NamedTemporaryFile(
+            suffix=os.path.splitext(name)[1] or ".py", delete=False
+        ) as tmp:
+            tmp.write(resp.content)
+            tmp_path = tmp.name
+    except Exception as e:
+        return False, with_network_hint(e)
+    try:
+        return _copy_to_remote_lib(port, name, tmp_path)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def collect_local_lib_files(folder) -> list[tuple[str, str]]:
+    """Sammelt Bibliotheks-Dateien aus einem lokalen Ordner (Offline-Installation).
+
+    Erwartet die Struktur des NIT_Bibliotheken-Repos, z. B. als ZIP von GitHub
+    geladen und entpackt: ``.py``-Dateien im Wurzelordner und in Unterordnern
+    (Beispiel-Dateien werden wie beim Online-Weg übersprungen). Enthält der
+    gewählte Ordner selbst keine Bibliotheken, aber genau einen Unterordner
+    (typisch: ``NIT_Bibliotheken-main`` direkt nach dem Entpacken), wird
+    automatisch dorthin abgestiegen.
+
+    Rückgabe: Liste ``(dateiname, absoluter_pfad)``.
+    """
+    folder = Path(folder)
+
+    def _scan(base: Path) -> list[tuple[str, str]]:
+        files: list[tuple[str, str]] = []
+        try:
+            entries = sorted(base.iterdir(), key=lambda p: p.name.lower())
+        except OSError:
+            return files
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            if entry.is_file() and entry.suffix == ".py":
+                files.append((entry.name, str(entry.resolve())))
+            elif entry.is_dir():
+                try:
+                    subs = sorted(entry.iterdir(), key=lambda p: p.name.lower())
+                except OSError:
+                    continue
+                for f in subs:
+                    if (f.is_file() and f.suffix == ".py"
+                            and not f.name.lower().startswith("beispiel")):
+                        files.append((f.name, str(f.resolve())))
+        return files
+
+    files = _scan(folder)
+    if not files:
+        # ZIP-Entpack-Wurzel: genau ein Unterordner → dort suchen.
+        try:
+            subdirs = [d for d in folder.iterdir()
+                       if d.is_dir() and not d.name.startswith(".")]
+        except OSError:
+            subdirs = []
+        if len(subdirs) == 1:
+            files = _scan(subdirs[0])
+    return files
+
+
+class LocalLibInstallWorker(QThread):
+    """Installiert Bibliotheken aus einem lokalen Ordner auf den Controller.
+
+    Offline-Weg für Schulnetze, in denen der Proxy GitHub blockiert: Das Repo
+    NIT_Bibliotheken einmal zu Hause als ZIP laden, entpacken und hier den
+    Ordner auswählen – die Übertragung aufs Board braucht kein Internet.
+    """
+    log  = pyqtSignal(str)
+    done = pyqtSignal(bool, str)
+
+    def __init__(self, folder: str, port: str):
+        super().__init__()
+        self.folder = folder
+        self.port = port
+
+    def run(self):
+        files = collect_local_lib_files(self.folder)
+        if not files:
+            self.done.emit(
+                False,
+                "Im gewählten Ordner wurden keine Bibliotheks-Dateien (.py) "
+                "gefunden.\nBitte den entpackten Ordner des NIT_Bibliotheken-"
+                "ZIPs auswählen.",
+            )
+            return
+        self.log.emit(f"{len(files)} Bibliotheks-Datei(en) im Ordner gefunden.\n")
+        self.log.emit(_ensure_remote_lib_dir(self.port) + "\n")
+        for name, path in files:
+            self.log.emit(f"Übertrage {name} nach lib/ ({self.port}) ...\n")
+            ok, err = _copy_to_remote_lib(self.port, name, path)
+            if not ok:
+                self.log.emit(f"✗ Fehler bei {name}: {err}\n")
+                self.done.emit(False, f"Fehler bei {name}")
+                return
+            self.log.emit(f"✓ lib/{name}\n")
+        self.done.emit(True, f"{len(files)} Bibliothek(en) aus lokalem Ordner übertragen.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -962,26 +1110,9 @@ class LibInstallWorker(QThread):
         self.port = port
 
     def run(self):
-        import subprocess, sys, tempfile
-
         # Sicherstellen, dass der Ordner /lib auf dem Controller existiert.
-        # mpremote legt ihn an; existiert er bereits (EEXIST), ignorieren wir das.
         self.log.emit("Stelle Ordner 'lib' auf dem Controller sicher ...\n")
-        try:
-            mk = subprocess.run(
-                [*tool_command("mpremote"), "connect", self.port, "mkdir", ":lib"],
-                capture_output=True, text=True, timeout=30
-            )
-            if mk.returncode == 0:
-                self.log.emit("✓ Ordner 'lib' angelegt.\n")
-            elif "EEXIST" in (mk.stderr or "") or "exist" in (mk.stderr or "").lower():
-                self.log.emit("✓ Ordner 'lib' ist bereits vorhanden.\n")
-            else:
-                # Kein bekannter "existiert bereits"-Fehler – warnen, aber weitermachen;
-                # die nachfolgenden cp-Befehle melden ein echtes Problem ohnehin.
-                self.log.emit(f"⚠ Konnte 'lib' nicht anlegen: {mk.stderr.strip()}\n")
-        except Exception as e:
-            self.log.emit(f"⚠ Ordner 'lib' konnte nicht geprüft werden: {e}\n")
+        self.log.emit(_ensure_remote_lib_dir(self.port) + "\n")
 
         for finfo in self.files:
             if finfo.get("type") == "dir":
@@ -1004,7 +1135,7 @@ class LibInstallWorker(QThread):
                                      if f.get("type") == "file" and f["name"].endswith(".py")]
                 except Exception as e:
                     self.log.emit(f"✗ Fehler beim Laden von '{dir_name}': {e}\n")
-                    self.done.emit(False, str(e))
+                    self.done.emit(False, with_network_hint(e))
                     return
             else:
                 lib_files = [finfo]
@@ -1012,32 +1143,13 @@ class LibInstallWorker(QThread):
             for file_info in lib_files:
                 name = file_info["name"]
                 url = file_info["download_url"]
-                self.log.emit(f"Lade {name} herunter ...\n")
-                try:
-                    resp = requests.get(url, timeout=15)
-                    resp.raise_for_status()
-                    with tempfile.NamedTemporaryFile(
-                        suffix=os.path.splitext(name)[1], delete=False
-                    ) as tmp:
-                        tmp.write(resp.content)
-                        tmp_path = tmp.name
-
-                    self.log.emit(f"Übertrage {name} nach lib/ auf Controller ({self.port}) ...\n")
-                    result = subprocess.run(
-                        [*tool_command("mpremote"), "connect", self.port,
-                         "cp", tmp_path, f":lib/{name}"],
-                        capture_output=True, text=True, timeout=30
-                    )
-                    os.unlink(tmp_path)
-                    if result.returncode == 0:
-                        self.log.emit(f"✓ lib/{name} erfolgreich übertragen.\n")
-                    else:
-                        self.log.emit(f"✗ Fehler bei {name}: {result.stderr}\n")
-                        self.done.emit(False, f"Fehler bei {name}")
-                        return
-                except Exception as e:
-                    self.log.emit(f"✗ Ausnahme bei {name}: {e}\n")
-                    self.done.emit(False, str(e))
+                self.log.emit(f"Lade {name} herunter und übertrage nach lib/ ({self.port}) ...\n")
+                ok, err = _install_remote_lib(self.port, name, url)
+                if ok:
+                    self.log.emit(f"✓ lib/{name} erfolgreich übertragen.\n")
+                else:
+                    self.log.emit(f"✗ Fehler bei {name}: {err}\n")
+                    self.done.emit(False, f"Fehler bei {name}")
                     return
         self.done.emit(True, "Alle Bibliotheken übertragen.")
 
@@ -1059,7 +1171,7 @@ class _HttpWorker(QThread):
             resp.raise_for_status()
             self.result.emit(resp.json())
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(with_network_hint(e))
 
 
 class _ReadmeWorker(QThread):
@@ -1084,11 +1196,26 @@ class LibraryManagerDialog(QDialog):
         self.setStyleSheet(_dialog_style())
         self._port = port
         self._files: list[dict] = []
-        self._worker: LibInstallWorker | None = None
+        self._worker = None   # LibInstallWorker | LocalLibInstallWorker
         self._http_worker: _HttpWorker | None = None
         self._preview_worker: _HttpWorker | None = None
+        self._readme_worker: _ReadmeWorker | None = None
         self._setup_ui()
         self._fetch_libs()
+
+    def done(self, result: int):
+        """Beim Schließen laufende Worker sauber abwarten (QThread-Absturz vermeiden)."""
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(
+                self, "Bitte warten",
+                "Es läuft noch eine Installation – bitte warten, bis sie fertig ist.",
+            )
+            return
+        for attr in ("_http_worker", "_preview_worker", "_readme_worker"):
+            w = getattr(self, attr, None)
+            if w is not None and w.isRunning():
+                w.wait(3000)
+        super().done(result)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1149,6 +1276,16 @@ class LibraryManagerDialog(QDialog):
 
         # Buttons
         btn_row = QHBoxLayout()
+        # Offline-Weg: funktioniert auch, wenn GitHub im Schulnetz gesperrt ist.
+        self._btn_local = QPushButton("📁 Aus Ordner installieren …")
+        self._btn_local.setToolTip(
+            "Installiert die Bibliotheken aus einem lokalen Ordner – ohne Internet.\n"
+            "Vorbereitung (einmalig, z. B. zu Hause): github.com/juchemGDG/NIT_Bibliotheken\n"
+            "öffnen → grüner Knopf „Code“ → „Download ZIP“ → ZIP entpacken.\n"
+            "Hier dann den entpackten Ordner auswählen."
+        )
+        self._btn_local.clicked.connect(self._install_from_folder)
+        btn_row.addWidget(self._btn_local)
         btn_row.addStretch()
         self._btn_install = QPushButton("Ausgewählte installieren")
         self._btn_install.setStyleSheet(
@@ -1177,8 +1314,15 @@ class LibraryManagerDialog(QDialog):
         self._log.append("Lade Dateiliste von GitHub ...")
         self._http_worker = _HttpWorker(LIB_REPO_API, self)
         self._http_worker.result.connect(self._populate_list)
-        self._http_worker.error.connect(lambda e: self._log.append(f"Fehler: {e}"))
+        self._http_worker.error.connect(self._on_fetch_error)
         self._http_worker.start()
+
+    def _on_fetch_error(self, msg: str):
+        self._log.append(f"Fehler: {msg}")
+        self._log.append(
+            "→ Ohne Internet geht es trotzdem: unten „📁 Aus Ordner "
+            "installieren …“ (entpacktes NIT_Bibliotheken-ZIP auswählen)."
+        )
 
     def _populate_list(self, data: list):
         self._files = [
@@ -1242,13 +1386,32 @@ class LibraryManagerDialog(QDialog):
                                 "Bitte einen seriellen Port auswählen.")
             return
         self._worker = LibInstallWorker(selected, port)
-        self._worker.log.connect(lambda t: self._log.append(t.rstrip()))
-        self._worker.done.connect(self._on_install_done)
+        self._start_install_worker(self._worker)
+
+    def _install_from_folder(self):
+        """Offline-Installation: Bibliotheken aus einem lokalen Ordner aufs Board."""
+        port = self._port_combo.currentText()
+        if "Kein" in port:
+            QMessageBox.warning(self, "Kein Port",
+                                "Bitte einen seriellen Port auswählen.")
+            return
+        folder = QFileDialog.getExistingDirectory(
+            self, "Ordner mit NIT-Bibliotheken wählen (entpacktes ZIP)")
+        if not folder:
+            return
+        self._worker = LocalLibInstallWorker(folder, port)
+        self._start_install_worker(self._worker)
+
+    def _start_install_worker(self, worker):
+        worker.log.connect(lambda t: self._log.append(t.rstrip()))
+        worker.done.connect(self._on_install_done)
         self._btn_install.setEnabled(False)
-        self._worker.start()
+        self._btn_local.setEnabled(False)
+        worker.start()
 
     def _on_install_done(self, ok: bool, msg: str):
         self._btn_install.setEnabled(True)
+        self._btn_local.setEnabled(True)
         self._log.append(f"\n{'✓ ' if ok else '✗ '}{msg}")
         if ok:
             QMessageBox.information(self, "Fertig", msg)
@@ -1396,6 +1559,32 @@ class _PipWorker(QThread):
         return f"Fehler bei {pkg}"
 
 
+class _PipListWorker(QThread):
+    """Liest die installierten Pakete (``pip list``) im Hintergrund.
+
+    Synchron würde das den Dialog beim Öffnen bis zu 15 s einfrieren
+    (z. B. bei langsamem Netzlaufwerk-Python).
+    """
+    result = pyqtSignal(list)   # Ausgabezeilen (ohne Header)
+    error  = pyqtSignal(str)
+
+    def __init__(self, python_exec: str, parent=None):
+        super().__init__(parent)
+        self._python = python_exec
+
+    def run(self):
+        import subprocess
+        try:
+            r = subprocess.run(
+                [self._python, "-m", "pip", "list", "--format=columns"],
+                capture_output=True, text=True, timeout=15,
+            )
+            lines = [ln for ln in r.stdout.splitlines()[2:] if ln.strip()]
+            self.result.emit(lines)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class PipManagerDialog(QDialog):
     def __init__(self, parent=None, python_exec: str = ""):
         super().__init__(parent)
@@ -1404,6 +1593,7 @@ class PipManagerDialog(QDialog):
         self.setStyleSheet(_dialog_style())
         self._python = (python_exec or "").strip() or python_executable()
         self._worker: _PipWorker | None = None
+        self._list_worker: _PipListWorker | None = None
         self._installed: set[str] = set()
         self._setup_ui()
         self._load_installed()
@@ -1522,24 +1712,35 @@ class PipManagerDialog(QDialog):
             f"PyPI: https://pypi.org/project/{entry['name']}/"
         )
 
-    # ── Installierte Pakete laden ─────────────────────────────────────────
+    # ── Installierte Pakete laden (im Hintergrund) ────────────────────────
     def _load_installed(self):
-        import subprocess
         self._log.append("Lade installierte Pakete …")
-        try:
-            r = subprocess.run(
-                [self._python, "-m", "pip", "list", "--format=columns"],
-                capture_output=True, text=True, timeout=15,
+        worker = _PipListWorker(self._python, self)
+        worker.result.connect(self._on_installed_loaded)
+        worker.error.connect(lambda e: self._log.append(f"Fehler: {e}"))
+        self._list_worker = worker
+        worker.start()
+
+    def _on_installed_loaded(self, lines: list):
+        self._installed = {line.split()[0].lower() for line in lines}
+        self._installed_list.clear()
+        for line in sorted(lines, key=lambda l: l.lower()):
+            self._installed_list.addItem(line.strip())
+        self._log.append(f"{len(self._installed)} Pakete installiert.")
+
+    def done(self, result: int):
+        """Schließen abfangen (X-Button UND Schließen-Knopf laufen hier durch)."""
+        # Laufende Installation nicht durch Schließen abwürgen (QThread-Absturz).
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(
+                self, "Bitte warten",
+                "Es läuft noch eine Paket-Installation – bitte warten, "
+                "bis sie abgeschlossen ist.",
             )
-            lines = r.stdout.splitlines()[2:]   # Header überspringen
-            self._installed = {line.split()[0].lower() for line in lines if line.strip()}
-            self._installed_list.clear()
-            for line in sorted(lines, key=lambda l: l.lower()):
-                if line.strip():
-                    self._installed_list.addItem(line.strip())
-            self._log.append(f"{len(self._installed)} Pakete installiert.")
-        except Exception as e:
-            self._log.append(f"Fehler: {e}")
+            return
+        if self._list_worker is not None and self._list_worker.isRunning():
+            self._list_worker.wait(3000)
+        super().done(result)
 
     # ── Aktionen ─────────────────────────────────────────────────────────
     def _get_selected_packages(self) -> list[str]:

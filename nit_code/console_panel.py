@@ -720,14 +720,10 @@ class ConsolePanel(QWidget):
         self._plot_config: dict | None = None   # Achsen-Standardwerte aus den Einstellungen
         self._setup_ui()
 
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(
-            f"""
+    @staticmethod
+    def _tabs_style() -> str:
+        """Stylesheet der Konsolen-Tabs (aus dem aktuellen THEME)."""
+        return f"""
             QTabWidget::pane {{
                 border: none;
                 background: {THEME['terminal_bg']};
@@ -745,7 +741,14 @@ class ConsolePanel(QWidget):
                 border-bottom: 2px solid {THEME['accent']};
             }}
             """
-        )
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(self._tabs_style())
 
         # Tab 1: Ausgabe
         output_container = QWidget()
@@ -802,26 +805,7 @@ class ConsolePanel(QWidget):
         layout.addWidget(self.tabs)
 
     def refresh_theme(self):
-        self.tabs.setStyleSheet(
-            f"""
-            QTabWidget::pane {{
-                border: none;
-                background: {THEME['terminal_bg']};
-            }}
-            QTabBar::tab {{
-                background: {THEME['bg_panel']};
-                color: {THEME['text_dim']};
-                padding: 5px 14px;
-                border: none;
-                border-right: 1px solid {THEME['border']};
-            }}
-            QTabBar::tab:selected {{
-                background: {THEME['terminal_bg']};
-                color: {THEME['text']};
-                border-bottom: 2px solid {THEME['accent']};
-            }}
-            """
-        )
+        self.tabs.setStyleSheet(self._tabs_style())
         self._input_prompt.setStyleSheet(
             f"color:{THEME['accent']}; font-family:monospace; font-size:13px;"
         )

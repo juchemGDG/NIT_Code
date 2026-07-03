@@ -5,7 +5,6 @@ Blöcke werden über einen eingebetteten Blockly-Editor (offline, im WebEngine)
 zusammengesteckt und per Knopfdruck in lesbaren Python-Code umgewandelt, der in
 einem neuen Editor-Tab landet und ganz normal ausgeführt werden kann.
 """
-import sys
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
@@ -15,26 +14,13 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QAction
 
 try:
+    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     HAS_WEBENGINE = True
 except Exception:
     HAS_WEBENGINE = False
 
-from .config import THEME
-
-
-def _asset_path(name: str) -> Path | None:
-    """Findet eine Datei im assets-Ordner – im Dev- wie im PyInstaller-Bundle."""
-    candidates = []
-    if getattr(sys, "frozen", False):
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(Path(sys._MEIPASS) / "nit_code" / "assets" / name)
-        candidates.append(Path(sys.executable).parent / "nit_code" / "assets" / name)
-    candidates.append(Path(__file__).resolve().parent / "assets" / name)
-    for p in candidates:
-        if p.exists():
-            return p
-    return None
+from .config import THEME, asset_path as _asset_path
 
 
 class BlockEditorWindow(QMainWindow):
@@ -77,13 +63,33 @@ class BlockEditorWindow(QMainWindow):
         self._act_clear.triggered.connect(self._clear_blocks)
         tb.addAction(self._act_clear)
 
+        self._view = None
         if HAS_WEBENGINE and self._editor_html:
-            self._view = QWebEngineView(self)
-            self._view.loadFinished.connect(self._on_page_loaded)
-            self._view.setUrl(QUrl.fromLocalFile(str(self._editor_html)))
-            self.setCentralWidget(self._view)
-        else:
-            self._view = None
+            # Absichtlich in try/except: Auf manchen Schulrechnern (Terminal-
+            # server, stark eingeschränkte Profile) schlägt die WebEngine-
+            # Initialisierung fehl – dann Fallback-Hinweis statt Absturz.
+            try:
+                # Off-the-record-Profil (kein Name → keine Cache-/Profildaten
+                # auf der Platte). Der Editor braucht keine Persistenz
+                # (Speichern läuft über .nitblocks-Dateien) – und auf Servern
+                # mit gesperrtem/umgeleitetem %LOCALAPPDATA% verhindert das
+                # Schreibfehler beim Anlegen des Chromium-Profils.
+                # Reihenfolge: Profil als erstes Kind, View danach – Qt löscht
+                # Kinder rückwärts, also View (+ Page) vor dem Profil.
+                self._profile = QWebEngineProfile(self)
+                self._view = QWebEngineView(self)
+                page = QWebEnginePage(self._profile, self._view)
+                self._view.setPage(page)
+                # Stürzt der Chromium-Renderprozess ab (GPU-/Treiberprobleme),
+                # die Seite einmal neu laden statt ein schwarzes Fenster zu zeigen.
+                self._render_retry_done = False
+                page.renderProcessTerminated.connect(self._on_render_crashed)
+                self._view.loadFinished.connect(self._on_page_loaded)
+                self._view.setUrl(QUrl.fromLocalFile(str(self._editor_html)))
+                self.setCentralWidget(self._view)
+            except Exception:
+                self._view = None
+        if self._view is None:
             self.setCentralWidget(self._fallback_widget())
             for act in (self._act_to_python, self._act_save, self._act_load, self._act_clear):
                 act.setEnabled(False)
@@ -104,6 +110,26 @@ class BlockEditorWindow(QMainWindow):
         lbl.setStyleSheet(f"color:{THEME['text']}; font-size:13px; padding:24px;")
         lay.addWidget(lbl)
         return w
+
+    def _on_render_crashed(self, _status, _exit_code):
+        """Chromium-Renderprozess abgestürzt (z. B. GPU-Problem auf Servern).
+
+        Einmal automatisch neu laden – beim zweiten Absturz einen Hinweis mit
+        dem Software-Rendering-Workaround zeigen, statt still zu scheitern.
+        """
+        if not self._render_retry_done:
+            self._render_retry_done = True
+            if self._view is not None:
+                self._view.reload()
+            return
+        QMessageBox.warning(
+            self, "Block-Editor",
+            "Die Anzeige des Block-Editors ist abgestürzt (Grafik-Problem).\n\n"
+            "Workaround: NIT_Code beenden, die Umgebungsvariable\n"
+            "    NIT_SOFTWARE_RENDER=1\n"
+            "setzen und NIT_Code neu starten – dann wird ohne "
+            "Grafikbeschleunigung gezeichnet.",
+        )
 
     # ── Laden eines Block-States (z. B. aus "Coder → Blockly") ────────────────
     def _on_page_loaded(self, ok: bool):

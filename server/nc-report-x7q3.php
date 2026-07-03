@@ -38,9 +38,17 @@ if (!is_array($data)) {
     exit;
 }
 
+// Eigenes Unterverzeichnis (0700) fuer die Rate-Limit-Dateien: auf Shared-
+// Hosting ist sys_get_temp_dir() u. U. fuer andere Kunden les-/schreibbar –
+// vorhersagbare Dateinamen dort waeren manipulierbar.
+$rlDir = sys_get_temp_dir() . '/nitcode_rl';
+if (!is_dir($rlDir)) {
+    @mkdir($rlDir, 0700);
+}
+
 // Einfaches Rate-Limit pro IP (dateibasiert): max. 1 Bericht / 30 s.
 $ip = $_SERVER['REMOTE_ADDR'] ?? '?';
-$rl = sys_get_temp_dir() . '/nitcode_rl_' . md5($ip);
+$rl = $rlDir . '/ip_' . md5($ip);
 if (file_exists($rl) && (time() - filemtime($rl)) < 30) {
     http_response_code(429);
     echo 'Zu viele Anfragen – bitte kurz warten.';
@@ -50,12 +58,16 @@ if (file_exists($rl) && (time() - filemtime($rl)) < 30) {
 
 // Globales Stunden-Limit: schuetzt das Postfach vor Flutung auch dann, wenn ein
 // Angreifer viele verschiedene IPs nutzt (das Pro-IP-Limit oben greift dann nicht).
+// Lesen + Erhoehen laufen atomar unter flock(), damit parallele Requests den
+// Zaehler nicht ueberschreiben (Race Condition beim Read-Modify-Write).
 $MAX_PER_HOUR = 60;
-$gc = sys_get_temp_dir() . '/nitcode_global_count';
-$windowStart = time();
-$count = 0;
-if (file_exists($gc)) {
-    $parts = explode(':', trim((string)@file_get_contents($gc)));
+$gc = $rlDir . '/global_count';
+$fh = @fopen($gc, 'c+');
+$limitReached = false;
+if ($fh !== false && flock($fh, LOCK_EX)) {
+    $windowStart = time();
+    $count = 0;
+    $parts = explode(':', trim((string)stream_get_contents($fh)));
     if (count($parts) === 2) {
         $windowStart = (int)$parts[0];
         $count = (int)$parts[1];
@@ -64,13 +76,23 @@ if (file_exists($gc)) {
         $windowStart = time();
         $count = 0;
     }
+    if ($count >= $MAX_PER_HOUR) {
+        $limitReached = true;
+    } else {
+        ftruncate($fh, 0);
+        rewind($fh);
+        fwrite($fh, $windowStart . ':' . ($count + 1));
+    }
+    flock($fh, LOCK_UN);
+    fclose($fh);
+} elseif ($fh !== false) {
+    fclose($fh);
 }
-if ($count >= $MAX_PER_HOUR) {
+if ($limitReached) {
     http_response_code(429);
     echo 'Stundenlimit erreicht – bitte spaeter erneut.';
     exit;
 }
-@file_put_contents($gc, $windowStart . ':' . ($count + 1), LOCK_EX);
 
 $clip = function ($v, $n) { return mb_substr(trim((string)$v), 0, $n); };
 // Fuer Header/Betreff: Zeilenumbrueche entfernen -> verhindert Header-Injection.

@@ -20,9 +20,7 @@ def python_executable() -> str:
     """
     if getattr(sys, "frozen", False):
         return _best_system_python()
-    venv_py = Path(__file__).resolve().parents[1] / ".venv" / (
-        "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
-    )
+    venv_py = _venv_python()
     if venv_py.exists():
         return str(venv_py)
     return sys.executable
@@ -184,6 +182,20 @@ def python_has_tkinter(path: str) -> bool:
         return False
 
 
+def asset_path(name: str) -> Path | None:
+    """Findet eine Datei im assets-Ordner – im Dev- wie im PyInstaller-Bundle."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(Path(sys._MEIPASS) / "nit_code" / "assets" / name)
+        candidates.append(Path(sys.executable).parent / "nit_code" / "assets" / name)
+    candidates.append(Path(__file__).resolve().parent / "assets" / name)
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
 def tool_command(module: str) -> list[str]:
     """Befehl, um ein mitgeliefertes Tool (``mpremote``/``esptool``) zu starten.
 
@@ -201,7 +213,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.7.2"
+APP_VERSION = "1.8.0"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"

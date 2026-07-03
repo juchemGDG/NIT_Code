@@ -1,16 +1,13 @@
 """KI-Tutor-Panel – Infi, lokaler Lernassistent via Ollama."""
-import json
-import time
-
-import requests
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QKeySequence
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTextEdit, QPushButton, QSizePolicy, QFrame,
+    QTextEdit, QPushButton, QFrame,
 )
 
 from .config import THEME, TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL
+from .ollama_client import OllamaStreamWorker
+from .qt_utils import retain_thread
 
 # ── System-Prompt für Infi ────────────────────────────────────────────────────
 INFI_SYSTEM_PROMPT = """\
@@ -104,61 +101,6 @@ zu äußern.
 """
 
 
-# ── Ollama-Worker (läuft in eigenem Thread, streamt Antwort) ─────────────────
-class OllamaWorker(QThread):
-    token_ready   = pyqtSignal(str)      # einzelner Token-Chunk
-    response_done = pyqtSignal()         # Antwort vollständig
-    error_occurred = pyqtSignal(str)     # Fehlermeldung
-
-    def __init__(self, url: str, model: str, messages: list, parent=None):
-        super().__init__(parent)
-        self._url     = url.rstrip("/")
-        self._model   = model
-        self._messages = messages
-
-    def run(self):
-        endpoint = f"{self._url}/api/chat"
-        payload = {
-            "model":    self._model,
-            "messages": self._messages,
-            "stream":   True,
-        }
-        try:
-            with requests.post(
-                endpoint,
-                json=payload,
-                stream=True,
-                timeout=120,
-            ) as resp:
-                if resp.status_code != 200:
-                    self.error_occurred.emit(
-                        f"Ollama antwortet mit Status {resp.status_code}.\n"
-                        f'Ist das Modell "{self._model}" geladen?'
-                    )
-                    return
-                for raw_line in resp.iter_lines():
-                    if not raw_line:
-                        continue
-                    try:
-                        data = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        continue
-                    content = data.get("message", {}).get("content", "")
-                    if content:
-                        self.token_ready.emit(content)
-                    if data.get("done"):
-                        break
-        except requests.exceptions.ConnectionError:
-            self.error_occurred.emit(
-                "Keine Verbindung zu Ollama.\n"
-                "Bitte Ollama starten: ollama serve"
-            )
-        except Exception as exc:
-            self.error_occurred.emit(f"Fehler: {exc}")
-        finally:
-            self.response_done.emit()
-
-
 # ── Chat-UI ───────────────────────────────────────────────────────────────────
 class TutorPanel(QWidget):
     """Seitliches Chat-Panel für Infi, den KI-Tutor."""
@@ -170,8 +112,8 @@ class TutorPanel(QWidget):
         self._history: list[dict] = [
             {"role": "system", "content": INFI_SYSTEM_PROMPT}
         ]
-        self._worker: OllamaWorker | None = None
-        self._retired_workers: list = []   # hält OllamaWorker bis finished
+        self._worker: OllamaStreamWorker | None = None
+        self._retired_workers: list = []   # hält Worker-Referenzen bis finished
         self._pending_response = ""
         self._code_provider = None         # liefert den Code des aktuellen Editor-Tabs
         self._build_ui()
@@ -373,18 +315,14 @@ class TutorPanel(QWidget):
         self._status_lbl.setToolTip("Infi denkt …")
         self._pending_response = ""
 
-        self._worker = OllamaWorker(
-            self._ollama_url, self._model, self._history, self
+        self._worker = OllamaStreamWorker(
+            self._ollama_url, self._model, self._history, parent=self
         )
         self._worker.token_ready.connect(self._on_token)
         self._worker.response_done.connect(self._on_done)
         self._worker.error_occurred.connect(self._on_error)
-        # finished feuert NACH run() – erst dann ist es sicher, die Referenz freizugeben
-        w = self._worker
-        self._worker.finished.connect(
-            lambda t=w: self._retired_workers.remove(t)
-            if t in self._retired_workers else None
-        )
+        # Referenz halten, bis der Thread wirklich beendet ist (finished).
+        retain_thread(self._retired_workers, self._worker)
         self._worker.start()
 
         # Platzhalter für die laufende Antwort einfügen
@@ -415,10 +353,8 @@ class TutorPanel(QWidget):
         color = THEME["success"]
         self._status_lbl.setStyleSheet(f"color:{color}; font-size:10px;")
         self._status_lbl.setToolTip("Ollama verbunden")
-        # Worker-Referenz in Warteliste verschieben; finished-Signal entfernt sie
-        if self._worker is not None:
-            self._retired_workers.append(self._worker)
-            self._worker = None
+        # Referenz liegt bereits in _retired_workers (retain_thread).
+        self._worker = None
 
     def _on_error(self, msg: str):
         err_color = THEME["error"]
@@ -432,9 +368,7 @@ class TutorPanel(QWidget):
             f"color:{THEME['error']}; font-size:10px;"
         )
         self._status_lbl.setToolTip("Ollama nicht erreichbar")
-        if self._worker is not None:
-            self._retired_workers.append(self._worker)
-            self._worker = None
+        self._worker = None
 
     # ── Verlauf löschen ─────────────────────────────────────────────────────
     def _clear_history(self):

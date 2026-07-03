@@ -14,6 +14,19 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import THEME, tool_command
+from .qt_utils import retain_thread
+
+# Sitzungs-eigener, privater Ordner für Geräte-Downloads. mkdtemp (0700) statt
+# fester Namen direkt im geteilten /tmp – verhindert Namenskollisionen und
+# Symlink-Tricks anderer Nutzer auf Mehrbenutzer-Systemen.
+_DOWNLOAD_DIR: str | None = None
+
+
+def _download_dir() -> str:
+    global _DOWNLOAD_DIR
+    if _DOWNLOAD_DIR is None or not os.path.isdir(_DOWNLOAD_DIR):
+        _DOWNLOAD_DIR = tempfile.mkdtemp(prefix="nitcode_controller_")
+    return _DOWNLOAD_DIR
 
 
 class _DirsFirstProxy(QSortFilterProxyModel):
@@ -256,7 +269,7 @@ class FilePanel(QWidget):
 # Controller-Dateiliste
 # ──────────────────────────────────────────────────────────────────────────────
 
-class _DeviceListWorker(QThread):
+class DeviceListWorker(QThread):
     result       = pyqtSignal(list)   # [(name, size_str, is_dir), ...]
     firmware_info = pyqtSignal(str)   # Firmware-Version-String
     error        = pyqtSignal(str)
@@ -335,6 +348,32 @@ class _DeviceListWorker(QThread):
         self.result.emit(files)
 
 
+class _DeviceCmdWorker(QThread):
+    """Führt einen einzelnen mpremote-/Geräte-Befehl im Hintergrund aus.
+
+    Hält den UI-Thread frei – die Befehle (Download, Löschen, Verschieben)
+    können bei belegtem Port bis zum Timeout dauern.
+    """
+    done = pyqtSignal(bool, str)   # (ok, fehlermeldung)
+
+    def __init__(self, args: list[str], timeout: int = 15):
+        super().__init__()
+        self._args = args
+        self._timeout = timeout
+
+    def run(self):
+        try:
+            r = subprocess.run(
+                self._args, capture_output=True, text=True, timeout=self._timeout,
+            )
+            if r.returncode == 0:
+                self.done.emit(True, "")
+            else:
+                self.done.emit(False, (r.stderr or "").strip() or "Befehl fehlgeschlagen")
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
 class DeviceFilePanel(QWidget):
     """Zeigt Dateien auf dem angeschlossenen MicroPython-Controller."""
 
@@ -352,8 +391,9 @@ class DeviceFilePanel(QWidget):
         super().__init__(parent)
         self._port = ""
         self._cwd = ""   # aktuell angezeigtes Verzeichnis ("" = Wurzel)
-        self._worker: _DeviceListWorker | None = None
+        self._worker: DeviceListWorker | None = None
         self._retired_workers: list = []
+        self._cmd_busy = False   # es läuft gerade eine Geräte-Operation
         self._setup_ui()
 
     def _setup_ui(self):
@@ -458,11 +498,7 @@ class DeviceFilePanel(QWidget):
                 old.firmware_info.disconnect(self.firmware_info)
             except TypeError:
                 pass
-            self._retired_workers.append(old)
-            old.finished.connect(
-                lambda t=old: self._retired_workers.remove(t)
-                if t in self._retired_workers else None
-            )
+            retain_thread(self._retired_workers, old)
 
         # Ladehinweis nur zeigen, wenn noch keine Dateien sichtbar sind –
         # sonst bleibt die bestehende Liste ruhig stehen.
@@ -471,7 +507,7 @@ class DeviceFilePanel(QWidget):
             self._status_lbl.setVisible(True)
         self._btn_refresh.setEnabled(False)
 
-        worker = _DeviceListWorker(port, self._cwd)
+        worker = DeviceListWorker(port, self._cwd)
         worker.result.connect(self._on_result)
         worker.firmware_info.connect(self.firmware_info)
         worker.error.connect(self._on_error)
@@ -601,22 +637,48 @@ class DeviceFilePanel(QWidget):
         menu.addAction("↻ Aktualisieren", lambda: self.refresh(self._port))
         menu.exec(self._list.viewport().mapToGlobal(pos))
 
+    def _run_device_cmd(self, args: list[str], on_done, timeout: int = 15):
+        """Startet einen Geräte-Befehl im Hintergrund (UI bleibt bedienbar).
+
+        ``on_done(ok, fehlermeldung)`` wird nach Abschluss im GUI-Thread
+        aufgerufen. Parallel laufende Operationen werden abgewiesen, damit
+        sich nicht zwei mpremote-Prozesse denselben Port streitig machen.
+        """
+        if self._cmd_busy:
+            QMessageBox.information(
+                self, "Controller",
+                "Es läuft noch ein Vorgang auf dem Controller – bitte kurz warten.",
+            )
+            return
+        self._cmd_busy = True
+        self._btn_refresh.setEnabled(False)
+
+        def _finished(ok: bool, err: str):
+            self._cmd_busy = False
+            self._btn_refresh.setEnabled(True)
+            on_done(ok, err)
+
+        worker = _DeviceCmdWorker(args, timeout)
+        worker.done.connect(_finished)
+        retain_thread(self._retired_workers, worker)
+        worker.start()
+
     def _open_file(self, name: str):
         if not self._port or not name:
             return
-        tmp_path = os.path.join(tempfile.gettempdir(), name)
-        try:
-            r = subprocess.run(
-                [*tool_command("mpremote"), "connect", self._port,
-                 "cp", f":{self._remote_path(name)}", tmp_path],
-                capture_output=True, text=True, timeout=15,
-            )
-            if r.returncode == 0:
+        tmp_path = os.path.join(_download_dir(), os.path.basename(name))
+
+        def _done(ok: bool, err: str):
+            if ok:
                 self.file_open_requested.emit(tmp_path)
             else:
-                QMessageBox.critical(self, "Fehler", r.stderr.strip() or "Download fehlgeschlagen")
-        except Exception as e:
-            QMessageBox.critical(self, "Fehler", str(e))
+                QMessageBox.critical(self, "Fehler", err or "Download fehlgeschlagen")
+
+        self._run_device_cmd(
+            [*tool_command("mpremote"), "connect", self._port,
+             "cp", f":{self._remote_path(name)}", tmp_path],
+            _done, timeout=15,
+        )
 
     def _delete_file(self, name: str):
         reply = QMessageBox.question(
@@ -626,18 +688,18 @@ class DeviceFilePanel(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            r = subprocess.run(
-                [*tool_command("mpremote"), "connect", self._port,
-                 "rm", f":{self._remote_path(name)}"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if r.returncode == 0:
+
+        def _done(ok: bool, err: str):
+            if ok:
                 self.refresh(self._port)
             else:
-                QMessageBox.critical(self, "Fehler", r.stderr.strip() or "Löschen fehlgeschlagen")
-        except Exception as e:
-            QMessageBox.critical(self, "Fehler", str(e))
+                QMessageBox.critical(self, "Fehler", err or "Löschen fehlgeschlagen")
+
+        self._run_device_cmd(
+            [*tool_command("mpremote"), "connect", self._port,
+             "rm", f":{self._remote_path(name)}"],
+            _done, timeout=10,
+        )
 
     def _visible_subdirs(self) -> list[str]:
         """Ordner im aktuell angezeigten Verzeichnis (aus der Liste gelesen)."""
@@ -690,19 +752,19 @@ class DeviceFilePanel(QWidget):
         if target_dir:
             code += f"try:\n os.mkdir({target_dir!r})\nexcept OSError: pass\n"
         code += f"os.rename({src!r}, {dst!r})\n"
-        try:
-            r = subprocess.run(
-                [*tool_command("mpremote"), "connect", self._port, "exec", code],
-                capture_output=True, text=True, timeout=15,
-            )
-            if r.returncode == 0:
+
+        def _done(ok: bool, err: str):
+            if ok:
                 self.refresh(self._port)
             else:
                 QMessageBox.critical(
-                    self, "Fehler", r.stderr.strip() or "Verschieben fehlgeschlagen"
+                    self, "Fehler", err or "Verschieben fehlgeschlagen"
                 )
-        except Exception as e:
-            QMessageBox.critical(self, "Fehler", str(e))
+
+        self._run_device_cmd(
+            [*tool_command("mpremote"), "connect", self._port, "exec", code],
+            _done, timeout=15,
+        )
 
     def show_folder(self, port: str, folder: str = ""):
         """Öffnet das Geräte-Panel direkt in einem bestimmten Ordner."""

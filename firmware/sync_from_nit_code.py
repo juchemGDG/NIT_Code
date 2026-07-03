@@ -16,7 +16,13 @@ Nach jeder Aenderung an Bloecken oder Toolbox in NIT_Code einmal ausfuehren:
 
 Dadurch ist jeder neue/geaenderte Block automatisch auch im iPad-Modus
 verfuegbar – ohne Doppelpflege.
+
+Mit ``--check`` wird nichts geschrieben, sondern nur geprueft, ob
+firmware/www/ noch synchron zu nit_code/assets/blockly/ ist (Exit-Code 1,
+wenn nicht). Gedacht fuer die Release-Skripte, damit ein vergessener Sync
+vor dem Build auffaellt.
 """
+import filecmp
 import re
 import shutil
 import sys
@@ -48,9 +54,32 @@ EXCLUDE_CATEGORIES = [
 ]
 
 
+def check() -> None:
+    """Prueft, ob firmware/www/ synchron ist – ohne etwas zu schreiben."""
+    stale: list[str] = []
+    pairs = [(SRC / name, DST / name) for name in FILES]
+    pairs.append((SRC / "de.js", DST / "msg" / "de.js"))
+    media = SRC / "media"
+    if media.is_dir():
+        pairs += [(f, DST / "media" / f.name) for f in media.iterdir() if f.is_file()]
+    for src, dst in pairs:
+        if not dst.exists() or not filecmp.cmp(src, dst, shallow=False):
+            stale.append(str(dst.relative_to(ROOT)))
+    if stale:
+        print("NICHT synchron – bitte 'python firmware/sync_from_nit_code.py' ausfuehren:")
+        for s in stale:
+            print("  ", s)
+        sys.exit(1)
+    print("firmware/www/ ist synchron zu nit_code/assets/blockly/.")
+
+
 def main() -> None:
     if not SRC.is_dir():
         sys.exit(f"Quelle nicht gefunden: {SRC}")
+
+    if "--check" in sys.argv[1:]:
+        check()
+        return
 
     (DST / "msg").mkdir(parents=True, exist_ok=True)
     (DST / "media").mkdir(parents=True, exist_ok=True)

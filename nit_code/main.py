@@ -2,12 +2,42 @@
 import os
 import sys
 import traceback
-from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtCore import Qt, QObject, pyqtSignal
+from PyQt6.QtGui import QFont
 
 from .main_window import MainWindow, build_global_style
+from .qt_utils import find_logo
+
+
+class _ExceptionBridge(QObject):
+    """Leitet Fehlermeldungen aus beliebigen Threads in den GUI-Thread.
+
+    Qt-Widgets (QMessageBox) dürfen ausschließlich im GUI-Thread erzeugt
+    werden. Ausnahmen aus Worker-Threads werden daher über dieses Signal
+    gemeldet – die Queued-Connection stellt sicher, dass der Slot (und damit
+    die Dialog-Anzeige) im GUI-Thread läuft.
+    """
+    occurred = pyqtSignal(str)
+
+
+_exception_bridge: _ExceptionBridge | None = None
+
+
+def _show_exception_box(msg: str):
+    """Zeigt den Fehlerdialog – läuft immer im GUI-Thread (Signal-Slot)."""
+    try:
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Unerwarteter Fehler")
+        box.setText(
+            "In NIT_Code ist ein unerwarteter Fehler aufgetreten.\n"
+            "Das Programm versucht weiterzulaufen."
+        )
+        box.setDetailedText(msg)
+        box.exec()
+    except Exception:
+        pass
 
 
 def _install_exception_hook():
@@ -19,7 +49,13 @@ def _install_exception_hook():
     die Ursache für die sporadischen Abstürze z. B. beim Wechsel in den
     MicroPython-Modus (Port-Scan/Geräteerkennung). Mit diesem Hook wird der
     Fehler stattdessen angezeigt und das Programm läuft weiter.
+
+    Muss NACH dem Erzeugen der QApplication aufgerufen werden (GUI-Thread).
     """
+    global _exception_bridge
+    _exception_bridge = _ExceptionBridge()
+    _exception_bridge.occurred.connect(_show_exception_box)
+
     def _handle(exc_type, exc_value, exc_tb):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_tb)
@@ -30,17 +66,11 @@ def _install_exception_hook():
             sys.stderr.write(msg)
         except Exception:
             pass
-        # Für den Nutzer sichtbar machen, ohne die App zu beenden.
+        # Für den Nutzer sichtbar machen, ohne die App zu beenden. Das Signal
+        # sorgt dafür, dass der Dialog auch bei Ausnahmen in Worker-Threads
+        # sicher im GUI-Thread erscheint.
         try:
-            box = QMessageBox()
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setWindowTitle("Unerwarteter Fehler")
-            box.setText(
-                "In NIT_Code ist ein unerwarteter Fehler aufgetreten.\n"
-                "Das Programm versucht weiterzulaufen."
-            )
-            box.setDetailedText(msg)
-            box.exec()
+            _exception_bridge.occurred.emit(msg)
         except Exception:
             pass
 
@@ -64,26 +94,53 @@ def _install_exception_hook():
         pass
 
 
-def _find_logo() -> QIcon:
-    """Sucht logo.png im Paket- oder Projektordner."""
-    candidates = []
-    if getattr(sys, 'frozen', False):
-        # PyInstaller-Bundle: logo.png liegt neben der EXE in nit_code/
-        exe_dir = Path(sys.executable).parent
-        candidates.append(exe_dir / "nit_code" / "logo.png")
-        if hasattr(sys, '_MEIPASS'):
-            candidates.append(Path(sys._MEIPASS) / "nit_code" / "logo.png")
-    candidates += [
-        Path(__file__).resolve().parent / "logo.png",          # nit_code/logo.png
-        Path(__file__).resolve().parent.parent / "logo.png",    # Projektordner/logo.png
-    ]
-    from PyQt6.QtGui import QPixmap
-    for p in candidates:
-        if p.exists():
-            px = QPixmap(str(p))
-            if not px.isNull():
-                return QIcon(px)
-    return QIcon()
+def _is_windows_remote_session() -> bool:
+    """True in einer RDP-/Terminalserver-Sitzung unter Windows."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        SM_REMOTESESSION = 0x1000
+        return bool(ctypes.windll.user32.GetSystemMetrics(SM_REMOTESESSION))
+    except Exception:
+        return os.environ.get("SESSIONNAME", "").upper().startswith("RDP-")
+
+
+def _configure_webengine():
+    """Härtet QtWebEngine (Block-Editor, AIS-Chat, Mermaid) gegen GPU-Abstürze.
+
+    Auf Windows-Terminalservern/RDP-Sitzungen (typisch: Schulserver) steht
+    keine bzw. nur eine virtuelle GPU zur Verfügung. Chromiums GPU-Prozess
+    stürzt dort beim Start einer WebEngine-Ansicht ab und reißt die App mit –
+    genau das Symptom „Block-Editor öffnen → NIT_Code beendet sich“. In diesen
+    Umgebungen wird die GPU-Beschleunigung abgeschaltet (Software-Rendering);
+    auf normalen Rechnern ändert sich nichts.
+
+    Über NIT_SOFTWARE_RENDER=1 lässt sich das Verhalten auch manuell erzwingen
+    (z. B. bei exotischen Treiberproblemen), muss aber nicht konfiguriert werden.
+
+    Muss VOR dem Erzeugen der QApplication laufen, da Chromium die Flags nur
+    beim Start liest.
+    """
+    flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+
+    def add(flag: str):
+        nonlocal flags
+        if flag not in flags:
+            flags = f"{flags} {flag}".strip()
+
+    if os.environ.get("NIT_SOFTWARE_RENDER") == "1" or _is_windows_remote_session():
+        add("--disable-gpu")
+        add("--disable-gpu-compositing")
+
+    if flags:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = flags
+
+    # Von QtWebEngine vorausgesetzt, wenn Ansichten in mehreren Fenstern
+    # (Hauptfenster-Panels + Block-Editor-Extrafenster) erzeugt werden.
+    QApplication.setAttribute(
+        Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True
+    )
 
 
 def _install_truststore():
@@ -138,6 +195,7 @@ def _suppress_child_consoles():
 def main():
     _install_truststore()
     _suppress_child_consoles()
+    _configure_webengine()
 
     # High-DPI Unterstützung
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -150,7 +208,7 @@ def main():
     app.setOrganizationName("NIT")
     app.setStyleSheet(build_global_style())
 
-    logo = _find_logo()
+    logo = find_logo()
     if not logo.isNull():
         app.setWindowIcon(logo)
 

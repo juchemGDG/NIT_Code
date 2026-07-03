@@ -13,7 +13,7 @@ GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 | **Python (lokal)** | Code schreiben und mit lokaler Python-Installation (`.venv`) ausführen |
 | **MicroPython** | Direktes Programmieren für ESP32, micro:bit v2, Raspberry Pi Pico 2 / Pico 2W |
 | **Firmware flashen** | MicroPython-Firmware von lokaler Datei oder micropython.org flashen |
-| **Bibliotheks-Manager** | Bibliotheken aus [NIT_Bibliotheken](https://github.com/juchemGDG/NIT_Bibliotheken) direkt auf den Controller laden |
+| **Bibliotheks-Manager** | Bibliotheken aus [NIT_Bibliotheken](https://github.com/juchemGDG/NIT_Bibliotheken) direkt auf den Controller laden – online oder (in Schulnetzen ohne Internet) offline aus einem entpackten ZIP-Ordner |
 | **Block-Editor** | Blockbasiert programmieren (wie Snap!/Scratch) und automatisch in lesbaren Python-/MicroPython-Code umwandeln – inkl. GPIO-, ADC-, DAC-, NeoPixel- und nitbw-Bibliotheks-Blöcken |
 | **Serial Plotter** | Zahlenausgabe eines laufenden Programms live als Graph – ideal für Sensorwerte (Temperatur, Abstand, Helligkeit). Bei Bedarf über „Ausführen → 📈 Serial Plotter" einblendbar |
 | **KI-Codegenerator** | Schülerinnen und Schüler spezifizieren Eingabe/Ablauf/Ausgabe/Variablen, die KI setzt es in Code um (lokal via Ollama) |
@@ -274,6 +274,31 @@ oder direkt:
 - **micro:bit v2**
 - **Raspberry Pi Pico 2**
 - **Raspberry Pi Pico 2W**
+
+---
+
+## Schulnetze mit Proxy
+
+Viele Schulnetze leiten den Internetverkehr über einen Proxy, der eine
+Anmeldung verlangt. Downloads (Bibliotheken, Firmware, pip) schlagen dann mit
+`407 Proxy Authentication Required` fehl – der Browser meldet sich automatisch
+mit der Windows-Anmeldung an, Programme können das nicht. NIT_Code zeigt in dem
+Fall einen erklärenden Hinweis statt eines kryptischen Fehlers.
+
+Zwei Lösungswege:
+
+1. **Administrator gibt die benötigten Adressen am Proxy frei** (empfohlen):
+   `raw.githubusercontent.com`, `api.github.com`, `micropython.org`,
+   `pypi.org`, `files.pythonhosted.org`.
+2. **Offline-Installation der Bibliotheken:** Das Repository
+   [NIT_Bibliotheken](https://github.com/juchemGDG/NIT_Bibliotheken) einmal (z. B.
+   zu Hause) über „Code → Download ZIP“ herunterladen und entpacken. Im
+   Bibliotheks-Manager dann **„📁 Aus Ordner installieren …“** wählen und den
+   entpackten Ordner angeben – das läuft komplett ohne Internet.
+
+> Software-Rendering für den Block-Editor auf Terminal-/RDP-Servern lässt sich
+> bei Grafikproblemen mit der Umgebungsvariable `NIT_SOFTWARE_RENDER=1`
+> erzwingen (in RDP-Sitzungen erkennt NIT_Code das automatisch).
 
 ---
 

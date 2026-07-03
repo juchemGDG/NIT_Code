@@ -2,11 +2,8 @@
 import json
 import os
 import re
-import sys
-from pathlib import Path
 
-import requests
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QRect, QPoint, QUrl
+from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QTextEdit, QPushButton, QFrame, QLayout, QSizePolicy,
@@ -18,22 +15,9 @@ try:
 except ImportError:
     _WEBENGINE_AVAILABLE = False
 
-from .config import THEME, TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL
-
-
-# ── Offline-Asset-Pfad (mermaid.min.js) ──────────────────────────────────────
-def _asset_path(name: str):
-    """Findet eine Datei im assets-Ordner – im Dev- wie im PyInstaller-Bundle."""
-    candidates = []
-    if getattr(sys, "frozen", False):
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(Path(sys._MEIPASS) / "nit_code" / "assets" / name)
-        candidates.append(Path(sys.executable).parent / "nit_code" / "assets" / name)
-    candidates.append(Path(__file__).resolve().parent / "assets" / name)
-    for p in candidates:
-        if p.exists():
-            return p
-    return None
+from .config import THEME, TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL, asset_path as _asset_path
+from .ollama_client import OllamaStreamWorker
+from .qt_utils import retain_thread
 
 
 # ── FlowLayout: Buttons brechen automatisch in die nächste Zeile um ──────────
@@ -613,61 +597,6 @@ class MermaidPreview(QWidget):
         self._view.page().runJavaScript("renderMermaid(%s);" % json.dumps(code))
 
 
-# ── Ollama-Worker ─────────────────────────────────────────────────────────────
-class _OllamaWorker(QThread):
-    token_ready    = pyqtSignal(str)
-    response_done  = pyqtSignal()
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, url: str, model: str, messages: list,
-                 temperature: float, parent=None):
-        super().__init__(parent)
-        self._url         = url.rstrip("/")
-        self._model       = model
-        self._messages    = messages
-        self._temperature = temperature
-
-    def run(self):
-        endpoint = f"{self._url}/api/chat"
-        payload = {
-            "model":    self._model,
-            "messages": self._messages,
-            "stream":   True,
-            "options":  {"temperature": self._temperature},
-        }
-        try:
-            with requests.post(
-                endpoint, json=payload, stream=True, timeout=120,
-            ) as resp:
-                if resp.status_code != 200:
-                    self.error_occurred.emit(
-                        f"Ollama antwortet mit Status {resp.status_code}.\n"
-                        f'Ist das Modell "{self._model}" geladen?'
-                    )
-                    return
-                for raw_line in resp.iter_lines():
-                    if not raw_line:
-                        continue
-                    try:
-                        data = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        continue
-                    content = data.get("message", {}).get("content", "")
-                    if content:
-                        self.token_ready.emit(content)
-                    if data.get("done"):
-                        break
-        except requests.exceptions.ConnectionError:
-            self.error_occurred.emit(
-                "Keine Verbindung zu Ollama.\n"
-                "Bitte Ollama starten: ollama serve"
-            )
-        except Exception as exc:
-            self.error_occurred.emit(f"Fehler: {exc}")
-        finally:
-            self.response_done.emit()
-
-
 # ── CoderPanel ────────────────────────────────────────────────────────────────
 class CoderPanel(QWidget):
     """Seitliches Panel: Schüler spezifizieren vollständig – Bot generiert Code."""
@@ -1144,18 +1073,15 @@ class CoderPanel(QWidget):
         )
         self._pending_response = ""
 
-        self._worker = _OllamaWorker(
+        self._worker = OllamaStreamWorker(
             self._ollama_url, self._model, self._history,
             temperature=0.25, parent=self,
         )
         self._worker.token_ready.connect(self._on_token)
         self._worker.response_done.connect(self._on_done)
         self._worker.error_occurred.connect(self._on_error)
-        w = self._worker
-        self._worker.finished.connect(
-            lambda t=w: self._retired_workers.remove(t)
-            if t in self._retired_workers else None
-        )
+        # Referenz halten, bis der Thread wirklich beendet ist (finished).
+        retain_thread(self._retired_workers, self._worker)
         self._worker.start()
 
         self._chat_view.append("")
@@ -1204,9 +1130,8 @@ class CoderPanel(QWidget):
         self._status_lbl.setStyleSheet(
             f"color:{THEME['success']}; font-size:10px; margin-left:6px;"
         )
-        if self._worker is not None:
-            self._retired_workers.append(self._worker)
-            self._worker = None
+        # Referenz liegt bereits in _retired_workers (retain_thread).
+        self._worker = None
 
     def _on_error(self, msg: str):
         self._chat_view.append(
@@ -1219,9 +1144,7 @@ class CoderPanel(QWidget):
         self._status_lbl.setStyleSheet(
             f"color:{THEME['error']}; font-size:10px; margin-left:6px;"
         )
-        if self._worker is not None:
-            self._retired_workers.append(self._worker)
-            self._worker = None
+        self._worker = None
 
     # ── Code einfügen ────────────────────────────────────────────────────────
     def _on_insert_code(self):

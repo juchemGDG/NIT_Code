@@ -26,6 +26,7 @@ import network
 STATIC_DIR = "/www"
 CODE_FILE = "/user_code.py"
 MAX_LINES = 800   # Ringpuffer-Groesse fuer Konsolenausgaben
+MAX_BODY = 64 * 1024   # Obergrenze fuer POST-Bodies (RAM-Schutz des ESP32)
 
 MIME_TYPES = {
     ".html": "text/html",
@@ -170,7 +171,15 @@ async def handle_client(reader, writer):
             return
         method, path = parts[0], parts[1]
         headers = await read_headers(reader)
-        content_length = int(headers.get("content-length", 0))
+        try:
+            content_length = int(headers.get("content-length", 0))
+        except ValueError:
+            content_length = 0
+        if content_length > MAX_BODY:
+            # Zu grosse Bodies gar nicht erst einlesen – wuerde den knappen
+            # RAM des ESP32 erschoepfen und das Board zum Absturz bringen.
+            await send_text(writer, "Anfrage zu gross", status="413 Payload Too Large")
+            return
 
         if method == "GET" and path.startswith("/api/output"):
             since = 0
@@ -193,6 +202,13 @@ async def handle_client(reader, writer):
             await send_text(writer, json.dumps({"ssid": ssid}), mime="application/json")
 
         elif method == "GET":
+            # Nur Dateien unterhalb von /www ausliefern: ".."-Segmente wuerden
+            # sonst beliebige Dateien vom Flash lesbar machen (Path Traversal,
+            # z. B. GET /../user_code.py). Query-String ignorieren.
+            path = path.split("?", 1)[0]
+            if ".." in path or "\\" in path:
+                await send_text(writer, "Not found", status="404 Not Found")
+                return
             if path == "/":
                 path = "/index.html"
             await send_file(writer, STATIC_DIR + path)

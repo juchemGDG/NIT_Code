@@ -21,8 +21,9 @@ from PyQt6.QtWidgets import (
 
 from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, python_executable, tool_command, set_theme
 from .editor_widget import CodeEditor
-from .file_panel import FilePanel, DeviceFilePanel
+from .file_panel import FilePanel, DeviceFilePanel, DeviceListWorker
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
+from .qt_utils import retain_thread, find_logo
 from .block_panel import BlockEditorWindow
 from .parsons_panel import ParsonsWindow
 from .csv_plot import CsvPlotWindow
@@ -172,6 +173,53 @@ QScrollBar::handle:horizontal {{
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Sketchbook-Durchsuchung (Menü + Git-Repo-Suche)
+# ──────────────────────────────────────────────────────────────────────────────
+# Das Standard-Sketchbook ist das Home-Verzeichnis. Ohne Tiefen-/Ordner-Grenzen
+# würden Menüaufbau und Repo-Suche dort den UI-Thread minutenlang blockieren
+# (node_modules, Foto-Sammlungen, Caches …).
+_SKETCHBOOK_MAX_DEPTH = 3
+_SKETCHBOOK_SKIP_DIRS = {
+    "node_modules", "__pycache__", ".venv", "venv", "env",
+    "AppData", "Library", "site-packages",
+}
+
+
+def _skip_sketchbook_dir(name: str) -> bool:
+    """True für Ordner, die beim Durchsuchen des Sketchbooks ignoriert werden."""
+    return name.startswith(".") or name in _SKETCHBOOK_SKIP_DIRS
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Hell-Modus-Stile für Standard-Dialoge (gemeinsam genutzt)
+# ──────────────────────────────────────────────────────────────────────────────
+def _light_dialog_controls_qss(scope: str = "") -> str:
+    """Eingabefeld-/Button-Stile für Dialoge auf hellen System-Paletten.
+
+    ``scope`` schränkt die Selektoren optional ein (z. B. "QInputDialog"),
+    damit die Regeln nur innerhalb dieses Dialogtyps greifen.
+    """
+    s = f"{scope} " if scope else ""
+    return f"""
+        {s}QLineEdit, {s}QComboBox, {s}QListView {{
+            background: #ffffff;
+            color: #111827;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 4px 6px;
+        }}
+        {s}QPushButton {{
+            background: #e2e8f0;
+            color: #111827;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 6px 14px;
+        }}
+        {s}QPushButton:hover {{ background: #cbd5e1; }}
+    """
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Git-Clone-Dialog
 # ──────────────────────────────────────────────────────────────────────────────
 class GitCloneDialog(QDialog):
@@ -278,7 +326,7 @@ class GitCloneDialog(QDialog):
             return
         if app.palette().color(QPalette.ColorRole.Window).lightness() < 128:
             return
-        self.setStyleSheet("""
+        self.setStyleSheet(_light_dialog_controls_qss() + """
             QDialog, QWidget { background: #f8fafc; color: #111827; }
             QGroupBox {
                 background: #f1f5f9;
@@ -296,21 +344,6 @@ class GitCloneDialog(QDialog):
             }
             QLabel { color: #374151; }
             QLabel#hintLabel { color: #6b7280; font-size: 11px; }
-            QLineEdit {
-                background: #ffffff;
-                color: #111827;
-                border: 1px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 5px 8px;
-            }
-            QPushButton {
-                background: #e2e8f0;
-                color: #111827;
-                border: 1px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 6px 14px;
-            }
-            QPushButton:hover { background: #cbd5e1; }
             QPushButton:default {
                 background: #3b82f6;
                 color: white;
@@ -603,40 +636,6 @@ class _PortScanWorker(QThread):
         self.result.emit(ports)
 
 
-class _DeviceDirWorker(QThread):
-    """Liest die Ordnernamen im Wurzelverzeichnis des Controllers (best effort).
-
-    Läuft im Hintergrund, damit der Datei-Upload die Oberfläche nicht einfriert,
-    während mpremote die Raw-REPL betritt.
-    """
-    result = pyqtSignal(list)   # list[str] Ordnernamen
-
-    def __init__(self, port: str):
-        super().__init__()
-        self._port = port
-
-    def run(self):
-        code = (
-            "import os\n"
-            "for f in os.listdir():\n"
-            "    try:\n"
-            "        if os.stat(f)[0] & 0x4000: print('D:' + f)\n"
-            "    except: pass\n"
-        )
-        dirs: list[str] = []
-        try:
-            r = subprocess.run(
-                [*tool_command("mpremote"), "connect", self._port, "exec", code],
-                capture_output=True, text=True, timeout=8,
-            )
-            if r.returncode == 0:
-                dirs = [ln.strip()[2:] for ln in r.stdout.splitlines()
-                        if ln.strip().startswith("D:")]
-        except Exception:
-            pass
-        self.result.emit(dirs)
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Haupt-Fenster
 # ──────────────────────────────────────────────────────────────────────────────
@@ -702,17 +701,9 @@ class MainWindow(QMainWindow):
         self.resize(1280, 780)
         self.setStyleSheet(build_global_style())
         # Window-Icon (falls Logo noch nicht per app.setWindowIcon gesetzt)
-        from pathlib import Path
-        from PyQt6.QtGui import QIcon as _QIcon, QPixmap as _QPixmap
-        for p in [
-            Path(__file__).resolve().parent / "logo.png",
-            Path(__file__).resolve().parent.parent / "logo.png",
-        ]:
-            if p.exists():
-                px = _QPixmap(str(p))
-                if not px.isNull():
-                    self.setWindowIcon(_QIcon(px))
-                    break
+        logo = find_logo()
+        if not logo.isNull():
+            self.setWindowIcon(logo)
 
     # ──────────────────────────────────────────────────────────────────────
     # Menüleiste
@@ -1044,11 +1035,7 @@ class MainWindow(QMainWindow):
             return
         if old.isRunning():
             old.terminate_process()
-            self._retired_threads.append(old)
-            old.finished.connect(
-                lambda t=old: self._retired_threads.remove(t)
-                if t in self._retired_threads else None
-            )
+            retain_thread(self._retired_threads, old)
 
     def _on_device_refresh_start(self):
         self._port_busy = True
@@ -1537,10 +1524,17 @@ class MainWindow(QMainWindow):
             return
 
         # Ordnerliste des Controllers im Hintergrund holen, dann Auswahl + Upload
-        # fortsetzen – so friert die Oberfläche während des Raw-REPL-Zugriffs nicht ein.
+        # fortsetzen – so friert die Oberfläche während des Raw-REPL-Zugriffs nicht
+        # ein. Nutzt denselben Listing-Worker wie die Controller-Dateiansicht.
         self._console.append_info("↑  Ermittle Zielordner auf dem Controller …\n")
-        worker = _DeviceDirWorker(port)
-        worker.result.connect(lambda dirs: self._continue_upload(tab, port, dirs))
+        worker = DeviceListWorker(port)
+        worker.result.connect(
+            lambda files: self._continue_upload(
+                tab, port, [name for name, _size, is_dir in files if is_dir]
+            )
+        )
+        # Listing fehlgeschlagen → best effort mit leerer Ordnerliste fortfahren
+        worker.error.connect(lambda _msg: self._continue_upload(tab, port, []))
         self._track_aux_worker(worker)
         worker.start()
 
@@ -1555,30 +1549,34 @@ class MainWindow(QMainWindow):
         ziel = f"{folder}/" if folder else "Hauptebene"
         self._console.append_info(f"↑  Lade {remote_name} nach {ziel} auf {port} hoch ...\n")
 
-        # Zielordner ggf. anlegen (EEXIST wird ignoriert), dann kopieren.
-        if folder:
-            try:
-                subprocess.run(
-                    [*tool_command("mpremote"), "connect", port, "mkdir", f":{folder}"],
-                    capture_output=True, text=True, timeout=10,
-                )
-            except Exception:
-                pass
+        def _start_copy(*_args):
+            cmd = [*tool_command("mpremote"), "connect", port,
+                   "cp", tab.filepath, f":{remote_path}"]
+            self._retire_process()
+            self._process = ProcessRunner(cmd)
+            self._process.output.connect(self._on_process_output)
+            self._process.finished_run.connect(
+                lambda code: self._console.append_success("✓  Upload abgeschlossen.\n")
+                if code == 0 else self._console.append_error("✗  Upload fehlgeschlagen.\n")
+            )
+            # Nach erfolgreichem Upload die Controller-Dateiansicht im Zielordner zeigen
+            self._process.finished_run.connect(
+                lambda code: self._device_panel.show_folder(port, folder) if code == 0 else None
+            )
+            self._process.start()
 
-        cmd = [*tool_command("mpremote"), "connect", port,
-               "cp", tab.filepath, f":{remote_path}"]
-        self._retire_process()
-        self._process = ProcessRunner(cmd)
-        self._process.output.connect(self._on_process_output)
-        self._process.finished_run.connect(
-            lambda code: self._console.append_success("✓  Upload abgeschlossen.\n")
-            if code == 0 else self._console.append_error("✗  Upload fehlgeschlagen.\n")
-        )
-        # Nach erfolgreichem Upload die Controller-Dateiansicht im Zielordner zeigen
-        self._process.finished_run.connect(
-            lambda code: self._device_panel.show_folder(port, folder) if code == 0 else None
-        )
-        self._process.start()
+        if folder:
+            # Zielordner im Hintergrund anlegen (EEXIST-Fehler ist egal – der
+            # anschließende cp meldet echte Probleme), dann kopieren. Läuft als
+            # Worker, damit die Oberfläche nicht auf die Raw-REPL warten muss.
+            mkdir_proc = ProcessRunner(
+                [*tool_command("mpremote"), "connect", port, "mkdir", f":{folder}"]
+            )
+            mkdir_proc.finished_run.connect(_start_copy)
+            self._track_aux_worker(mkdir_proc)
+            mkdir_proc.start()
+        else:
+            _start_copy()
 
     def _choose_device_folder(self, dirs: list[str]) -> str | None:
         """Lässt den Zielordner für den Upload wählen.
@@ -1605,15 +1603,8 @@ class MainWindow(QMainWindow):
         return choice[len("📁 "):]   # Emoji-Präfix entfernen
 
     def _track_aux_worker(self, worker: QThread):
-        """Hält eine Referenz auf einen kurzlebigen Hilfs-Thread, bis er fertig ist.
-
-        Verhindert, dass Python den QThread per GC einsammelt, während er noch läuft
-        ('QThread destroyed while still running' → Absturz).
-        """
-        self._aux_workers.append(worker)
-        worker.finished.connect(
-            lambda w=worker: self._aux_workers.remove(w) if w in self._aux_workers else None
-        )
+        """Hält eine Referenz auf einen kurzlebigen Hilfs-Thread, bis er fertig ist."""
+        retain_thread(self._aux_workers, worker)
 
     def _flash_firmware(self):
         from .micropython_dialogs import FlashDialog
@@ -1803,13 +1794,21 @@ class MainWindow(QMainWindow):
             repos.append(normalized)
             seen.add(normalized)
 
+        # Begrenzte Suche (Tiefe + Ignorier-Liste): das Sketchbook ist per
+        # Default das Home-Verzeichnis – ein voller os.walk würde die
+        # Oberfläche bei jeder Git-Aktion einfrieren.
         for root, dirs, _files in os.walk(base):
             if ".git" in dirs:
                 repo_root = str(Path(root).resolve())
                 if repo_root not in seen:
                     repos.append(repo_root)
                     seen.add(repo_root)
-                dirs[:] = [d for d in dirs if d != ".git"]
+            rel = os.path.relpath(root, base)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
+            if depth >= _SKETCHBOOK_MAX_DEPTH:
+                dirs[:] = []
+            else:
+                dirs[:] = [d for d in dirs if not _skip_sketchbook_dir(d)]
 
         repos.sort(key=lambda p: p.casefold())
         return repos
@@ -1965,33 +1964,9 @@ class MainWindow(QMainWindow):
         if not self._is_light_system_palette():
             return
         dlg.setStyleSheet(
-            """
-            QInputDialog QLabel {
-                color: #111827;
-            }
-            QInputDialog QLineEdit,
-            QInputDialog QComboBox,
-            QInputDialog QListView {
-                background: #ffffff;
-                color: #111827;
-                border: 1px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 4px 6px;
-            }
-            QInputDialog QLineEdit::placeholder {
-                color: #6b7280;
-            }
-            QInputDialog QPushButton {
-                background: #e2e8f0;
-                color: #111827;
-                border: 1px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 6px 14px;
-            }
-            QInputDialog QPushButton:hover {
-                background: #cbd5e1;
-            }
-            """
+            "QInputDialog QLabel { color: #111827; }\n"
+            "QInputDialog QLineEdit::placeholder { color: #6b7280; }\n"
+            + _light_dialog_controls_qss("QInputDialog")
         )
 
     def _ask_text_input(self, title: str, label: str, default_text: str = "") -> tuple[str, bool]:
@@ -2067,6 +2042,15 @@ class MainWindow(QMainWindow):
         def on_clone_success():
             self._set_active_repo_after_clone(target)
             if username and password and url.startswith(("https://", "http://")):
+                # WICHTIG: git speichert die Clone-URL unverändert in
+                # .git/config (remote.origin.url) – inklusive eingebettetem
+                # Passwort/Token im Klartext. Deshalb die Remote-URL sofort
+                # auf die Variante OHNE Zugangsdaten zurücksetzen; für
+                # Pull/Push übernimmt der Credential-Helper (s. u.).
+                subprocess.run(
+                    ["git", "-C", target, "remote", "set-url", "origin", url],
+                    capture_output=True, check=False,
+                )
                 self._store_git_credentials(target, url, username, password)
 
         self._run_git_process(
@@ -2190,17 +2174,7 @@ class MainWindow(QMainWindow):
         if not repo:
             return
 
-        res = subprocess.run(
-            ["git", "-C", repo, "branch", "--format", "%(refname:short)"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res.returncode != 0:
-            self._console.append_error(res.stderr or "[Git] Branches konnten nicht gelesen werden.\n")
-            return
-
-        branches = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        branches = self._get_local_branches(repo)
         if not branches:
             QMessageBox.warning(self, "Git", "Keine lokalen Branches gefunden.")
             return
@@ -2654,14 +2628,23 @@ class MainWindow(QMainWindow):
         return python_executable()
 
     def _refresh_ports(self):
-        """Stößt einen Port-Scan im Hintergrund-Thread an (kein I/O im UI-Thread)."""
+        """Stößt einen Port-Scan im Hintergrund-Thread an (kein I/O im UI-Thread).
+
+        Der Worker wird wiederverwendet (QThread ist nach ``finished`` erneut
+        startbar) – so entsteht beim 3-Sekunden-Polling nicht alle paar
+        Sekunden ein neues QThread-Objekt.
+        """
         if self._port_scan_busy:
             return   # vorheriger Scan läuft noch – Ergebnis abwarten
+        worker = getattr(self, "_port_scan_worker", None)
+        if worker is None:
+            worker = _PortScanWorker()
+            worker.result.connect(self._apply_port_scan)
+            worker.finished.connect(lambda: setattr(self, "_port_scan_busy", False))
+            self._port_scan_worker = worker
+        if worker.isRunning():
+            return
         self._port_scan_busy = True
-        worker = _PortScanWorker()
-        worker.result.connect(self._apply_port_scan)
-        worker.finished.connect(lambda: setattr(self, "_port_scan_busy", False))
-        self._track_aux_worker(worker)
         worker.start()
 
     def _apply_port_scan(self, ports: list):
@@ -2943,24 +2926,41 @@ class MainWindow(QMainWindow):
             info = self._m_sketchbook.addAction("(Keine .py-Dateien gefunden)")
             info.setEnabled(False)
 
-    def _populate_sketchbook_menu(self, menu: QMenu, directory: Path) -> bool:
+    # Obergrenze an Einträgen pro Menüebene – schützt vor riesigen Ordnern.
+    _MENU_MAX_ENTRIES = 60
+
+    def _populate_sketchbook_menu(self, menu: QMenu, directory: Path, depth: int = 0) -> bool:
+        """Baut das Sketchbook-Menü mit Tiefen- und Mengen-Begrenzung auf.
+
+        Das Sketchbook ist per Default das Home-Verzeichnis – unbegrenzte
+        Rekursion beim Menü-Öffnen würde die Oberfläche dort einfrieren.
+        """
         has_entries = False
         try:
             children = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
         except OSError:
             return False
 
+        shown = 0
         for child in children:
+            if shown >= self._MENU_MAX_ENTRIES:
+                info = menu.addAction("… (weitere Einträge ausgeblendet)")
+                info.setEnabled(False)
+                break
             if child.is_dir():
+                if _skip_sketchbook_dir(child.name) or depth + 1 >= _SKETCHBOOK_MAX_DEPTH:
+                    continue
                 sub_menu = menu.addMenu(child.name)
-                if not self._populate_sketchbook_menu(sub_menu, child):
+                if not self._populate_sketchbook_menu(sub_menu, child, depth + 1):
                     sub_menu.setEnabled(False)
                 else:
                     has_entries = True
+                    shown += 1
             elif child.is_file() and child.suffix.lower() == ".py":
                 action = menu.addAction(child.name)
                 action.triggered.connect(lambda _checked=False, p=str(child): self._open_file_path(p))
                 has_entries = True
+                shown += 1
 
         return has_entries
 
@@ -3100,5 +3100,8 @@ class MainWindow(QMainWindow):
         for t in list(self._aux_workers):
             if t.isRunning():
                 t.wait(1000)
+        scan = getattr(self, "_port_scan_worker", None)
+        if scan is not None and scan.isRunning():
+            scan.wait(1000)
         self._save_persistent_settings()
         event.accept()

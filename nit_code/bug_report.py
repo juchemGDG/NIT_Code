@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 from .config import (
     BUG_REPORT_URL, BUG_REPORT_EMAIL, APP_NAME, APP_VERSION, THEME,
 )
+from .net_hints import with_network_hint
 
 
 class BugReportWorker(QThread):
@@ -40,7 +41,7 @@ class BugReportWorker(QThread):
                 self.done.emit(False, "Server antwortete mit Status "
                                f"{resp.status_code}: {resp.text[:200]}")
         except Exception as e:
-            self.done.emit(False, str(e))
+            self.done.emit(False, with_network_hint(e))
 
 
 class BugReportDialog(QDialog):

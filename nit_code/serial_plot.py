@@ -133,15 +133,23 @@ class _PlotCanvas(QWidget):
         if xR <= xL:
             xR = xL + 1
 
+        # Sichtbaren Index-Ausschnitt einer Kurve direkt berechnen, statt bei
+        # jedem Neuzeichnen über alle (bis zu 50 000) gespeicherten Punkte zu
+        # iterieren – nur dieser Ausschnitt wird gezeichnet/ausgewertet.
+        def _visible_range(s: _Series) -> tuple[int, int]:
+            i0 = max(0, int(xL) - s.start)
+            i1 = min(len(s.values) - 1, int(xR) - s.start)
+            return i0, i1
+
         # ── Y-Bereich bestimmen ────────────────────────────────────────────
         if self._plot._y_mode == "fixed":
             ymin, ymax = self._plot._y_min, self._plot._y_max
         else:
-            vis = [
-                v for s in series.values()
-                for i, v in enumerate(s.values)
-                if xL <= s.start + i <= xR
-            ]
+            vis = []
+            for s in series.values():
+                i0, i1 = _visible_range(s)
+                if i1 >= i0:
+                    vis.extend(s.values[i0:i1 + 1])
             if vis:
                 ymin, ymax = min(vis), max(vis)
                 if ymin == ymax:
@@ -190,12 +198,10 @@ class _PlotCanvas(QWidget):
             pen.setWidth(2)
             p.setPen(pen)
             prev = None
-            for i, val in enumerate(s.values):
-                idx = s.start + i
-                if idx < xL or idx > xR:
-                    prev = None   # Lücke außerhalb des Sichtbereichs
-                    continue
-                x, y = x_at(idx), y_at(val)
+            i0, i1 = _visible_range(s)
+            for i in range(i0, i1 + 1):
+                val = s.values[i]
+                x, y = x_at(s.start + i), y_at(val)
                 if prev is not None:
                     p.drawLine(int(prev[0]), int(prev[1]), int(x), int(y))
                 prev = (x, y)
