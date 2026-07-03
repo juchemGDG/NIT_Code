@@ -125,10 +125,11 @@ class BlockEditorWindow(QMainWindow):
         QMessageBox.warning(
             self, "Block-Editor",
             "Die Anzeige des Block-Editors ist abgestürzt (Grafik-Problem).\n\n"
-            "Workaround: NIT_Code beenden, die Umgebungsvariable\n"
+            "Unter Windows ist Software-Rendering bereits automatisch aktiv.\n"
+            "Falls der Fehler weiter auftritt, NIT_Code neu starten.\n\n"
+            "Optionaler Override:\n"
             "    NIT_SOFTWARE_RENDER=1\n"
-            "setzen und NIT_Code neu starten – dann wird ohne "
-            "Grafikbeschleunigung gezeichnet.",
+            "(erzwingt Software-Rendering vor dem Start).",
         )
 
     # ── Laden eines Block-States (z. B. aus "Coder → Blockly") ────────────────

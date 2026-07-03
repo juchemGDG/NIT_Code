@@ -109,15 +109,19 @@ def _is_windows_remote_session() -> bool:
 def _configure_webengine():
     """Härtet QtWebEngine (Block-Editor, AIS-Chat, Mermaid) gegen GPU-Abstürze.
 
-    Auf Windows-Terminalservern/RDP-Sitzungen (typisch: Schulserver) steht
-    keine bzw. nur eine virtuelle GPU zur Verfügung. Chromiums GPU-Prozess
-    stürzt dort beim Start einer WebEngine-Ansicht ab und reißt die App mit –
-    genau das Symptom „Block-Editor öffnen → NIT_Code beendet sich“. In diesen
-    Umgebungen wird die GPU-Beschleunigung abgeschaltet (Software-Rendering);
-    auf normalen Rechnern ändert sich nichts.
+    Auf älteren Windows-Rechnern sowie in Terminalserver-/RDP-Sitzungen steht
+    oft keine stabile GPU-Beschleunigung für QtWebEngine zur Verfügung.
+    Chromiums GPU-Prozess kann dort beim Start einer WebEngine-Ansicht
+    abstürzen und die App mitreißen (Symptom: „Block-Editor öffnen → NIT_Code
+    beendet sich“).
 
-    Über NIT_SOFTWARE_RENDER=1 lässt sich das Verhalten auch manuell erzwingen
-    (z. B. bei exotischen Treiberproblemen), muss aber nicht konfiguriert werden.
+    Daher nutzen wir unter Windows standardmäßig Software-Rendering. Das
+    verhindert, dass Nutzer:innen (z. B. auf Schulservern) manuell
+    Umgebungsvariablen setzen müssen.
+
+    Steuerung per Umgebungsvariable:
+    - NIT_SOFTWARE_RENDER=1: Software-Rendering erzwingen
+    - NIT_SOFTWARE_RENDER=0: GPU-Beschleunigung erlauben (Opt-out)
 
     Muss VOR dem Erzeugen der QApplication laufen, da Chromium die Flags nur
     beim Start liest.
@@ -129,9 +133,24 @@ def _configure_webengine():
         if flag not in flags:
             flags = f"{flags} {flag}".strip()
 
-    if os.environ.get("NIT_SOFTWARE_RENDER") == "1" or _is_windows_remote_session():
+    force_render = os.environ.get("NIT_SOFTWARE_RENDER")
+    use_software_render = (
+        force_render == "1"
+        or (force_render != "0" and (sys.platform == "win32" or _is_windows_remote_session()))
+    )
+
+    if use_software_render:
+        # Chromium-GPU abschalten (QtWebEngine-Renderer).
         add("--disable-gpu")
         add("--disable-gpu-compositing")
+        # Auf einigen alten/virtuellen Windows-GPUs reicht das nicht, weil Qt
+        # weiterhin versucht, Hardware-OpenGL zu initialisieren.
+        os.environ.setdefault("QT_OPENGL", "software")
+        os.environ.setdefault("QT_QUICK_BACKEND", "software")
+        if sys.platform == "win32":
+            # Manche stark eingeschränkte Schulserver-Profile blockieren die
+            # Chromium-Sandbox und beenden den Renderer hart beim Start.
+            os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
     if flags:
         os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = flags
@@ -141,6 +160,13 @@ def _configure_webengine():
     QApplication.setAttribute(
         Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True
     )
+    if use_software_render:
+        try:
+            QApplication.setAttribute(
+                Qt.ApplicationAttribute.AA_UseSoftwareOpenGL, True
+            )
+        except Exception:
+            pass
 
 
 def _install_truststore():
