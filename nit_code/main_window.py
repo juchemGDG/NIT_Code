@@ -487,8 +487,12 @@ class GitConflictDialog(QDialog):
 
     # ── Git-Hilfen ──────────────────────────────────────────────────────────
     def _run(self, args: list[str], label: str) -> bool:
+        cmd = self._main._git_command("-C", self._repo, *args)
+        if cmd is None:
+            self._main._console.append_error("[Git] Git wurde auf diesem System nicht gefunden.\n")
+            return False
         res = subprocess.run(
-            ["git", "-C", self._repo, *args],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -665,6 +669,7 @@ class MainWindow(QMainWindow):
         self._settings_tutor_url: str = ""
         self._settings_tutor_model: str = ""
         self._settings_sketchbook: str = str(Path.home())
+        self._settings_git_executable: str = ""
         self._settings_git_repo: str = ""
         self._settings_theme: str = "classic_light"
         # Serial-Plotter-Achsen (Standardwerte; im Plotter live übersteuerbar)
@@ -790,24 +795,25 @@ class MainWindow(QMainWindow):
         self._m_upy.addSeparator()
 
         # ── Git ──
-        m_git = mb.addMenu("Git")
-        self._add_action(m_git, "Repository klonen …", self._git_clone)
-        self._add_action(m_git, "Repository auswählen …", self._git_select_repo)
-        m_git.addSeparator()
-        self._add_action(m_git, "Status", self._git_status)
-        self._add_action(m_git, "Fetch", self._git_fetch)
-        self._add_action(m_git, "Pull", self._git_pull)
-        self._add_action(m_git, "Push", self._git_push)
-        m_git.addSeparator()
-        self._add_action(m_git, "Aktuellen Branch anzeigen", self._git_show_branch)
-        self._add_action(m_git, "Branch wechseln …", self._git_switch_branch)
-        self._add_action(m_git, "Neuen Branch anlegen …", self._git_create_branch)
-        self._add_action(m_git, "Branch mergen …", self._git_merge_branch)
-        self._add_action(m_git, "Merge-Konflikte lösen …", self._git_resolve_conflicts)
-        self._add_action(m_git, "Vergleichen (Diff) …", self._git_diff)
-        self._add_action(m_git, "Historie anzeigen …", self._git_show_history)
-        m_git.addSeparator()
-        self._add_action(m_git, "Commit …", self._git_commit)
+        self._m_git = mb.addMenu("Git")
+        self._add_action(self._m_git, "Repository klonen …", self._git_clone)
+        self._add_action(self._m_git, "Repository auswählen …", self._git_select_repo)
+        self._m_git.addSeparator()
+        self._add_action(self._m_git, "Status", self._git_status)
+        self._add_action(self._m_git, "Fetch", self._git_fetch)
+        self._add_action(self._m_git, "Pull", self._git_pull)
+        self._add_action(self._m_git, "Push", self._git_push)
+        self._m_git.addSeparator()
+        self._add_action(self._m_git, "Aktuellen Branch anzeigen", self._git_show_branch)
+        self._add_action(self._m_git, "Branch wechseln …", self._git_switch_branch)
+        self._add_action(self._m_git, "Neuen Branch anlegen …", self._git_create_branch)
+        self._add_action(self._m_git, "Branch mergen …", self._git_merge_branch)
+        self._add_action(self._m_git, "Merge-Konflikte lösen …", self._git_resolve_conflicts)
+        self._add_action(self._m_git, "Vergleichen (Diff) …", self._git_diff)
+        self._add_action(self._m_git, "Historie anzeigen …", self._git_show_history)
+        self._m_git.addSeparator()
+        self._add_action(self._m_git, "Commit …", self._git_commit)
+        self._update_git_menu_visibility()
 
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
@@ -1763,6 +1769,57 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────
     # Git-Aktionen
     # ──────────────────────────────────────────────────────────────────────
+    def _resolve_git_executable(self) -> str | None:
+        """Liefert ein nutzbares Git-Programm aus Einstellung oder PATH."""
+        candidates: list[str] = []
+        chosen = (self._settings_git_executable or "").strip()
+        if chosen:
+            candidates.append(chosen)
+        path_git = shutil.which("git")
+        if path_git:
+            candidates.append(path_git)
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            resolved = candidate
+            if not os.path.isabs(candidate):
+                maybe = shutil.which(candidate)
+                if maybe:
+                    resolved = maybe
+            try:
+                p = Path(resolved).resolve()
+            except OSError:
+                continue
+            key = str(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            if not p.exists() or not p.is_file():
+                continue
+            try:
+                res = subprocess.run(
+                    [str(p), "--version"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=3,
+                )
+            except Exception:
+                continue
+            if res.returncode == 0:
+                return str(p)
+        return None
+
+    def _git_command(self, *args: str) -> list[str] | None:
+        git_exec = self._resolve_git_executable()
+        if not git_exec:
+            return None
+        return [git_exec, *args]
+
+    def _update_git_menu_visibility(self):
+        if hasattr(self, "_m_git"):
+            self._m_git.menuAction().setVisible(self._resolve_git_executable() is not None)
+
     def _get_git_base_dir(self) -> str:
         candidate = self._settings_sketchbook
         if candidate and os.path.isdir(candidate):
@@ -1770,9 +1827,12 @@ class MainWindow(QMainWindow):
         return str(Path.home())
 
     def _detect_git_repo_root(self, start_dir: str) -> str | None:
+        cmd = self._git_command("-C", start_dir, "rev-parse", "--show-toplevel")
+        if cmd is None:
+            return None
         try:
             res = subprocess.run(
-                ["git", "-C", start_dir, "rev-parse", "--show-toplevel"],
+                cmd,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -1917,16 +1977,21 @@ class MainWindow(QMainWindow):
         display_cmd: list[str] | None = None,
         on_finish=None,
     ):
-        if shutil.which("git") is None:
+        git_exec = self._resolve_git_executable()
+        if git_exec is None:
             QMessageBox.critical(self, "Git", "Git wurde auf diesem System nicht gefunden.")
             return
+
+        effective_cmd = list(cmd)
+        if effective_cmd and effective_cmd[0] == "git":
+            effective_cmd[0] = git_exec
 
         log_cmd = display_cmd if display_cmd is not None else cmd
         self._console.append_info(f"\n[Git] {label}\n")
         self._console.append_info(f"[Git] Arbeitsordner: {cwd}\n")
         self._console.append_info(f"[Git] Befehl: {' '.join(log_cmd)}\n")
 
-        proc = ProcessRunner(cmd, cwd=cwd)
+        proc = ProcessRunner(effective_cmd, cwd=cwd)
         # stderr puffern: Git schreibt Fortschritts-/Info-Meldungen auf stderr,
         # auch bei Erfolg. Erst nach Prozessende entscheiden ob rot (Fehler) oder normal.
         stderr_buf: list[str] = []
@@ -2047,10 +2112,9 @@ class MainWindow(QMainWindow):
                 # Passwort/Token im Klartext. Deshalb die Remote-URL sofort
                 # auf die Variante OHNE Zugangsdaten zurücksetzen; für
                 # Pull/Push übernimmt der Credential-Helper (s. u.).
-                subprocess.run(
-                    ["git", "-C", target, "remote", "set-url", "origin", url],
-                    capture_output=True, check=False,
-                )
+                cmd = self._git_command("-C", target, "remote", "set-url", "origin", url)
+                if cmd is not None:
+                    subprocess.run(cmd, capture_output=True, check=False)
                 self._store_git_credentials(target, url, username, password)
 
         self._run_git_process(
@@ -2087,11 +2151,9 @@ class MainWindow(QMainWindow):
         parsed = urlparse(url)
         helper = self._secure_credential_helper()
         # Lokalen credential.helper auf den sicheren Helper setzen
-        subprocess.run(
-            ["git", "-C", repo_path, "config", "credential.helper", helper],
-            capture_output=True,
-            check=False,
-        )
+        cmd = self._git_command("-C", repo_path, "config", "credential.helper", helper)
+        if cmd is not None:
+            subprocess.run(cmd, capture_output=True, check=False)
         # Zugangsdaten über 'git credential approve' an den Helper übergeben –
         # dieser legt sie verschlüsselt im OS-Schlüsselspeicher ab.
         approve_input = (
@@ -2101,8 +2163,14 @@ class MainWindow(QMainWindow):
             f"password={password}\n\n"
         )
         try:
+            cmd = self._git_command("-C", repo_path, "credential", "approve")
+            if cmd is None:
+                self._console.append_info(
+                    "[Git] Zugangsdaten konnten nicht im Schlüsselspeicher abgelegt "
+                    "werden – Git fragt beim nächsten Zugriff erneut nach.\n")
+                return
             res = subprocess.run(
-                ["git", "-C", repo_path, "credential", "approve"],
+                cmd,
                 input=approve_input, text=True,
                 capture_output=True, check=False,
             )
@@ -2158,8 +2226,11 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Git", f"Aktueller Branch:\n{branch}")
 
     def _get_current_branch(self, repo: str) -> str | None:
+        cmd = self._git_command("-C", repo, "rev-parse", "--abbrev-ref", "HEAD")
+        if cmd is None:
+            return None
         res = subprocess.run(
-            ["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2202,8 +2273,11 @@ class MainWindow(QMainWindow):
         self._run_git_process(["git", "switch", target], cwd=repo, label=f"Branch wechseln zu {target}")
 
     def _get_local_branches(self, repo: str) -> list[str]:
+        cmd = self._git_command("-C", repo, "branch", "--format", "%(refname:short)")
+        if cmd is None:
+            return []
         res = subprocess.run(
-            ["git", "-C", repo, "branch", "--format", "%(refname:short)"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2243,11 +2317,12 @@ class MainWindow(QMainWindow):
         einzufrieren. Schlägt der Fetch fehl (z. B. offline), wird trotzdem mit
         dem lokalen Stand fortgefahren.
         """
-        if shutil.which("git") is None:
+        cmd = self._git_command("-C", repo, "fetch", "--all", "--prune")
+        if cmd is None:
             on_done()
             return
         self._console.append_info("[Git] Hole Remote-Stand …\n")
-        proc = ProcessRunner(["git", "-C", repo, "fetch", "--all", "--prune"], cwd=repo)
+        proc = ProcessRunner(cmd, cwd=repo)
         # on_done erst nach Rückkehr aus dem finished-Slot starten (sauberer Dialog).
         proc.finished_run.connect(lambda code: QTimer.singleShot(0, on_done))
         self._retire_process()
@@ -2304,8 +2379,11 @@ class MainWindow(QMainWindow):
         )
 
     def _get_conflicted_files(self, repo: str) -> list[str]:
+        cmd = self._git_command("-C", repo, "diff", "--name-only", "--diff-filter=U")
+        if cmd is None:
+            return []
         res = subprocess.run(
-            ["git", "-C", repo, "diff", "--name-only", "--diff-filter=U"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2315,8 +2393,11 @@ class MainWindow(QMainWindow):
         return [line.strip() for line in res.stdout.splitlines() if line.strip()]
 
     def _merge_in_progress(self, repo: str) -> bool:
+        cmd = self._git_command("-C", repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+        if cmd is None:
+            return False
         res = subprocess.run(
-            ["git", "-C", repo, "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2396,8 +2477,13 @@ class MainWindow(QMainWindow):
         if not ok or not choice:
             return
 
+        git_exec = self._resolve_git_executable()
+        if git_exec is None:
+            self._console.append_error("[Git] Git wurde auf diesem System nicht gefunden.\n")
+            return
+
         res = subprocess.run(
-            ref_map[choice],
+            [git_exec, *ref_map[choice][1:]],
             capture_output=True,
             text=True,
             check=False,
@@ -2464,8 +2550,13 @@ class MainWindow(QMainWindow):
         if not repo:
             return
 
+        cmd = self._git_command("-C", repo, "--no-pager", "log", "--oneline", "--decorate", "-n", "50")
+        if cmd is None:
+            self._console.append_error("[Git] Git wurde auf diesem System nicht gefunden.\n")
+            return
+
         res = subprocess.run(
-            ["git", "-C", repo, "--no-pager", "log", "--oneline", "--decorate", "-n", "50"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2527,8 +2618,11 @@ class MainWindow(QMainWindow):
             )
 
     def _get_upstream_branch(self, repo: str) -> str | None:
+        cmd = self._git_command("-C", repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+        if cmd is None:
+            return None
         res = subprocess.run(
-            ["git", "-C", repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2539,8 +2633,13 @@ class MainWindow(QMainWindow):
         return value or None
 
     def _get_remote_origin_branches(self, repo: str) -> list[str]:
+        cmd = self._git_command(
+            "-C", repo, "for-each-ref", "--format", "%(refname:short)", "refs/remotes/origin"
+        )
+        if cmd is None:
+            return []
         res = subprocess.run(
-            ["git", "-C", repo, "for-each-ref", "--format", "%(refname:short)", "refs/remotes/origin"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -2751,6 +2850,7 @@ class MainWindow(QMainWindow):
             tutor_url=self._settings_tutor_url,
             tutor_model=self._settings_tutor_model,
             sketchbook_dir=self._settings_sketchbook,
+            git_exec=self._settings_git_executable,
             theme=self._settings_theme,
             blocks_enabled=self._settings_blocks_enabled,
             plot_y_mode=self._settings_plot_y_mode,
@@ -2772,6 +2872,7 @@ class MainWindow(QMainWindow):
             self._settings_tutor_url = dlg.tutor_url
             self._settings_tutor_model = dlg.tutor_model
             self._settings_sketchbook = self._normalize_sketchbook_dir(dlg.sketchbook_dir)
+            self._settings_git_executable = dlg.git_exec
             self._settings_theme = dlg.theme
             self._settings_blocks_enabled = dlg.blocks_enabled
             self._settings_plot_y_mode = dlg.plot_y_mode
@@ -2783,6 +2884,7 @@ class MainWindow(QMainWindow):
             try:
                 self._apply_settings()
                 self._apply_sketchbook_root()
+                self._update_git_menu_visibility()
                 self._save_persistent_settings()
             except Exception as exc:
                 traceback.print_exc()
@@ -2842,6 +2944,9 @@ class MainWindow(QMainWindow):
         self._settings_sketchbook = self._normalize_sketchbook_dir(
             str(self._settings_store.value("files/sketchbook_dir", self._settings_sketchbook) or "")
         )
+        self._settings_git_executable = str(
+            self._settings_store.value("git/executable", self._settings_git_executable) or ""
+        )
         self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
         self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "classic_light")
         # Serial-Plotter-Achsen
@@ -2867,6 +2972,7 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("tutor/url", self._settings_tutor_url)
         self._settings_store.setValue("tutor/model", self._settings_tutor_model)
         self._settings_store.setValue("files/sketchbook_dir", self._settings_sketchbook)
+        self._settings_store.setValue("git/executable", self._settings_git_executable)
         self._settings_store.setValue("git/repo_dir", self._settings_git_repo)
         self._settings_store.setValue("ui/theme", self._settings_theme)
         self._settings_store.setValue("plot/y_mode", self._settings_plot_y_mode)

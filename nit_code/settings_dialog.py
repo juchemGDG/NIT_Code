@@ -1,5 +1,7 @@
 """Einstellungs-Dialog für NIT_Code."""
 import os
+import shutil
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QGuiApplication
@@ -24,6 +26,36 @@ _AUTOSAVE_OPTIONS = [
     ("60 Sek.", 60),
     ("5 Min.", 300),
 ]
+
+
+def detect_git_executables() -> list[str]:
+    """Sucht mögliche Git-Executables auf dem System (dedupliziert)."""
+    found: list[str] = []
+
+    def add(path: str | None):
+        if not path:
+            return
+        try:
+            p = Path(path)
+            if not p.exists():
+                return
+            real = str(p.resolve())
+        except OSError:
+            return
+        if real not in found:
+            found.append(real)
+
+    add(shutil.which("git"))
+
+    for candidate in (
+        "/usr/bin/git",
+        "/usr/local/bin/git",
+        "/opt/homebrew/bin/git",
+        "/opt/local/bin/git",
+    ):
+        add(candidate)
+
+    return found
 
 
 # ── Hintergrund-Thread: Ollama-Modelle abrufen ──────────────────────────────
@@ -111,6 +143,7 @@ class SettingsDialog(QDialog):
         tutor_url: str = "",
         tutor_model: str = "",
         sketchbook_dir: str = "",
+        git_exec: str = "",
         theme: str = "modern_dark",
         blocks_enabled: bool = True,
         plot_y_mode: str = "auto",
@@ -200,7 +233,7 @@ class SettingsDialog(QDialog):
         )
         self._build_ui(font_size, line_numbers, word_wrap, highlight_line,
                        autosave_secs, python_exec, scrollback,
-                       tutor_mode, tutor_url, tutor_model, sketchbook_dir, theme,
+                       tutor_mode, tutor_url, tutor_model, sketchbook_dir, git_exec, theme,
                        blocks_enabled,
                        plot_y_mode, plot_y_min, plot_y_max,
                        plot_x_mode, plot_x_min, plot_x_max)
@@ -231,6 +264,7 @@ class SettingsDialog(QDialog):
         tutor_url: str = "",
         tutor_model: str = "",
         sketchbook_dir: str = "",
+        git_exec: str = "",
         theme: str = "modern_dark",
         blocks_enabled: bool = True,
         plot_y_mode: str = "auto",
@@ -514,6 +548,35 @@ class SettingsDialog(QDialog):
         sb_row.addWidget(btn_sketchbook)
         form_fs.addRow("Sketchbook-Ordner:", sb_row)
 
+        git_row = QHBoxLayout()
+        git_row.setSpacing(6)
+        self._combo_git = QComboBox()
+        self._combo_git.setEditable(True)
+        self._combo_git.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._combo_git.lineEdit().setPlaceholderText("(automatisch erkannt)")
+        self._combo_git.setMinimumWidth(280)
+        self._combo_git.setCurrentText(git_exec)
+        self._combo_git.lineEdit().setCursorPosition(0)
+        for path in detect_git_executables():
+            self._combo_git.addItem(path)
+        if git_exec and self._combo_git.findText(git_exec) < 0:
+            self._combo_git.addItem(git_exec)
+        git_row.addWidget(self._combo_git)
+
+        btn_git = QPushButton("…")
+        btn_git.setObjectName("browse")
+        btn_git.setFixedWidth(32)
+        btn_git.clicked.connect(self._browse_git)
+        git_row.addWidget(btn_git)
+        form_fs.addRow("Git-Programm:", git_row)
+
+        hint_git = QLabel(
+            "Leer lassen = automatisch 'git' aus PATH verwenden."
+        )
+        hint_git.setWordWrap(True)
+        hint_git.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        form_fs.addRow("", hint_git)
+
         root.addLayout(form_fs)
         root.addSpacing(6)
 
@@ -736,6 +799,17 @@ class SettingsDialog(QDialog):
         if folder:
             self._edit_sketchbook.setText(folder)
 
+    def _browse_git(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Git-Programm wählen",
+            "/usr/bin",
+            "Ausführbare Dateien (*git*);; Alle Dateien (*)",
+        )
+        if path:
+            self._combo_git.setCurrentText(path)
+            self._combo_git.lineEdit().setCursorPosition(0)
+
     def _on_tutor_mode_changed(self, _index: int):
         self._ollama_container.setVisible(
             self._combo_tutor_mode.currentData() in ("ollama", "coder")
@@ -802,6 +876,10 @@ class SettingsDialog(QDialog):
     @property
     def sketchbook_dir(self) -> str:
         return self._edit_sketchbook.text().strip()
+
+    @property
+    def git_exec(self) -> str:
+        return self._combo_git.currentText().strip()
 
     @property
     def plot_y_mode(self) -> str:
