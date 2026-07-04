@@ -21,14 +21,16 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from .config import AIS_CHAT_URL, THEME
 
-# Feste Breite des Panels und Zoom-Faktor für das mobile Layout
-PANEL_WIDTH = 400
+# Einstellbarer Breitenbereich des AIS-Panels + Zoom-Faktor für mobile Darstellung
+PANEL_MIN_WIDTH = 400
+PANEL_DEFAULT_WIDTH = 480
+PANEL_MAX_WIDTH = 600
 _VIEWPORT_WIDTH = 390   # Smartphone-Breite, auf die der Inhalt rendert
 PANEL_ZOOM = 0.9
 
 
 class AisChatPanel(QWidget):
-    """Seitliches Panel mit eingebetteter AIS-Chat-Webseite (feste Breite)."""
+    """Seitliches Panel mit eingebetteter AIS-Chat-Webseite."""
 
     def __init__(self, parent=None):
         super().__init__(parent)

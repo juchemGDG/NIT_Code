@@ -3132,7 +3132,11 @@ class MainWindow(QMainWindow):
         if self._settings_autosave_secs > 0:
             self._autosave_timer.start(self._settings_autosave_secs * 1000)
         # KI-Tutor (3 Modi: none / ollama / aischat)
-        from .ais_chat_panel import PANEL_WIDTH
+        from .ais_chat_panel import (
+            PANEL_DEFAULT_WIDTH,
+            PANEL_MAX_WIDTH,
+            PANEL_MIN_WIDTH,
+        )
         mode = self._settings_tutor_mode
         if mode == "none":
             self._ai_stack.setMinimumWidth(0)
@@ -3167,13 +3171,19 @@ class MainWindow(QMainWindow):
                 total = sum(sizes)
                 self._main_splitter.setSizes([sizes[0], total - sizes[0] - 360, 360])
         elif mode == "aischat":
-            self._ai_stack.setFixedWidth(PANEL_WIDTH)
+            self._ai_stack.setMinimumWidth(PANEL_MIN_WIDTH)
+            self._ai_stack.setMaximumWidth(PANEL_MAX_WIDTH)
             self._ai_stack.setCurrentIndex(1)
             self._ai_stack.setVisible(True)
             sizes = self._main_splitter.sizes()
-            if sizes[2] == 0:
-                total = sum(sizes)
-                self._main_splitter.setSizes([sizes[0], total - sizes[0] - PANEL_WIDTH, PANEL_WIDTH])
+            total = sum(sizes)
+            desired = sizes[2] if sizes[2] > 0 else PANEL_DEFAULT_WIDTH
+            desired = max(PANEL_MIN_WIDTH, min(PANEL_MAX_WIDTH, desired))
+            self._main_splitter.setSizes([
+                sizes[0],
+                max(0, total - sizes[0] - desired),
+                desired,
+            ])
 
     def _autosave_all(self):
         """Alle geänderten, bereits gespeicherten Tabs automatisch speichern."""
