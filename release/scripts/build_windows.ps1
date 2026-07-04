@@ -1,3 +1,7 @@
+param(
+    [switch]$IncludeRuntime
+)
+
 $ErrorActionPreference = 'Stop'
 
 $RootDir = (Resolve-Path "$PSScriptRoot/../..").Path
@@ -10,6 +14,20 @@ python -m pip install --upgrade pip
 python -m pip install -r "$RootDir/requirements.txt" -r "$RootDir/release/requirements-build.txt"
 
 pyinstaller "$RootDir/release/pyinstaller.spec" --noconfirm --clean
+
+if ($IncludeRuntime) {
+    Write-Host "Erzeuge eingebettete Runtime (python_runtime/) ..."
+    & pwsh -File "$RootDir/release/scripts/create_embedded_runtime.ps1" -Force
+    if ($LASTEXITCODE -ne 0) {
+        throw "Erzeugen der eingebetteten Runtime ist fehlgeschlagen."
+    }
+    Write-Host "Kopiere python_runtime ins Bundle ..."
+    $DistRuntime = Join-Path $RootDir "dist/NIT_Code/python_runtime"
+    if (Test-Path $DistRuntime) {
+        Remove-Item $DistRuntime -Recurse -Force
+    }
+    Copy-Item "$RootDir/python_runtime" $DistRuntime -Recurse
+}
 
 $DistDir = Join-Path $RootDir "dist/NIT_Code"
 $ZipPath = Join-Path $OutDir "NIT_Code-windows.zip"

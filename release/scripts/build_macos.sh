@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="$ROOT_DIR/release/downloads/macos"
+INCLUDE_RUNTIME="${INCLUDE_RUNTIME:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -25,6 +26,14 @@ if [ -f "$LOGO_PNG" ]; then
 fi
 
 pyinstaller "$ROOT_DIR/release/pyinstaller.spec" --noconfirm --clean
+
+if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
+  echo "Erzeuge eingebettete Runtime (python_runtime/) ..."
+  bash "$ROOT_DIR/release/scripts/create_embedded_runtime.sh" --force
+  echo "Kopiere python_runtime ins App-Bundle ..."
+  rm -rf "$ROOT_DIR/dist/NIT_Code.app/Contents/MacOS/python_runtime"
+  cp -R "$ROOT_DIR/python_runtime" "$ROOT_DIR/dist/NIT_Code.app/Contents/MacOS/python_runtime"
+fi
 
 DMG_PATH="$OUT_DIR/NIT_Code-macos.dmg"
 APP_PATH="$ROOT_DIR/dist/NIT_Code.app"

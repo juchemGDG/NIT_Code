@@ -54,6 +54,39 @@ Voraussetzungen: Python 3.11+ und Plattform-spezifische Build-Umgebung.
 
 Die fertigen Dateien landen in `release/downloads/<plattform>/`.
 
+Optional kann bei allen Plattform-Builds eine eingebettete Runtime direkt ins
+Paket aufgenommen werden:
+
+- Linux: `INCLUDE_RUNTIME=1 bash release/scripts/build_linux.sh`
+- macOS: `INCLUDE_RUNTIME=1 bash release/scripts/build_macos.sh`
+- Windows: `pwsh -File release/scripts/build_windows.ps1 -IncludeRuntime`
+
+Hinweis: Das vergroessert die Downloadpakete deutlich, macht den Start aber
+unabhaengig von einer vorinstallierten Python-Installation auf Zielsystemen.
+
+## Eingebettete Python-Runtime (Hybrid-Modus)
+
+Fuer Schulserver oder Umgebungen ohne zuverlaessige Python-Installation kann
+eine Runtime im Projektordner unter `python_runtime/` erzeugt werden. Beim Start
+nutzt NIT_Code diese Runtime bevorzugt automatisch.
+
+- Linux/macOS:
+  - `bash release/scripts/create_embedded_runtime.sh --force`
+- Windows (PowerShell):
+  - `pwsh -File release/scripts/create_embedded_runtime.ps1 -Force`
+
+Optionen:
+
+- Ohne Projektabhaengigkeiten (nur Python + pip):
+  - `--skip-requirements` (Shell) bzw. `-SkipRequirements` (PowerShell)
+- Eigenen Basis-Interpreter waehlen:
+  - `--python /pfad/zu/python3.12` (Shell)
+  - `-Python py` oder `-Python C:\Pfad\python.exe` (PowerShell)
+
+Hinweis:
+
+- `python_runtime/` ist in `.gitignore` eingetragen und wird nicht ins Repo committed.
+
 ## GitHub Actions
 
 Die Workflow-Datei liegt in `.github/workflows/release-build.yml` und baut die Artefakte automatisch fuer alle drei Plattformen:

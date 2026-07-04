@@ -3,6 +3,21 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Mitgelieferte Python-Runtime bevorzugen (Hybrid-Modus).
+find_bundled_python() {
+    local runtime_dir="$SCRIPT_DIR/python_runtime"
+    for candidate in \
+        "$runtime_dir/bin/python3" \
+        "$runtime_dir/bin/python" \
+        "$runtime_dir/python/bin/python3" \
+        "$runtime_dir/python/bin/python"; do
+        if [[ -x "$candidate" ]]; then
+            echo "$candidate"
+            return
+        fi
+    done
+}
+
 # ── Python-Executable ermitteln ─────────────────────────────────────────────
 # Auf Apple Silicon (arm64): nativen ARM64-Python suchen, Rosetta vermeiden
 find_python() {
@@ -30,15 +45,10 @@ find_python() {
     fi
 }
 
-PYTHON=$(find_python)
+PYTHON="$(find_bundled_python)"
+if [[ -z "$PYTHON" ]]; then
+    PYTHON=$(find_python)
+fi
 echo "Verwende Python: $PYTHON ($($PYTHON -c 'import platform; print(platform.machine())' 2>/dev/null))"
 
-if [ ! -d ".venv" ]; then
-    echo "Erstelle virtuelle Umgebung (.venv) ..."
-    $PYTHON -m venv .venv
-    echo "Installiere Abhängigkeiten ..."
-    .venv/bin/pip install --upgrade pip
-    .venv/bin/pip install -r requirements.txt
-fi
-
-PYTHONPATH="$SCRIPT_DIR" .venv/bin/python start.py "$@"
+PYTHONPATH="$SCRIPT_DIR" "$PYTHON" "$SCRIPT_DIR/start.py" "$@"

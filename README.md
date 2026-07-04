@@ -226,6 +226,29 @@ Verteilen/Einsammeln von Aufgaben:
 
 Für diese Variante ist **Python 3.10+** erforderlich.
 
+NIT_Code nutzt dabei einen **Hybrid-Startmodus**:
+
+- Wenn im Projektordner eine Runtime unter `python_runtime/` liegt, wird diese bevorzugt.
+- Andernfalls wird der vorhandene System-Interpreter verwendet.
+- Die eigentliche Laufumgebung wird als `.venv` angelegt (bei schreibgeschütztem Projektordner automatisch im Benutzerprofil unter `NIT_Code/.venv`).
+
+Optional kann das Verhalten per Umgebungsvariable gesteuert werden:
+
+- `NIT_PYTHON_MODE=auto` (Standard): bevorzugt `python_runtime/`, sonst System-Python
+- `NIT_PYTHON_MODE=bundled`: erzwingt `python_runtime/` (Fehler, wenn nicht vorhanden)
+- `NIT_PYTHON_MODE=system`: ignoriert `python_runtime/` und nutzt immer System-Python
+
+Eine mitlieferbare Runtime kann ueber die Release-Skripte erzeugt werden:
+
+- Linux/macOS: `bash release/scripts/create_embedded_runtime.sh --force`
+- Windows: `pwsh -File release/scripts/create_embedded_runtime.ps1 -Force`
+
+Fuer Release-Builds kann die Runtime direkt in die Pakete aufgenommen werden:
+
+- Linux: `INCLUDE_RUNTIME=1 bash release/scripts/build_linux.sh`
+- macOS: `INCLUDE_RUNTIME=1 bash release/scripts/build_macos.sh`
+- Windows: `pwsh -File release/scripts/build_windows.ps1 -IncludeRuntime`
+
 ### Linux / macOS
 ```bash
 chmod +x run.sh
