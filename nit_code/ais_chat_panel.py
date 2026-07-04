@@ -23,7 +23,7 @@ from .config import AIS_CHAT_URL, THEME
 
 # Einstellbarer Breitenbereich des AIS-Panels + Zoom-Faktor für mobile Darstellung
 PANEL_MIN_WIDTH = 400
-PANEL_DEFAULT_WIDTH = 480
+PANEL_DEFAULT_WIDTH = 400
 PANEL_MAX_WIDTH = 600
 _VIEWPORT_WIDTH = 390   # Smartphone-Breite, auf die der Inhalt rendert
 PANEL_ZOOM = 0.9
