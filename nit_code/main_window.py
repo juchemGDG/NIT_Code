@@ -3139,12 +3139,14 @@ class MainWindow(QMainWindow):
         )
         mode = self._settings_tutor_mode
         if mode == "none":
+            self._main_splitter.setCollapsible(2, True)
             self._ai_stack.setMinimumWidth(0)
             self._ai_stack.setMaximumWidth(16777215)
             self._ai_stack.setVisible(False)
             sizes = self._main_splitter.sizes()
             self._main_splitter.setSizes([sizes[0], sizes[1] + sizes[2], 0])
         elif mode == "ollama":
+            self._main_splitter.setCollapsible(2, False)
             self._ai_stack.setMinimumWidth(0)
             self._ai_stack.setMaximumWidth(16777215)
             self._ai_stack.setCurrentIndex(0)
@@ -3158,6 +3160,7 @@ class MainWindow(QMainWindow):
                 total = sum(sizes)
                 self._main_splitter.setSizes([sizes[0], total - sizes[0] - 320, 320])
         elif mode == "coder":
+            self._main_splitter.setCollapsible(2, False)
             self._ai_stack.setMinimumWidth(0)
             self._ai_stack.setMaximumWidth(16777215)
             self._ai_stack.setCurrentIndex(2)
@@ -3171,6 +3174,7 @@ class MainWindow(QMainWindow):
                 total = sum(sizes)
                 self._main_splitter.setSizes([sizes[0], total - sizes[0] - 360, 360])
         elif mode == "aischat":
+            self._main_splitter.setCollapsible(2, False)
             self._ai_stack.setMinimumWidth(PANEL_MIN_WIDTH)
             self._ai_stack.setMaximumWidth(PANEL_MAX_WIDTH)
             self._ai_stack.setCurrentIndex(1)
