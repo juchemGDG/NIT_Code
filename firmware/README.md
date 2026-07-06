@@ -134,6 +134,29 @@ echo -n "01" | mpremote connect /dev/ttyACM0 fs cp - :ap_name.txt   # oder Datei
    müssen in `/lib` liegen (Deploy-Häkchen oder „Bibliotheken installieren …“).
    Reine MicroPython-Blöcke (GPIO, PWM, ADC, NeoPixel) laufen ohne Zusatz.
 
+## Troubleshooting: „Verbindung fehlgeschlagen" auf dem iPad
+
+`boot.py` enthält seit Juli 2026 drei Stabilitäts-Fixes (dazu die Boards einmal
+**neu bespielen**, Weg A oder B):
+
+- **Kanalverteilung**: Jedes Board wählt anhand seiner Chip-ID fest Kanal 1, 6
+  oder 11 (vorher: alle auf Kanal 6). Im Klassensatz stören sich die APs so
+  deutlich weniger gegenseitig. Der Kanal wird beim Boot seriell ausgegeben.
+- **Modem-Sleep aus** (`pm=PM_NONE`): Der Stromsparmodus ließ den AP
+  Anmelde-Frames verpassen – häufigste Einzelursache für Verbindungsabbrüche.
+- **`ap.config()`-Retry**: Direkt nach dem Aktivieren schlägt die
+  AP-Konfiguration auf dem C3 gelegentlich intern fehl; ohne Retry lief der AP
+  dann mit Default-SSID weiter.
+
+Bleibt es instabil:
+
+- **Nach „Stopp" 3–5 s warten**: Stopp = Board-Reset, das WLAN verschwindet
+  kurz und das iPad muss sich neu verbinden.
+- **Abstand zum Schul-WLAN-Accesspoint**: Ein starker AP direkt im Raum
+  überdeckt die schwachen ESP32-Signale; notfalls Boards näher ans iPad.
+- **iPad-Seite**: Netzwerk einmal „ignorieren" und neu verbinden, falls iOS
+  einen alten Zustand gespeichert hat.
+
 ## Integration in NIT_Code (später)
 
 Denkbarer Weg: NIT_Code bekommt einen "Firmware"-Modus, in dem die hier

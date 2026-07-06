@@ -4,10 +4,15 @@
 
 import network
 import machine
+import time
 import ubinascii
 
 AP_PASSWORD = "mint2026"   # min. 8 Zeichen fuer WPA2, fuer alle Boards gleich
-AP_CHANNEL = 6
+# Nur die drei ueberlappungsfreien 2,4-GHz-Kanaele. Jedes Board waehlt anhand
+# seiner Chip-ID fest einen davon: Im Klassensatz verteilen sich die APs so
+# auf drei Kanaele, statt sich alle auf einem Kanal gegenseitig zu stoeren
+# (haeufigste Ursache fuer "Verbindung fehlgeschlagen" auf dem iPad).
+AP_CHANNELS = (1, 6, 11)
 NAME_FILE = "ap_name.txt"   # optionaler, beim Deploy gesetzter Board-Name
 
 # WPA2-PSK. Die Namens-Konstante existiert nicht in jeder MicroPython-Version,
@@ -34,17 +39,39 @@ def ap_ssid():
     return "NIT-ESP32-" + name
 
 
+def ap_channel():
+    """Fester, aus der Chip-ID abgeleiteter Kanal (1, 6 oder 11)."""
+    return AP_CHANNELS[machine.unique_id()[-1] % len(AP_CHANNELS)]
+
+
 def start_ap():
     ssid = ap_ssid()
-    ap = network.WLAN(network.AP_IF)
-    ap.active(True)
-    ap.config(essid=ssid, password=AP_PASSWORD,
-              authmode=AUTHMODE_WPA2_PSK, channel=AP_CHANNEL)
 
-    # Eigenes Wifi (Station-Modus) sicherheitshalber abschalten,
-    # damit der ESP32 wirklich nur als AP arbeitet
+    # Station-Modus zuerst abschalten: ein spaeterer Moduswechsel wuerde den
+    # AP kurz neu starten und laufende Verbindungsversuche abbrechen.
     sta = network.WLAN(network.STA_IF)
     sta.active(False)
+
+    ap = network.WLAN(network.AP_IF)
+    ap.active(True)
+
+    # Direkt nach active(True) wirft config() auf dem C3 gelegentlich
+    # "Wifi Internal Error" - der AP liefe dann mit Default-SSID/-Passwort
+    # weiter. Deshalb mit kurzen Pausen erneut versuchen.
+    for _ in range(5):
+        try:
+            ap.config(essid=ssid, password=AP_PASSWORD,
+                      authmode=AUTHMODE_WPA2_PSK, channel=ap_channel())
+            break
+        except OSError:
+            time.sleep_ms(200)
+
+    # WLAN-Stromsparmodus (Modem-Sleep) abschalten: Der AP verpasst sonst
+    # Anmelde-Frames des iPads -> haeufige "Verbindung fehlgeschlagen"-Fehler.
+    try:
+        ap.config(pm=network.WLAN.PM_NONE)
+    except (AttributeError, ValueError, OSError):
+        pass   # aeltere MicroPython-Version ohne pm-Option
 
     while not ap.active():
         pass
@@ -52,6 +79,7 @@ def start_ap():
     print("Accesspoint aktiv")
     print("SSID:    ", ssid)
     print("Passwort:", AP_PASSWORD)
+    print("Kanal:   ", ap.config("channel"))
     print("IP:      ", ap.ifconfig()[0])
     return ap
 
