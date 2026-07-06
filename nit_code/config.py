@@ -103,6 +103,20 @@ def _embedded_runtime_candidates() -> list[Path]:
     return out
 
 
+def embedded_python_executable() -> str | None:
+    """Liefert den Pfad zum mitgelieferten Python-Interpreter, falls vorhanden."""
+    for cand in _embedded_runtime_candidates():
+        if cand.exists():
+            return str(cand)
+    return None
+
+
+def preferred_python_interpreter() -> str | None:
+    """Bevorzugter Interpreter für die UI-Auswahl (erster ermittelter Treffer)."""
+    found = detect_python_interpreters()
+    return found[0] if found else None
+
+
 def detect_python_interpreters() -> list[str]:
     """Sucht mögliche Python-Interpreter auf dem System.
 
