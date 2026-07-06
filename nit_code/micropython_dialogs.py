@@ -456,25 +456,59 @@ class FlashWorker(QThread):
 
         try:
             import os
+            import sys
             dest = os.path.join(drive, os.path.basename(fw))
             fw_size = os.path.getsize(fw)
             self.log.emit(f"Kopiere {os.path.basename(fw)} ({fw_size // 1024} KB) → {drive} ...\n")
 
-            # Chunk-weise schreiben statt blockierendem copy2(), damit
-            # Fortschritt sichtbar ist und der Vorgang nicht scheinbar bei 50 % hängt.
-            chunk_size = 65536
-            written = 0
-            with open(fw, "rb") as src, open(dest, "wb") as dst:
-                while True:
-                    chunk = src.read(chunk_size)
-                    if not chunk:
-                        break
-                    dst.write(chunk)
-                    written += len(chunk)
-                    frac = (written / fw_size) if fw_size else 1.0
+            # Auf Linux/macOS kann Dateischreiben auf USB-Massenspeicher beim
+            # Reboot des Boards blockieren. /bin/cp in einem überwachten
+            # Subprozess verhindert ein endloses Hängen und erlaubt Timeout.
+            if sys.platform != "win32":
+                import subprocess as _sp
+                self.log.emit("(verwende /bin/cp mit Timeout-Überwachung)\n")
+                proc = _sp.Popen(["/bin/cp", fw, dest], stdout=_sp.PIPE, stderr=_sp.PIPE)
+                timeout_s = 90
+                t_end = time.monotonic() + timeout_s
+                while proc.poll() is None:
+                    remaining = t_end - time.monotonic()
+                    if remaining <= 0:
+                        proc.kill()
+                        proc.wait()
+                        if not os.path.exists(drive):
+                            self.progress.emit(100)
+                            self.log.emit("✓ micro:bit hat während des Kopierens neu gestartet.\n")
+                            self.done.emit(True, "Flash erfolgreich! micro:bit startet neu.")
+                            return
+                        self.done.emit(
+                            False,
+                            "Zeitüberschreitung beim Kopieren (90 s).\n"
+                            "Bitte micro:bit neu verbinden und erneut versuchen."
+                        )
+                        return
+                    frac = 1.0 - (remaining / timeout_s)
                     self.progress.emit(50 + int(frac * 45))
-                dst.flush()
-                os.fsync(dst.fileno())
+                    time.sleep(0.2)
+
+                stderr_out = (proc.stderr.read() or b"").decode(errors="replace").strip()
+                if proc.returncode != 0 and os.path.exists(drive):
+                    self.done.emit(False, f"Fehler beim Kopieren: {stderr_out or 'Unbekannter Fehler'}")
+                    return
+                written = fw_size
+            else:
+                # Windows-Fallback: chunkweise kopieren mit Fortschritt.
+                chunk_size = 65536
+                written = 0
+                with open(fw, "rb") as src, open(dest, "wb") as dst:
+                    while True:
+                        chunk = src.read(chunk_size)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
+                        written += len(chunk)
+                        frac = (written / fw_size) if fw_size else 1.0
+                        self.progress.emit(50 + int(frac * 45))
+                    dst.flush()
 
             # Nach dem Kopieren rebootet der micro:bit ggf. und das Laufwerk
             # verschwindet kurz. Das ist ein normales Erfolgs-Signal.
