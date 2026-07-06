@@ -81,6 +81,8 @@ def _embedded_runtime_candidates() -> list[Path]:
         roots.append(exe_dir / "python_runtime")
         # Falls Startpunkt innerhalb eines App-Bundles liegt, auch einen Level höher prüfen.
         roots.append(exe_dir.parent / "python_runtime")
+        # macOS-App-Bundle: Contents/Resources als alternativer Ablageort.
+        roots.append(exe_dir.parent / "Resources" / "python_runtime")
 
     if sys.platform == "win32":
         rels = [

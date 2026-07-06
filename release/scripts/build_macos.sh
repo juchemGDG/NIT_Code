@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="$ROOT_DIR/release/downloads/macos"
-INCLUDE_RUNTIME="${INCLUDE_RUNTIME:-0}"
+# Eingebettete Python-Runtime ist standardmaessig dabei; INCLUDE_RUNTIME=0 schaltet ab.
+INCLUDE_RUNTIME="${INCLUDE_RUNTIME:-1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -27,16 +28,25 @@ fi
 
 pyinstaller "$ROOT_DIR/release/pyinstaller.spec" --noconfirm --clean
 
+DMG_PATH="$OUT_DIR/NIT_Code-macos.dmg"
+APP_PATH="$ROOT_DIR/dist/NIT_Code.app"
+
 if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
   echo "Erzeuge eingebettete Runtime (python_runtime/) ..."
   bash "$ROOT_DIR/release/scripts/create_embedded_runtime.sh" --force
   echo "Kopiere python_runtime ins App-Bundle ..."
-  rm -rf "$ROOT_DIR/dist/NIT_Code.app/Contents/MacOS/python_runtime"
-  cp -R "$ROOT_DIR/python_runtime" "$ROOT_DIR/dist/NIT_Code.app/Contents/MacOS/python_runtime"
-fi
+  rm -rf "$APP_PATH/Contents/MacOS/python_runtime"
+  cp -R "$ROOT_DIR/python_runtime" "$APP_PATH/Contents/MacOS/python_runtime"
+  # Nachträgliches Hineinkopieren bricht die Ad-hoc-Signatur des Bundles –
+  # ohne Neu-Signieren startet die App auf Apple Silicon nicht zuverlässig.
+  echo "Signiere App-Bundle neu (ad hoc) ..."
+  codesign --force --deep -s - "$APP_PATH"
 
-DMG_PATH="$OUT_DIR/NIT_Code-macos.dmg"
-APP_PATH="$ROOT_DIR/dist/NIT_Code.app"
+  echo "Pruefe gebuendelte Runtime (Python + pip) ..."
+  BUNDLED_PY="$APP_PATH/Contents/MacOS/python_runtime/python/bin/python3"
+  "$BUNDLED_PY" --version
+  "$BUNDLED_PY" -m pip --version
+fi
 
 hdiutil create \
   -volname "NIT_Code" \
@@ -45,6 +55,9 @@ hdiutil create \
   -format UDZO \
   "$DMG_PATH"
 
-zip -r "$OUT_DIR/NIT_Code-macos-app.zip" "$APP_PATH"
+# -y erhält Symlinks (App-Bundle und Runtime enthalten welche); aus dist/
+# heraus packen, damit im Archiv nicht der komplette Build-Pfad landet.
+rm -f "$OUT_DIR/NIT_Code-macos-app.zip"
+(cd "$ROOT_DIR/dist" && zip -ryq "$OUT_DIR/NIT_Code-macos-app.zip" "NIT_Code.app")
 
 echo "macOS-Pakete erstellt: $DMG_PATH und NIT_Code-macos-app.zip"

@@ -35,6 +35,8 @@ jobs:
 
       - name: Build Linux package
         run: bash release/scripts/build_linux.sh
+        env:
+          INCLUDE_RUNTIME: "1"
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
@@ -56,6 +58,8 @@ jobs:
 
       - name: Build macOS package
         run: bash release/scripts/build_macos.sh
+        env:
+          INCLUDE_RUNTIME: "1"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
@@ -76,7 +80,7 @@ jobs:
 
       - name: Build Windows package
         shell: pwsh
-        run: ./release/scripts/build_windows.ps1
+        run: ./release/scripts/build_windows.ps1 -IncludeRuntime
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7

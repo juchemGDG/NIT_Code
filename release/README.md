@@ -54,21 +54,31 @@ Voraussetzungen: Python 3.11+ und Plattform-spezifische Build-Umgebung.
 
 Die fertigen Dateien landen in `release/downloads/<plattform>/`.
 
-Optional kann bei allen Plattform-Builds eine eingebettete Runtime direkt ins
-Paket aufgenommen werden:
+Alle Plattform-Builds nehmen standardmaessig eine eingebettete Python-Runtime
+(inkl. pip und tkinter) mit ins Paket auf und pruefen am Ende, dass das
+gebuendelte `python`/`pip` tatsaechlich startet. Abschalten (z. B. fuer
+schnelle lokale Test-Builds):
 
-- Linux: `INCLUDE_RUNTIME=1 bash release/scripts/build_linux.sh`
-- macOS: `INCLUDE_RUNTIME=1 bash release/scripts/build_macos.sh`
-- Windows: `pwsh -File release/scripts/build_windows.ps1 -IncludeRuntime`
+- Linux: `INCLUDE_RUNTIME=0 bash release/scripts/build_linux.sh`
+- macOS: `INCLUDE_RUNTIME=0 bash release/scripts/build_macos.sh`
+- Windows: `pwsh -File release/scripts/build_windows.ps1 -SkipRuntime`
 
-Hinweis: Das vergroessert die Downloadpakete deutlich, macht den Start aber
-unabhaengig von einer vorinstallierten Python-Installation auf Zielsystemen.
+Hinweis: Die Runtime vergroessert die Downloadpakete deutlich, macht den Start
+aber unabhaengig von einer vorinstallierten Python-Installation auf
+Zielsystemen.
 
 ## Eingebettete Python-Runtime (Hybrid-Modus)
 
 Fuer Schulserver oder Umgebungen ohne zuverlaessige Python-Installation kann
 eine Runtime im Projektordner unter `python_runtime/` erzeugt werden. Beim Start
-nutzt NIT_Code diese Runtime bevorzugt automatisch.
+nutzt NIT_Code diese Runtime bevorzugt automatisch, und in den Einstellungen
+wird sie als Standard-Interpreter vorausgewaehlt.
+
+Die Runtime basiert auf
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+(vollstaendig eigenstaendiges, verschiebbares CPython inkl. tkinter und pip).
+Ein venv ist dafuer ungeeignet: es verlinkt nur auf das Python des
+Build-Rechners und ist auf anderen Rechnern kaputt.
 
 - Linux/macOS:
   - `bash release/scripts/create_embedded_runtime.sh --force`
@@ -77,14 +87,19 @@ nutzt NIT_Code diese Runtime bevorzugt automatisch.
 
 Optionen:
 
-- Ohne Projektabhaengigkeiten (nur Python + pip):
+- Ohne Zusatzpakete (nur Python + pip):
   - `--skip-requirements` (Shell) bzw. `-SkipRequirements` (PowerShell)
-- Eigenen Basis-Interpreter waehlen:
-  - `--python /pfad/zu/python3.12` (Shell)
-  - `-Python py` oder `-Python C:\Pfad\python.exe` (PowerShell)
+- Andere Paketliste (Standard: `release/requirements-runtime.txt`):
+  - `--requirements <datei>` (Shell) bzw. `-Requirements <datei>` (PowerShell)
+- Python-Version/Release uebersteuern: Umgebungsvariablen `PBS_PYTHON_VERSION`
+  und `PBS_RELEASE` (Standard: 3.12.13 / 20260623).
 
-Hinweis:
+Hinweise:
 
+- Die Runtime enthaelt nur die Pakete aus `release/requirements-runtime.txt`
+  (fuer Schueler-Programme, z. B. `pyserial`, `requests`) – die IDE selbst
+  laeuft aus dem PyInstaller-Bundle. Weitere Pakete lassen sich ueber den
+  Pip-Manager der IDE nachinstallieren.
 - `python_runtime/` ist in `.gitignore` eingetragen und wird nicht ins Repo committed.
 
 ## GitHub Actions

@@ -6,7 +6,8 @@ OUT_DIR="$ROOT_DIR/release/downloads/linux"
 # Tarball-Name an die Build-Architektur koppeln (x86_64 bzw. aarch64), damit
 # x86- und ARM-Pakete sich nicht gegenseitig überschreiben.
 ARCH="$(uname -m)"
-INCLUDE_RUNTIME="${INCLUDE_RUNTIME:-0}"
+# Eingebettete Python-Runtime ist standardmaessig dabei; INCLUDE_RUNTIME=0 schaltet ab.
+INCLUDE_RUNTIME="${INCLUDE_RUNTIME:-1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -21,6 +22,11 @@ if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
 	echo "Kopiere python_runtime ins Bundle ..."
 	rm -rf "$ROOT_DIR/dist/NIT_Code/python_runtime"
 	cp -R "$ROOT_DIR/python_runtime" "$ROOT_DIR/dist/NIT_Code/python_runtime"
+
+	echo "Pruefe gebuendelte Runtime (Python + pip) ..."
+	BUNDLED_PY="$ROOT_DIR/dist/NIT_Code/python_runtime/python/bin/python3"
+	"$BUNDLED_PY" --version
+	"$BUNDLED_PY" -m pip --version
 fi
 
 # Desktop-Installer mit ins Bundle legen, damit Nutzer NIT_Code per

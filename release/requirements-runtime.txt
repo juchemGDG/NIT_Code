@@ -1,0 +1,9 @@
+# Pakete für die mitgelieferte Python-Runtime (python_runtime/).
+#
+# Diese Runtime führt die Schüler-Programme aus – NICHT die IDE selbst
+# (die ist per PyInstaller gebündelt, inkl. mpremote/esptool-Dispatcher).
+# Darum hier nur, was Unterrichts-Skripte typischerweise brauchen; tkinter
+# ist in python-build-standalone bereits enthalten. Weitere Pakete können
+# Lehrkräfte jederzeit über den Pip-Manager der IDE nachinstallieren.
+pyserial>=3.5
+requests>=2.31.0

@@ -1,5 +1,8 @@
 param(
-    [switch]$IncludeRuntime
+    # Eingebettete Python-Runtime ist standardmaessig dabei; -SkipRuntime schaltet ab.
+    # -IncludeRuntime bleibt aus Kompatibilitaet erhalten (heute wirkungslos).
+    [switch]$IncludeRuntime,
+    [switch]$SkipRuntime
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,7 +18,7 @@ python -m pip install -r "$RootDir/requirements.txt" -r "$RootDir/release/requir
 
 pyinstaller "$RootDir/release/pyinstaller.spec" --noconfirm --clean
 
-if ($IncludeRuntime) {
+if (-not $SkipRuntime) {
     Write-Host "Erzeuge eingebettete Runtime (python_runtime/) ..."
     & pwsh -File "$RootDir/release/scripts/create_embedded_runtime.ps1" -Force
     if ($LASTEXITCODE -ne 0) {
@@ -27,6 +30,17 @@ if ($IncludeRuntime) {
         Remove-Item $DistRuntime -Recurse -Force
     }
     Copy-Item "$RootDir/python_runtime" $DistRuntime -Recurse
+
+    Write-Host "Pruefe gebuendelte Runtime (Python + pip) ..."
+    $BundledPy = Join-Path $DistRuntime "python/python.exe"
+    & $BundledPy --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "Gebuendelte Runtime startet nicht: $BundledPy"
+    }
+    & $BundledPy -m pip --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip fehlt in der gebuendelten Runtime: $BundledPy"
+    }
 }
 
 $DistDir = Join-Path $RootDir "dist/NIT_Code"
