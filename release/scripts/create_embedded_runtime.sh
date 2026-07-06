@@ -153,6 +153,17 @@ else
   echo "Ueberspringe Paket-Installation (--skip-requirements)."
 fi
 
+# .pyc-Dateien hash-basiert (PEP 552) neu erzeugen: Standard-.pyc sind
+# mtime-basiert und gelten nach dem Kopieren/Entpacken auf anderen Rechnern
+# als veraltet – Python schreibt sie dann beim ersten Import neu. Im macOS-
+# App-Bundle wuerde genau das das Ressourcen-Siegel der Signatur brechen
+# ("beschaedigt"-Dialog). Hash-basierte .pyc bleiben dauerhaft gueltig.
+echo "Kompiliere Bytecode (hash-basiert) ..."
+if ! "$RUNTIME_PY" -m compileall -f -q --invalidation-mode unchecked-hash \
+    -x '(bad_coding|badsyntax|lib2to3)' "$RUNTIME_DIR/python/lib"; then
+  echo "Warnung: Bytecode-Kompilierung teilweise fehlgeschlagen (fahre fort)." >&2
+fi
+
 echo
 "$RUNTIME_PY" - <<'PY'
 import platform

@@ -25,8 +25,8 @@ if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
 
 	echo "Pruefe gebuendelte Runtime (Python + pip) ..."
 	BUNDLED_PY="$ROOT_DIR/dist/NIT_Code/python_runtime/python/bin/python3"
-	"$BUNDLED_PY" --version
-	"$BUNDLED_PY" -m pip --version
+	PYTHONDONTWRITEBYTECODE=1 "$BUNDLED_PY" --version
+	PYTHONDONTWRITEBYTECODE=1 "$BUNDLED_PY" -m pip --version
 fi
 
 # Desktop-Installer mit ins Bundle legen, damit Nutzer NIT_Code per

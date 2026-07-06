@@ -103,5 +103,14 @@ if (-not $SkipRequirements) {
     Write-Host "Ueberspringe Paket-Installation (-SkipRequirements)."
 }
 
+# .pyc hash-basiert (PEP 552) neu erzeugen: mtime-basierte .pyc gelten nach
+# Kopieren/Entpacken als veraltet und wuerden beim ersten Start neu
+# geschrieben (auf macOS braeche das die App-Signatur; hier Konsistenz).
+Write-Host "Kompiliere Bytecode (hash-basiert) ..."
+& $RuntimePy -m compileall -f -q --invalidation-mode unchecked-hash -x "(bad_coding|badsyntax|lib2to3)" (Join-Path $RuntimeDir "python/Lib")
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Bytecode-Kompilierung teilweise fehlgeschlagen (fahre fort)."
+}
+
 & $RuntimePy -c "import platform, sys, tkinter; print('Fertig. Runtime-Interpreter:', sys.executable); print('Python-Version:', sys.version.split()[0]); print('Architektur:', platform.machine()); print('tkinter: verfuegbar (Tk', tkinter.TkVersion, ')')"
 Write-Host "Runtime bereit unter: $RuntimeDir"

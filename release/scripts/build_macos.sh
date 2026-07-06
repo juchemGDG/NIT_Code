@@ -38,21 +38,26 @@ if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
   # die Runtime-Ordner als "nested code" und bricht ab ("bundle format
   # unrecognized ... In subcomponent: .../include/python3.12"). Unter
   # Resources wird sie nur als Daten versiegelt; nit_code/config.py sucht
-  # dort ebenfalls.
+  # dort ebenfalls. ditto statt cp -R: erhaelt Zeitstempel/Metadaten.
   echo "Kopiere python_runtime ins App-Bundle ..."
   rm -rf "$APP_PATH/Contents/Resources/python_runtime"
-  cp -R "$ROOT_DIR/python_runtime" "$APP_PATH/Contents/Resources/python_runtime"
-  # Das Hineinkopieren bricht das Resources-Siegel der Ad-hoc-Signatur –
-  # Bundle neu signieren (ohne --deep: die inneren Binaries hat PyInstaller
-  # bereits signiert, nur das Siegel muss neu).
-  echo "Signiere App-Bundle neu (ad hoc) ..."
-  codesign --force -s - "$APP_PATH"
-  codesign --verify "$APP_PATH"
+  ditto "$ROOT_DIR/python_runtime" "$APP_PATH/Contents/Resources/python_runtime"
 
+  # WICHTIG: Runtime-Check VOR dem Signieren und ohne Bytecode-Schreiben –
+  # sonst schreibt Python .pyc-Dateien ins bereits versiegelte Bundle und
+  # die Signatur ist beim Nutzer kaputt ("a sealed resource is missing or
+  # invalid" -> macOS meldet die App als "beschaedigt").
   echo "Pruefe gebuendelte Runtime (Python + pip) ..."
   BUNDLED_PY="$APP_PATH/Contents/Resources/python_runtime/python/bin/python3"
-  "$BUNDLED_PY" --version
-  "$BUNDLED_PY" -m pip --version
+  PYTHONDONTWRITEBYTECODE=1 "$BUNDLED_PY" --version
+  PYTHONDONTWRITEBYTECODE=1 "$BUNDLED_PY" -m pip --version
+
+  # Das Hineinkopieren bricht das Resources-Siegel der Ad-hoc-Signatur –
+  # Bundle neu signieren (ohne --deep: die inneren Binaries hat PyInstaller
+  # bereits signiert, nur das Siegel muss neu) und streng verifizieren.
+  echo "Signiere App-Bundle neu (ad hoc) ..."
+  codesign --force -s - "$APP_PATH"
+  codesign --verify --deep --strict "$APP_PATH"
 fi
 
 hdiutil create \
