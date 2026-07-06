@@ -43,7 +43,8 @@ Orientiere dich immer an diesem Curriculum. Die Kapitelfolge ist:
 10 MicroPython Grundlagen (from machine import Pin, Pin.OUT/IN/PULL_UP/PULL_DOWN, \
 pin.on(), pin.off(), pin.value(), from time import sleep)
 11 PWM und analoge Ausgaben (from machine import PWM, PWM(Pin(n), freq=500), duty())
-12 NeoPixel / Addressierbare LEDs (from neopixel import NeoPixel, neo[i]=(r,g,b), \
+12 NeoPixel / Addressierbare LEDs (eingebautes MicroPython-Modul neopixel – \
+es gibt KEIN nitbw_neopixel; from neopixel import NeoPixel, neo[i]=(r,g,b), \
 neo.write(), Farb-Tupel)
 13 Töne / Musik (from nitbw_toene import TOENE, .ton(('C4', 1/4)), .stop(), \
 Pausen mit ('P', …))

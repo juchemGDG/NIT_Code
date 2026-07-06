@@ -260,10 +260,12 @@ Farbsensor TCS3200:
   sensor.messen_rohwerte(messungen=8)   # dict: 'rot','gruen','blau','klar'
   sensor.dominante_farbe(messungen=8)
 
-TOF-Abstandssensor VL53L0X (I2C):
+TOF-Abstandssensor VL53L0X / VL6180X (I2C):
   from nitbw_tof import TOF
-  sensor = TOF(i2c)
+  sensor = TOF(i2c)                        # erkennt den Sensortyp automatisch
+  sensor = TOF(i2c, sensor_typ='vl6180x')  # explizit: 'vl53l0x' (bis 2 m) oder 'vl6180x' (Kurzdistanz bis 20 cm)
   sensor.messen_mm() / sensor.messen_cm()
+  sensor.lese_sensor_typ()                 # 'vl53l0x' oder 'vl6180x'
 
 Joystick KY-023:
   from nitbw_ky023 import KY023
@@ -328,7 +330,8 @@ Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   model.add_sample(features, label) / model.split_data(anteil_test=0.2, seed=42)
   model.save_model('modell.json', model_type='knn') / model.load_model('modell.json')
 
-NeoPixel WS2812B (direkt MicroPython):
+NeoPixel WS2812B (direkt MicroPython – es gibt KEINE nitbw_neopixel-Bibliothek,
+immer das eingebaute Modul "neopixel" verwenden):
   from machine import Pin
   from neopixel import NeoPixel
   np = NeoPixel(Pin(DATA_PIN), ANZAHL_LEDS)
