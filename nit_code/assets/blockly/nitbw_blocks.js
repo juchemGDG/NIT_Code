@@ -155,7 +155,7 @@
   // ════════════════════════ Schrittmotor 28BYJ-48 (ULN2003) ═══════════
   B({ type: 'stepperuln_init', parts: ['Schrittmotor (ULN2003) IN1', { f: 'I1', d: 19, lo: 0, hi: 40 }, 'IN2', { f: 'I2', d: 18, lo: 0, hi: 40 }, 'IN3', { f: 'I3', d: 5, lo: 0, hi: 40 }, 'IN4', { f: 'I4', d: 17, lo: 0, hi: 40 }],
       defs: [['from_nitbw_stepper2', 'from nitbw_stepper import StepperULN, VOR, ZURUECK'],
-             ['inst_motor', 'motor = StepperULN(%I1%, %I2%, %I3%, %I4%, geschwindigkeit=800)']],
+             ['inst_motor', 'motor = StepperULN(in1=%I1%, in2=%I2%, in3=%I3%, in4=%I4%, schritte_pro_umdrehung=2048, geschwindigkeit=200)']],
       tip: 'Schrittmotor 28BYJ-48 mit ULN2003.' });
   B({ type: 'stepperuln_umdr', parts: ['Motor Umdrehungen', { v: 'N', c: 'Number' }, { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.umdrehungen(%N%, %RICHT%)' });
 
