@@ -666,6 +666,7 @@ class MainWindow(QMainWindow):
         self._port_scan_busy = False   # verhindert überlappende Port-Scans
         self._run_stderr_buf: list[str] = []   # stderr des laufenden Programms (für Fehlerhinweis)
         self._last_error_traceback = ""        # letzter Traceback (für „Infi erklärt")
+        self._last_run_file: str | None = None  # zuletzt gestartete Datei (für <stdin>-Tracebacks)
         self._user_stopped = False             # True wenn Lauf per Stopp-Knopf beendet
         self._port_busy = False     # verhindert gleichzeitige mpremote-Prozesse
         self._settings_font_size: int = 14
@@ -1380,6 +1381,7 @@ class MainWindow(QMainWindow):
         tab.editor.clear_error_markers()
         self._console.clear_output()
         self._console.append_info(f"▶  Starte: {tab.filepath}\n")
+        self._last_run_file = tab.filepath
         # Fehler-Zustand für diesen Lauf zurücksetzen
         self._run_stderr_buf = []
         self._last_error_traceback = ""
@@ -1468,8 +1470,14 @@ class MainWindow(QMainWindow):
             import re
             for m in re.finditer(r'File "([^"]+)", line (\d+)', text):
                 fp, ln = m.group(1), int(m.group(2))
+                resolved_fp = self._resolve_traceback_file(fp)
                 tab = self._current_tab()
-                if tab and tab.filepath and os.path.abspath(fp) == os.path.abspath(tab.filepath):
+                if (
+                    tab
+                    and tab.filepath
+                    and resolved_fp
+                    and os.path.abspath(resolved_fp) == os.path.abspath(tab.filepath)
+                ):
                     tab.editor.mark_error_line(ln)
         else:
             self._console.append_program_output(text)
@@ -2696,8 +2704,48 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────────
     # Fehlernavigation
     # ──────────────────────────────────────────────────────────────────────
+    def _resolve_traceback_file(self, filepath: str) -> str | None:
+        """Ordnet Traceback-Dateiangaben einer realen Editor-Datei zu.
+
+        MicroPython meldet Laufzeitfehler oft als ``File "<stdin>", line N``.
+        In diesem Fall wird die zuletzt gestartete Datei verwendet.
+        """
+        raw = (filepath or "").strip()
+        if not raw:
+            return None
+
+        pseudo_names = {
+            "<stdin>",
+            "<std>",
+            "<string>",
+            "<module>",
+        }
+        if raw in pseudo_names:
+            if self._last_run_file:
+                return self._last_run_file
+            tab = self._current_tab()
+            return tab.filepath if (tab and tab.filepath) else None
+
+        if os.path.isabs(raw):
+            return raw
+
+        candidates: list[str] = []
+        if self._last_run_file:
+            candidates.append(os.path.join(os.path.dirname(self._last_run_file), raw))
+        tab = self._current_tab()
+        if tab and tab.filepath:
+            candidates.append(os.path.join(os.path.dirname(tab.filepath), raw))
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return os.path.abspath(candidate)
+
+        return raw
+
     def _jump_to_error(self, filepath: str, lineno: int):
-        self._open_file_path(filepath)
+        resolved = self._resolve_traceback_file(filepath)
+        if resolved:
+            self._open_file_path(resolved)
         tab = self._current_tab()
         if tab:
             tab.editor.goto_line(lineno)
