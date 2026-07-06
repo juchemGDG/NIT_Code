@@ -424,7 +424,7 @@ class FlashWorker(QThread):
         return find_microbit_drive()
 
     def _flash_microbit(self):
-        import shutil, time
+        import time
         self.log.emit("Suche micro:bit ...\n")
         self.progress.emit(10)
 
@@ -457,12 +457,47 @@ class FlashWorker(QThread):
         try:
             import os
             dest = os.path.join(drive, os.path.basename(fw))
-            self.log.emit(f"Kopiere {os.path.basename(fw)} → {drive} ...\n")
-            shutil.copy2(fw, dest)
+            fw_size = os.path.getsize(fw)
+            self.log.emit(f"Kopiere {os.path.basename(fw)} ({fw_size // 1024} KB) → {drive} ...\n")
+
+            # Chunk-weise schreiben statt blockierendem copy2(), damit
+            # Fortschritt sichtbar ist und der Vorgang nicht scheinbar bei 50 % hängt.
+            chunk_size = 65536
+            written = 0
+            with open(fw, "rb") as src, open(dest, "wb") as dst:
+                while True:
+                    chunk = src.read(chunk_size)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+                    written += len(chunk)
+                    frac = (written / fw_size) if fw_size else 1.0
+                    self.progress.emit(50 + int(frac * 45))
+                dst.flush()
+                os.fsync(dst.fileno())
+
+            # Nach dem Kopieren rebootet der micro:bit ggf. und das Laufwerk
+            # verschwindet kurz. Das ist ein normales Erfolgs-Signal.
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if not os.path.exists(drive):
+                    self.progress.emit(100)
+                    self.log.emit("✓ micro:bit startet neu (Laufwerk kurz verschwunden).\n")
+                    self.done.emit(True, "Flash erfolgreich! micro:bit startet neu.")
+                    return
+                time.sleep(0.2)
+
             self.progress.emit(100)
+            self.log.emit(f"✓ {written // 1024} KB übertragen.\n")
             self.done.emit(True, "Flash erfolgreich! micro:bit startet neu.")
         except Exception as e:
-            self.done.emit(False, f"Fehler beim Kopieren: {e}")
+            self.done.emit(
+                False,
+                f"Fehler beim Kopieren: {e}\n\nBitte sicherstellen:\n"
+                "• micro:bit ist als Laufwerk MICROBIT eingebunden\n"
+                "• Die .hex-Datei ist gültig\n"
+                "• Schreibrechte auf das Laufwerk sind vorhanden"
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
