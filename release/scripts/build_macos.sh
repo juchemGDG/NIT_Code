@@ -34,16 +34,23 @@ APP_PATH="$ROOT_DIR/dist/NIT_Code.app"
 if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
   echo "Erzeuge eingebettete Runtime (python_runtime/) ..."
   bash "$ROOT_DIR/release/scripts/create_embedded_runtime.sh" --force
+  # Nach Contents/Resources, NICHT Contents/MacOS: dort behandelt codesign
+  # die Runtime-Ordner als "nested code" und bricht ab ("bundle format
+  # unrecognized ... In subcomponent: .../include/python3.12"). Unter
+  # Resources wird sie nur als Daten versiegelt; nit_code/config.py sucht
+  # dort ebenfalls.
   echo "Kopiere python_runtime ins App-Bundle ..."
-  rm -rf "$APP_PATH/Contents/MacOS/python_runtime"
-  cp -R "$ROOT_DIR/python_runtime" "$APP_PATH/Contents/MacOS/python_runtime"
-  # Nachträgliches Hineinkopieren bricht die Ad-hoc-Signatur des Bundles –
-  # ohne Neu-Signieren startet die App auf Apple Silicon nicht zuverlässig.
+  rm -rf "$APP_PATH/Contents/Resources/python_runtime"
+  cp -R "$ROOT_DIR/python_runtime" "$APP_PATH/Contents/Resources/python_runtime"
+  # Das Hineinkopieren bricht das Resources-Siegel der Ad-hoc-Signatur –
+  # Bundle neu signieren (ohne --deep: die inneren Binaries hat PyInstaller
+  # bereits signiert, nur das Siegel muss neu).
   echo "Signiere App-Bundle neu (ad hoc) ..."
-  codesign --force --deep -s - "$APP_PATH"
+  codesign --force -s - "$APP_PATH"
+  codesign --verify "$APP_PATH"
 
   echo "Pruefe gebuendelte Runtime (Python + pip) ..."
-  BUNDLED_PY="$APP_PATH/Contents/MacOS/python_runtime/python/bin/python3"
+  BUNDLED_PY="$APP_PATH/Contents/Resources/python_runtime/python/bin/python3"
   "$BUNDLED_PY" --version
   "$BUNDLED_PY" -m pip --version
 fi
