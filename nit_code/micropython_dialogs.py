@@ -637,8 +637,9 @@ class FlashDialog(QDialog):
             self._hint_lbl.setVisible(True)
         elif self._flash_cmd == "microbit":
             self._hint_lbl.setText(
-                "💡 <b>micro:bit:</b> Gerät anschließen – "
-                "die HEX-Datei wird automatisch übertragen!"
+                "💡 <b>micro:bit v1:</b> Gerät anschließen – "
+                "die HEX-Datei wird automatisch übertragen!<br>"
+                "Für <b>micro:bit v2</b> bitte eine passende v2-HEX lokal auswählen."
             )
             self._hint_lbl.setVisible(True)
         else:
