@@ -752,8 +752,18 @@ class SettingsDialog(QDialog):
         self._btn_scan_py.setEnabled(True)
         self._btn_scan_py.setText("↻")
         current = self._combo_py.currentText().strip()
-        self._py_versions = {path: ver for path, ver, _tk in results}
-        self._py_has_tk = {path: tk for path, _ver, tk in results}
+        self._py_versions = {}
+        self._py_has_tk = {}
+        for path, ver, tk in results:
+            self._py_versions[path] = ver
+            self._py_has_tk[path] = tk
+            try:
+                real = os.path.realpath(path)
+            except OSError:
+                real = ""
+            if real:
+                self._py_versions.setdefault(real, ver)
+                self._py_has_tk.setdefault(real, tk)
         self._combo_py.blockSignals(True)
         self._combo_py.clear()
         for path, ver, has_tk in results:
@@ -764,11 +774,32 @@ class SettingsDialog(QDialog):
                 tip = f"{ver} – ohne tkinter"
             if tip:
                 self._combo_py.setItemData(idx, tip, Qt.ItemDataRole.ToolTipRole)
-        # Vorherige Auswahl bzw. leeres Feld (= automatisch) beibehalten
-        self._combo_py.setCurrentText(current)
+        # Vorherige Auswahl beibehalten; bei leerer Auswahl den bevorzugten
+        # ersten Treffer setzen (durch detect_python_interpreters priorisiert).
+        selected = ""
+        valid_current = False
+        if current:
+            for path, _ver, _tk in results:
+                if current == path:
+                    valid_current = True
+                    break
+                if os.path.exists(current) and os.path.exists(path):
+                    try:
+                        if os.path.realpath(current) == os.path.realpath(path):
+                            valid_current = True
+                            break
+                    except OSError:
+                        pass
+
+        if valid_current:
+            selected = current
+            self._combo_py.setCurrentText(current)
+        elif results:
+            selected = results[0][0]
+            self._combo_py.setCurrentText(selected)
         self._combo_py.lineEdit().setCursorPosition(0)
         self._combo_py.blockSignals(False)
-        self._update_py_version_label(current)
+        self._update_py_version_label(selected)
 
     def _update_py_version_label(self, text: str):
         path = (text or "").strip()

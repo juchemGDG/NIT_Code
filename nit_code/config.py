@@ -67,6 +67,58 @@ def _venv_python() -> Path:
     )
 
 
+def _embedded_runtime_candidates() -> list[Path]:
+    """Mögliche Interpreter-Pfade einer mitgelieferten Runtime.
+
+    Dev-Modus: ``<project>/python_runtime/...``
+    Frozen-Modus: neben der App-EXE bzw. im App-Bundle-Inhalt.
+    """
+    project_root = Path(__file__).resolve().parents[1]
+    roots: list[Path] = [project_root / "python_runtime"]
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        roots.append(exe_dir / "python_runtime")
+        # Falls Startpunkt innerhalb eines App-Bundles liegt, auch einen Level höher prüfen.
+        roots.append(exe_dir.parent / "python_runtime")
+        # macOS-App-Bundle: Contents/Resources als alternativer Ablageort.
+        roots.append(exe_dir.parent / "Resources" / "python_runtime")
+
+    if sys.platform == "win32":
+        rels = [
+            Path("python.exe"),
+            Path("Scripts/python.exe"),
+            Path("python/python.exe"),
+        ]
+    else:
+        rels = [
+            Path("bin/python3"),
+            Path("bin/python"),
+            Path("python/bin/python3"),
+            Path("python/bin/python"),
+        ]
+
+    out: list[Path] = []
+    for root in roots:
+        for rel in rels:
+            out.append(root / rel)
+    return out
+
+
+def embedded_python_executable() -> str | None:
+    """Liefert den Pfad zum mitgelieferten Python-Interpreter, falls vorhanden."""
+    for cand in _embedded_runtime_candidates():
+        if cand.exists():
+            return str(cand)
+    return None
+
+
+def preferred_python_interpreter() -> str | None:
+    """Bevorzugter Interpreter für die UI-Auswahl (erster ermittelter Treffer)."""
+    found = detect_python_interpreters()
+    return found[0] if found else None
+
+
 def detect_python_interpreters() -> list[str]:
     """Sucht mögliche Python-Interpreter auf dem System.
 
@@ -76,6 +128,7 @@ def detect_python_interpreters() -> list[str]:
     eines Programms die GUI rekursiv neu öffnen (Fork-Bomb-Schutz).
     """
     found: list[str] = []
+    seen_real: set[str] = set()
 
     def add(path: str | None):
         if not path:
@@ -84,11 +137,19 @@ def detect_python_interpreters() -> list[str]:
             p = Path(path)
             if not p.exists():
                 return
+            shown = str(p)
             real = str(p.resolve())
         except OSError:
             return
-        if real not in found:
-            found.append(real)
+        if real in seen_real:
+            return
+        seen_real.add(real)
+        found.append(shown)
+
+    # 0. Mitgelieferte Runtime bevorzugt (Hybrid-Modus)
+    for cand in _embedded_runtime_candidates():
+        if cand.exists():
+            add(str(cand))
 
     # 1. Projekteigene .venv (Dev-Modus) zuerst
     venv_py = _venv_python()
@@ -213,7 +274,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.8.2"
+APP_VERSION = "1.8.3"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"

@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="$ROOT_DIR/release/downloads/macos"
+# Eingebettete Python-Runtime ist standardmaessig dabei; INCLUDE_RUNTIME=0 schaltet ab.
+INCLUDE_RUNTIME="${INCLUDE_RUNTIME:-1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -29,6 +31,35 @@ pyinstaller "$ROOT_DIR/release/pyinstaller.spec" --noconfirm --clean
 DMG_PATH="$OUT_DIR/NIT_Code-macos.dmg"
 APP_PATH="$ROOT_DIR/dist/NIT_Code.app"
 
+if [[ "$INCLUDE_RUNTIME" == "1" ]]; then
+  echo "Erzeuge eingebettete Runtime (python_runtime/) ..."
+  bash "$ROOT_DIR/release/scripts/create_embedded_runtime.sh" --force
+  # Nach Contents/Resources, NICHT Contents/MacOS: dort behandelt codesign
+  # die Runtime-Ordner als "nested code" und bricht ab ("bundle format
+  # unrecognized ... In subcomponent: .../include/python3.12"). Unter
+  # Resources wird sie nur als Daten versiegelt; nit_code/config.py sucht
+  # dort ebenfalls. ditto statt cp -R: erhaelt Zeitstempel/Metadaten.
+  echo "Kopiere python_runtime ins App-Bundle ..."
+  rm -rf "$APP_PATH/Contents/Resources/python_runtime"
+  ditto "$ROOT_DIR/python_runtime" "$APP_PATH/Contents/Resources/python_runtime"
+
+  # WICHTIG: Runtime-Check VOR dem Signieren und ohne Bytecode-Schreiben –
+  # sonst schreibt Python .pyc-Dateien ins bereits versiegelte Bundle und
+  # die Signatur ist beim Nutzer kaputt ("a sealed resource is missing or
+  # invalid" -> macOS meldet die App als "beschaedigt").
+  echo "Pruefe gebuendelte Runtime (Python + pip) ..."
+  BUNDLED_PY="$APP_PATH/Contents/Resources/python_runtime/python/bin/python3"
+  PYTHONDONTWRITEBYTECODE=1 "$BUNDLED_PY" --version
+  PYTHONDONTWRITEBYTECODE=1 "$BUNDLED_PY" -m pip --version
+
+  # Das Hineinkopieren bricht das Resources-Siegel der Ad-hoc-Signatur –
+  # Bundle neu signieren (ohne --deep: die inneren Binaries hat PyInstaller
+  # bereits signiert, nur das Siegel muss neu) und streng verifizieren.
+  echo "Signiere App-Bundle neu (ad hoc) ..."
+  codesign --force -s - "$APP_PATH"
+  codesign --verify --deep --strict "$APP_PATH"
+fi
+
 hdiutil create \
   -volname "NIT_Code" \
   -srcfolder "$APP_PATH" \
@@ -36,6 +67,9 @@ hdiutil create \
   -format UDZO \
   "$DMG_PATH"
 
-zip -r "$OUT_DIR/NIT_Code-macos-app.zip" "$APP_PATH"
+# -y erhält Symlinks (App-Bundle und Runtime enthalten welche); aus dist/
+# heraus packen, damit im Archiv nicht der komplette Build-Pfad landet.
+rm -f "$OUT_DIR/NIT_Code-macos-app.zip"
+(cd "$ROOT_DIR/dist" && zip -ryq "$OUT_DIR/NIT_Code-macos-app.zip" "NIT_Code.app")
 
 echo "macOS-Pakete erstellt: $DMG_PATH und NIT_Code-macos-app.zip"

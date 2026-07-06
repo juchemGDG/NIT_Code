@@ -232,7 +232,8 @@ Schrittmotor NEMA17 mit A4988/DRV8825 (StepperDir):
 
 Schrittmotor 28BYJ-48 mit ULN2003 (StepperULN):
   from nitbw_stepper import StepperULN, VOR, ZURUECK
-  motor = StepperULN(IN1, IN2, IN3, IN4, geschwindigkeit=800)   # 4 Pins positional
+  motor = StepperULN(in1=14, in2=27, in3=26, in4=25,
+                     schritte_pro_umdrehung=2048, geschwindigkeit=200)   # 28BYJ-48: max. ~200 sps
   motor.schritte(n, VOR) / motor.umdrehungen(n, VOR) / motor.aus()
 
 Temperatur DS18B20 (OneWire):

@@ -2,11 +2,10 @@
 REM NIT_Code – Windows Starter
 cd /d "%~dp0"
 
-if not exist ".venv" (
-    echo Erstelle virtuelle Umgebung ...
-    python -m venv .venv
-    echo Installiere Abhaengigkeiten ...
-    .venv\Scripts\pip install -r requirements.txt
-)
+set "PYTHON_EXE=python"
+if exist "python_runtime\python.exe" set "PYTHON_EXE=python_runtime\python.exe"
+if not exist "%PYTHON_EXE%" if exist "python_runtime\Scripts\python.exe" set "PYTHON_EXE=python_runtime\Scripts\python.exe"
+if not exist "%PYTHON_EXE%" if exist "python_runtime\python\python.exe" set "PYTHON_EXE=python_runtime\python\python.exe"
 
-.venv\Scripts\python start.py %*
+echo Verwende Python: %PYTHON_EXE%
+"%PYTHON_EXE%" start.py %*

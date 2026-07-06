@@ -19,7 +19,18 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QCheckBox,
 )
 
-from .config import APP_NAME, APP_VERSION, THEME, THEMES, SUPPORTED_BOARDS, python_executable, tool_command, set_theme
+from .config import (
+    APP_NAME,
+    APP_VERSION,
+    THEME,
+    THEMES,
+    SUPPORTED_BOARDS,
+    embedded_python_executable,
+    preferred_python_interpreter,
+    python_executable,
+    tool_command,
+    set_theme,
+)
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel, DeviceListWorker
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
@@ -2927,6 +2938,29 @@ class MainWindow(QMainWindow):
         self._settings_highlight_line = self._settings_bool("editor/highlight_line", self._settings_highlight_line)
         self._settings_autosave_secs = self._settings_int("editor/autosave_secs", self._settings_autosave_secs)
         self._settings_python_exec = str(self._settings_store.value("python/executable", self._settings_python_exec) or "")
+        embedded_py = embedded_python_executable()
+
+        # Einmalige Migration: wenn eine mitgelieferte Runtime vorhanden ist,
+        # soll sie standardmäßig gewählt werden (auch bei Alt-Settings).
+        migrated_embedded = self._settings_bool("python/prefer_embedded_migrated", False)
+        if embedded_py and not migrated_embedded:
+            self._settings_python_exec = embedded_py
+            self._settings_store.setValue("python/executable", self._settings_python_exec)
+            self._settings_store.setValue("python/prefer_embedded_migrated", True)
+        else:
+            chosen = (self._settings_python_exec or "").strip()
+            usable = False
+            if chosen:
+                if os.path.isfile(chosen):
+                    usable = True
+                elif shutil.which(chosen):
+                    usable = True
+
+            if not usable:
+                fallback = embedded_py or preferred_python_interpreter() or ""
+                self._settings_python_exec = fallback
+                if fallback:
+                    self._settings_store.setValue("python/executable", fallback)
         self._settings_scrollback = self._settings_int("console/scrollback", self._settings_scrollback)
         # Block-Editor ist seit dem Ende der BETA standardmäßig an. Bestehende
         # Installationen haben durch den früheren Standard („aus") ein
