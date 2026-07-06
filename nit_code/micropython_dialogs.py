@@ -560,6 +560,11 @@ class FirmwareDownloader(QThread):
                             "micro:bit-Version nicht automatisch erkennbar. "
                             "Bitte lokale v1/v2-HEX auswählen."
                         )
+                elif self.download_page == "MICROBIT_V2":
+                    self.log.emit("Erzwungen: micro:bit v2\n")
+                    self.log.emit("Quelle: GitHub Releases (microbit-foundation)\n")
+                    url, version, build = resolve_latest_microbit_v2_firmware_url(self.ext)
+                    self.log.emit(f"Neueste v2-Version: {version} ({build})\n")
                 else:
                     self.log.emit("Ermittle neueste stabile Firmware …\n")
                     url, version, build = resolve_latest_firmware_url(
@@ -648,6 +653,16 @@ class FlashDialog(QDialog):
         self._rb_online = QRadioButton("Neueste Firmware automatisch laden")
         fg.addWidget(self._rb_local)
         fg.addWidget(self._rb_online)
+
+        mb_row = QHBoxLayout()
+        self._microbit_mode_lbl = QLabel("micro:bit-Version:")
+        self._microbit_mode = QComboBox()
+        self._microbit_mode.addItem("Automatisch erkennen", "auto")
+        self._microbit_mode.addItem("Erzwingen: v1", "v1")
+        self._microbit_mode.addItem("Erzwingen: v2", "v2")
+        mb_row.addWidget(self._microbit_mode_lbl)
+        mb_row.addWidget(self._microbit_mode, 1)
+        fg.addLayout(mb_row)
 
         local_row = QHBoxLayout()
         self._local_path = QLineEdit()
@@ -743,9 +758,13 @@ class FlashDialog(QDialog):
                 "Falls die Erkennung fehlschlägt: v1/v2-HEX lokal auswählen."
             )
             self._hint_lbl.setVisible(True)
+            self._microbit_mode_lbl.setVisible(True)
+            self._microbit_mode.setVisible(True)
         else:
             self._rb_online.setText("Neueste Firmware automatisch von micropython.org laden")
             self._hint_lbl.setVisible(False)
+            self._microbit_mode_lbl.setVisible(False)
+            self._microbit_mode.setVisible(False)
 
         self._port_group.setVisible(not self._is_uf2)
 
@@ -812,6 +831,14 @@ class FlashDialog(QDialog):
             else:
                 # Standard: neueste stabile Firmware für dieses Board automatisch holen.
                 download_page = board_info.get("download_page", "")
+                if self._flash_cmd == "microbit":
+                    sel = self._microbit_mode.currentData()
+                    if sel == "v1":
+                        download_page = "MICROBIT"
+                    elif sel == "v2":
+                        download_page = "MICROBIT_V2"
+                    else:
+                        download_page = "MICROBIT_AUTO"
                 if not download_page:
                     QMessageBox.warning(
                         self, "Kein Board",
