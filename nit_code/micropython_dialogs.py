@@ -15,6 +15,84 @@ from PyQt6.QtGui import QFont, QColor
 from .config import THEME, SUPPORTED_BOARDS, LIB_REPO_API, LIB_REPO_RAW, python_executable, tool_command
 from .net_hints import with_network_hint
 
+MICROBIT_V2_RELEASES_API = "https://api.github.com/repos/microbit-foundation/micropython-microbit-v2/releases/latest"
+
+
+def find_microbit_drive() -> str | None:
+    import sys
+    if sys.platform == "darwin":
+        for name in os.listdir("/Volumes"):
+            if name.upper() == "MICROBIT":
+                return f"/Volumes/{name}"
+    elif sys.platform == "win32":
+        import string
+        import ctypes
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            label_buf = ctypes.create_unicode_buffer(261)
+            ctypes.windll.kernel32.GetVolumeInformationW(
+                drive, label_buf, 261, None, None, None, None, 0
+            )
+            if label_buf.value.upper() == "MICROBIT":
+                return drive
+    else:
+        import getpass
+        for base in [f"/media/{getpass.getuser()}", "/media", "/run/media"]:
+            if os.path.isdir(base):
+                for sub in os.listdir(base):
+                    if sub.upper() == "MICROBIT":
+                        return os.path.join(base, sub)
+                    subpath = os.path.join(base, sub)
+                    if os.path.isdir(subpath):
+                        for entry in os.listdir(subpath):
+                            if entry.upper() == "MICROBIT":
+                                return os.path.join(subpath, entry)
+    return None
+
+
+def detect_microbit_variant_from_drive(drive: str | None) -> tuple[str | None, str]:
+    """Erkennt micro:bit-Hardwarevariante (v1/v2) über DETAILS/INFO-Dateien."""
+    if not drive:
+        return None, "Kein MICROBIT-Laufwerk gefunden"
+
+    detail_files = (
+        "DETAILS.TXT",
+        "details.txt",
+        "INFO_UF2.TXT",
+        "info_uf2.txt",
+    )
+    text = ""
+    source = ""
+    for name in detail_files:
+        p = os.path.join(drive, name)
+        if os.path.isfile(p):
+            try:
+                text = Path(p).read_text(encoding="utf-8", errors="ignore")
+                source = name
+                break
+            except OSError:
+                continue
+
+    if not text:
+        return None, "DETAILS/INFO-Datei nicht lesbar"
+
+    low = text.lower()
+    import re
+    m = re.search(r"unique\s*id\s*:\s*([0-9a-f]+)", low)
+    if m:
+        uid = m.group(1)
+        if uid.startswith("9904"):
+            return "v2", f"{source}: Unique ID {uid[:8]}..."
+        if uid.startswith("9900"):
+            return "v1", f"{source}: Unique ID {uid[:8]}..."
+
+    if "nrf52833" in low or "micro:bit v2" in low or "microbit v2" in low:
+        return "v2", f"{source}: nRF52833/v2-Hinweis"
+    if "nrf51822" in low or "nrf51" in low or "micro:bit v1" in low or "microbit v1" in low:
+        return "v1", f"{source}: nRF51/v1-Hinweis"
+
+    return None, f"{source}: Variante nicht eindeutig erkennbar"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Hilfsstil
 # ──────────────────────────────────────────────────────────────────────────────
@@ -343,29 +421,7 @@ class FlashWorker(QThread):
     # micro:bit: HEX automatisch auf das MICROBIT-Laufwerk kopieren
     # ------------------------------------------------------------------
     def _find_microbit_drive(self) -> str | None:
-        import sys, os
-        if sys.platform == "darwin":
-            for name in os.listdir("/Volumes"):
-                if name.upper() == "MICROBIT":
-                    return f"/Volumes/{name}"
-        elif sys.platform == "win32":
-            import string, ctypes
-            for letter in string.ascii_uppercase:
-                drive = f"{letter}:\\"
-                label_buf = ctypes.create_unicode_buffer(261)
-                ctypes.windll.kernel32.GetVolumeInformationW(
-                    drive, label_buf, 261, None, None, None, None, 0
-                )
-                if label_buf.value.upper() == "MICROBIT":
-                    return drive
-        else:
-            import getpass
-            for base in [f"/media/{getpass.getuser()}", "/media", "/run/media"]:
-                if os.path.isdir(base):
-                    for sub in os.listdir(base):
-                        if sub.upper() == "MICROBIT":
-                            return os.path.join(base, sub)
-        return None
+        return find_microbit_drive()
 
     def _flash_microbit(self):
         import shutil, time
@@ -386,6 +442,11 @@ class FlashWorker(QThread):
             return
 
         self.log.emit(f"micro:bit gefunden: {drive}\n")
+        variant, reason = detect_microbit_variant_from_drive(drive)
+        if variant:
+            self.log.emit(f"Erkanntes Board: micro:bit {variant} ({reason})\n")
+        else:
+            self.log.emit(f"Hinweis: {reason}\n")
         self.progress.emit(50)
 
         fw = self.firmware_path
@@ -444,6 +505,24 @@ def resolve_latest_firmware_url(download_page: str, ext: str = ".bin"):
     return f"{MICROPYTHON_BASE}{best[2]}", best[1], best[0]
 
 
+def resolve_latest_microbit_v2_firmware_url(ext: str = ".hex"):
+    """Ermittelt die neueste micro:bit-v2-Firmware aus den GitHub-Releases."""
+    headers = {"Accept": "application/vnd.github+json"}
+    resp = requests.get(MICROBIT_V2_RELEASES_API, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    for asset in data.get("assets", []):
+        name = (asset.get("name") or "").lower()
+        if name.endswith(ext):
+            url = asset.get("browser_download_url")
+            if not url:
+                continue
+            tag = data.get("tag_name", "?")
+            published = (data.get("published_at") or "")[:10]
+            return url, tag, published
+    raise RuntimeError("In den micro:bit-v2-Releases wurde keine .hex-Datei gefunden.")
+
+
 class FirmwareDownloader(QThread):
     log = pyqtSignal(str)
     progress = pyqtSignal(int)
@@ -462,11 +541,31 @@ class FirmwareDownloader(QThread):
             url = self.url
             if not url:
                 # Kein direkter Link angegeben → neueste stabile Version ermitteln.
-                self.log.emit("Ermittle neueste stabile Firmware …\n")
-                url, version, build = resolve_latest_firmware_url(
-                    self.download_page, self.ext
-                )
-                self.log.emit(f"Neueste Version: v{version} (Build {build})\n")
+                if self.download_page == "MICROBIT_AUTO":
+                    self.log.emit("Ermittle micro:bit-Hardwareversion (v1/v2) …\n")
+                    drive = find_microbit_drive()
+                    variant, reason = detect_microbit_variant_from_drive(drive)
+                    if variant == "v2":
+                        self.log.emit(f"Erkannt: micro:bit v2 ({reason})\n")
+                        self.log.emit("Quelle: GitHub Releases (microbit-foundation)\n")
+                        url, version, build = resolve_latest_microbit_v2_firmware_url(self.ext)
+                        self.log.emit(f"Neueste v2-Version: {version} ({build})\n")
+                    elif variant == "v1":
+                        self.log.emit(f"Erkannt: micro:bit v1 ({reason})\n")
+                        self.log.emit("Quelle: micropython.org/download/MICROBIT\n")
+                        url, version, build = resolve_latest_firmware_url("MICROBIT", self.ext)
+                        self.log.emit(f"Neueste v1-Version: v{version} (Build {build})\n")
+                    else:
+                        raise RuntimeError(
+                            "micro:bit-Version nicht automatisch erkennbar. "
+                            "Bitte lokale v1/v2-HEX auswählen."
+                        )
+                else:
+                    self.log.emit("Ermittle neueste stabile Firmware …\n")
+                    url, version, build = resolve_latest_firmware_url(
+                        self.download_page, self.ext
+                    )
+                    self.log.emit(f"Neueste Version: v{version} (Build {build})\n")
             self.log.emit(f"Lade Firmware von {url} ...\n")
             resp = requests.get(url, stream=True, timeout=30)
             resp.raise_for_status()
@@ -546,7 +645,7 @@ class FlashDialog(QDialog):
         fg = QVBoxLayout(fw_group)
         self._rb_local = QRadioButton("Lokale Datei")
         self._rb_local.setChecked(True)
-        self._rb_online = QRadioButton("Neueste Firmware automatisch von micropython.org laden")
+        self._rb_online = QRadioButton("Neueste Firmware automatisch laden")
         fg.addWidget(self._rb_local)
         fg.addWidget(self._rb_online)
 
@@ -630,19 +729,22 @@ class FlashDialog(QDialog):
         self._is_uf2 = self._flash_cmd in ("rp2", "microbit")
 
         if self._flash_cmd == "rp2":
+            self._rb_online.setText("Neueste Firmware automatisch von micropython.org laden")
             self._hint_lbl.setText(
                 "💡 <b>Pico:</b> BOOTSEL-Taste gedrückt halten, USB einstecken, "
                 "Taste loslassen – das Programm kopiert die Firmware automatisch!"
             )
             self._hint_lbl.setVisible(True)
         elif self._flash_cmd == "microbit":
+            self._rb_online.setText("Passende Firmware automatisch laden (v1/v2-Erkennung)")
             self._hint_lbl.setText(
-                "💡 <b>micro:bit v1:</b> Gerät anschließen – "
-                "die HEX-Datei wird automatisch übertragen!<br>"
-                "Für <b>micro:bit v2</b> bitte eine passende v2-HEX lokal auswählen."
+                "💡 <b>micro:bit:</b> Gerät anschließen – die Hardwareversion (v1/v2) "
+                "wird erkannt und die passende HEX geladen.<br>"
+                "Falls die Erkennung fehlschlägt: v1/v2-HEX lokal auswählen."
             )
             self._hint_lbl.setVisible(True)
         else:
+            self._rb_online.setText("Neueste Firmware automatisch von micropython.org laden")
             self._hint_lbl.setVisible(False)
 
         self._port_group.setVisible(not self._is_uf2)

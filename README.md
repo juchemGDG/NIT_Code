@@ -11,7 +11,7 @@ GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 | Funktion | Beschreibung |
 |---|---|
 | **Python (lokal)** | Code schreiben und mit lokaler Python-Installation (`.venv`) ausführen |
-| **MicroPython** | Direktes Programmieren für ESP32, micro:bit v1, Raspberry Pi Pico 2 / Pico 2W |
+| **MicroPython** | Direktes Programmieren für ESP32, micro:bit (v1/v2), Raspberry Pi Pico 2 / Pico 2W |
 | **Firmware flashen** | MicroPython-Firmware von lokaler Datei oder micropython.org flashen |
 | **Bibliotheks-Manager** | Bibliotheken aus [NIT_Bibliotheken](https://github.com/juchemGDG/NIT_Bibliotheken) direkt auf den Controller laden – online oder (in Schulnetzen ohne Internet) offline aus einem entpackten ZIP-Ordner |
 | **Block-Editor** | Blockbasiert programmieren (wie Snap!/Scratch) und automatisch in lesbaren Python-/MicroPython-Code umwandeln – inkl. GPIO-, ADC-, DAC-, NeoPixel- und nitbw-Bibliotheks-Blöcken |
@@ -294,7 +294,7 @@ oder direkt:
 ## Unterstützte Controller
 
 - **ESP32** (alle Varianten)
-- **micro:bit v1**
+- **micro:bit (v1/v2, automatische Firmware-Auswahl im Flash-Dialog)**
 - **Raspberry Pi Pico 2**
 - **Raspberry Pi Pico 2W**
 

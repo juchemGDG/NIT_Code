@@ -335,8 +335,8 @@ SUPPORTED_BOARDS = {
         "baud": 115200,
     },
     "micro:bit": {
-        "label": "micro:bit v1",
-        "download_page": "MICROBIT",
+        "label": "micro:bit (auto v1/v2)",
+        "download_page": "MICROBIT_AUTO",
         "flash_cmd": "microbit",
         "baud": 115200,
     },
