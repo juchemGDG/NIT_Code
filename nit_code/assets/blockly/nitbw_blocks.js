@@ -52,7 +52,9 @@
   function B(spec) {
     Blockly.Blocks[spec.type] = { init: function () { buildBlock(this, spec); } };
     var fn = function (block) {
-      (spec.defs || []).forEach(function (d) { P.definitions_[d[0]] = subst(d[1], block); });
+      (spec.defs || []).forEach(function (d) {
+        P.definitions_[d[0]] = typeof d[1] === 'function' ? d[1](block) : subst(d[1], block);
+      });
       var code = spec.code != null ? subst(spec.code, block) : '';
       if (spec.out) return [code, ord(spec.outOrder || 'FUNCTION_CALL')];
       return code ? code + '\n' : '';
@@ -197,10 +199,19 @@
       tip: 'Farbsensor TCS3200.' });
   B({ type: 'tcs_farbe', parts: ['dominante Farbe'], out: 'String', code: 'farbsensor.dominante_farbe(messungen=8)' });
 
-  // ════════════════════════ TOF VL53L0X (I2C) ═════════════════════════
-  B({ type: 'tof_init', parts: ['TOF-Sensor einrichten'],
-      defs: [['from_nitbw_tof', 'from nitbw_tof import TOF']].concat(I2C_DEFS).concat([['inst_tof', 'tof = TOF(i2c)']]),
-      tip: 'Abstandssensor VL53L0X am I2C-Bus.' });
+  // ════════════════ TOF VL53L0X / VL6180X (I2C) ═══════════════════════
+  // sensor_typ='auto' ist der Bibliotheks-Default – bei "automatisch" wird der
+  // Parameter weggelassen, damit der Code auch mit älteren nitbw_tof-Versionen läuft.
+  B({ type: 'tof_init',
+      parts: ['TOF-Sensor einrichten', 'Typ',
+              { sel: 'TYP', o: [['automatisch', 'auto'], ['VL53L0X (bis 2 m)', 'vl53l0x'], ['VL6180X (bis 20 cm)', 'vl6180x']] }],
+      defs: [['from_nitbw_tof', 'from nitbw_tof import TOF']].concat(I2C_DEFS).concat([
+        ['inst_tof', function (block) {
+          var typ = block.getFieldValue('TYP');
+          return typ === 'auto' ? 'tof = TOF(i2c)' : "tof = TOF(i2c, sensor_typ='" + typ + "')";
+        }]]),
+      tip: 'Laser-Abstandssensor am I2C-Bus: VL53L0X (Langbereich bis ca. 2 m) oder '
+        + 'VL6180X (Kurzdistanz bis ca. 20 cm). "automatisch" erkennt den Sensortyp selbst.' });
   B({ type: 'tof_mm', parts: ['Abstand TOF in mm'], out: 'Number', code: 'tof.messen_mm()' });
   B({ type: 'tof_cm', parts: ['Abstand TOF in cm'], out: 'Number', code: 'tof.messen_cm()' });
 

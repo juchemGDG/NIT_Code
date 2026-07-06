@@ -306,7 +306,7 @@ _LIB_INIT = {
     "puls": ("puls_init", [("PIN", ("kw", "adc_pin", "int"))]),
     "tcs": ("tcs_init", [("OUT", ("kw", "out", "int")), ("S2", ("kw", "s2", "int")), ("S3", ("kw", "s3", "int")),
                          ("S0", ("kw", "s0", "int")), ("S1", ("kw", "s1", "int"))]),
-    "tof": ("tof_init", []),
+    "tof": ("tof_init", [("TYP", ("kw", "sensor_typ", "str"))]),
     "joy": ("joy_init", [("VRX", ("kw", "vrx_pin", "int")), ("VRY", ("kw", "vry_pin", "int")),
                          ("SW", ("kw", "sw_pin", "int"))]),
     "rtc": ("rtc_init", [("CHIP", ("kw", "chip", "str"))]),
