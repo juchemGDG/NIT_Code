@@ -51,10 +51,12 @@ class FilePanel(QWidget):
     """Dateibaum-Sidebar mit Kontextmenü."""
 
     file_open_requested = pyqtSignal(str)   # Pfad zur Datei
+    save_to_device_requested = pyqtSignal(str)   # Lokale Datei auf Controller speichern
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._root = str(Path.home())
+        self._device_connected = False
         self._setup_ui()
         self.set_root(self._root)
 
@@ -181,6 +183,9 @@ class FilePanel(QWidget):
         if os.path.isfile(path):
             self.file_open_requested.emit(path)
 
+    def set_device_connected(self, connected: bool):
+        self._device_connected = bool(connected)
+
     def _show_context_menu(self, pos):
         index = self._tree.indexAt(pos)
         path = self._index_to_path(index)
@@ -204,6 +209,11 @@ class FilePanel(QWidget):
         if os.path.isfile(path):
             menu.addAction("Öffnen", lambda: self.file_open_requested.emit(path))
             menu.addAction("Öffnen mit …", lambda: self._open_with(path))
+            if self._device_connected:
+                menu.addAction(
+                    "Auf dem Device speichern …",
+                    lambda: self.save_to_device_requested.emit(path),
+                )
             menu.addSeparator()
         menu.addAction("Neue Datei", lambda: self._new_file(
             os.path.dirname(path) if os.path.isfile(path) else path
@@ -630,6 +640,7 @@ class DeviceFilePanel(QWidget):
         elif item:
             name = item.data(self._ROLE_NAME)
             menu.addAction("📂 Öffnen (herunterladen)", lambda: self._open_file(name))
+            menu.addAction("💾 Auf diesem Rechner speichern …", lambda: self._save_file_as(name))
             menu.addAction("📦 In Ordner verschieben …", lambda: self._move_file(name))
             menu.addSeparator()
             menu.addAction("🗑 Vom Controller löschen", lambda: self._delete_file(name))
@@ -677,6 +688,35 @@ class DeviceFilePanel(QWidget):
         self._run_device_cmd(
             [*tool_command("mpremote"), "connect", self._port,
              "cp", f":{self._remote_path(name)}", tmp_path],
+            _done, timeout=15,
+        )
+
+    def _save_file_as(self, name: str):
+        if not self._port or not name:
+            return
+
+        start_path = os.path.join(str(Path.home()), os.path.basename(name))
+        target_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Datei vom Controller speichern",
+            start_path,
+            "Alle Dateien (*)",
+        )
+        if not target_path:
+            return
+
+        def _done(ok: bool, err: str):
+            if ok:
+                QMessageBox.information(
+                    self, "Gespeichert",
+                    f'Die Datei wurde gespeichert nach:\n{target_path}'
+                )
+            else:
+                QMessageBox.critical(self, "Fehler", err or "Download fehlgeschlagen")
+
+        self._run_device_cmd(
+            [*tool_command("mpremote"), "connect", self._port,
+             "cp", f":{self._remote_path(name)}", target_path],
             _done, timeout=15,
         )
 

@@ -945,6 +945,7 @@ class MainWindow(QMainWindow):
         self._file_panel.setMinimumWidth(0)
         self._file_panel.setMaximumWidth(10000)
         self._file_panel.file_open_requested.connect(self._open_file_path)
+        self._file_panel.save_to_device_requested.connect(self._upload_local_file_to_device)
         self._file_panel.set_root(self._settings_sketchbook)
         self._left_splitter.addWidget(self._file_panel)
 
@@ -1248,6 +1249,7 @@ class MainWindow(QMainWindow):
         self._reset_btn_act.setVisible(is_upy)
         self._device_panel.setVisible(is_upy)
         if is_upy:
+            self._file_panel.set_device_connected(bool(self._get_serial_port(silent=True)))
             self._refresh_ports()
             self._port_scan_timer.start()
             self._status_mode.setText("MicroPython")
@@ -1255,6 +1257,7 @@ class MainWindow(QMainWindow):
         else:
             self._port_scan_timer.stop()
             self._status_mode.setText("Python (lokal)")
+            self._file_panel.set_device_connected(False)
             self._device_panel.refresh("")
             self._left_splitter.setSizes([600, 0])
             self._console.set_shell_mode("python",
@@ -1544,6 +1547,16 @@ class MainWindow(QMainWindow):
         else:
             self._do_save(tab, tab.filepath, silent=True)
 
+        self._upload_local_file_to_device(tab.filepath)
+
+    def _upload_local_file_to_device(self, local_path: str):
+        if not local_path or not os.path.isfile(local_path):
+            QMessageBox.warning(
+                self, "Datei nicht gefunden",
+                "Die ausgewählte Datei konnte nicht gefunden werden."
+            )
+            return
+
         port = self._get_serial_port()
         if not port:
             return
@@ -1555,28 +1568,28 @@ class MainWindow(QMainWindow):
         worker = DeviceListWorker(port)
         worker.result.connect(
             lambda files: self._continue_upload(
-                tab, port, [name for name, _size, is_dir in files if is_dir]
+                local_path, port, [name for name, _size, is_dir in files if is_dir]
             )
         )
         # Listing fehlgeschlagen → best effort mit leerer Ordnerliste fortfahren
-        worker.error.connect(lambda _msg: self._continue_upload(tab, port, []))
+        worker.error.connect(lambda _msg: self._continue_upload(local_path, port, []))
         self._track_aux_worker(worker)
         worker.start()
 
-    def _continue_upload(self, tab, port: str, dirs: list[str]):
+    def _continue_upload(self, local_path: str, port: str, dirs: list[str]):
         """Zweiter Teil von :meth:`_upload_to_device` – läuft nach dem Geräte-Listing."""
         folder = self._choose_device_folder(dirs)
         if folder is None:   # abgebrochen
             return
 
-        remote_name = os.path.basename(tab.filepath)
+        remote_name = os.path.basename(local_path)
         remote_path = f"{folder}/{remote_name}" if folder else remote_name
         ziel = f"{folder}/" if folder else "Hauptebene"
         self._console.append_info(f"↑  Lade {remote_name} nach {ziel} auf {port} hoch ...\n")
 
         def _start_copy(*_args):
             cmd = [*tool_command("mpremote"), "connect", port,
-                   "cp", tab.filepath, f":{remote_path}"]
+                   "cp", local_path, f":{remote_path}"]
             self._retire_process()
             self._process = ProcessRunner(cmd)
             self._process.output.connect(self._on_process_output)
@@ -2818,6 +2831,7 @@ class MainWindow(QMainWindow):
             # Geräteliste unverändert – nur Trennungs-Status nachziehen.
             if current and current not in new_devices:
                 self._status_mode.setText("MicroPython  –  ⚠ Gerät getrennt")
+                self._file_panel.set_device_connected(False)
             return
 
         self._port_combo.blockSignals(True)
@@ -2836,19 +2850,25 @@ class MainWindow(QMainWindow):
                 self._port_combo.blockSignals(True)
                 self._port_combo.setCurrentIndex(idx)
                 self._port_combo.blockSignals(False)
+                self._file_panel.set_device_connected(True)
             else:
                 self._status_mode.setText("MicroPython  –  ⚠ Gerät getrennt")
+                self._file_panel.set_device_connected(False)
         elif ports:
             # Erstmalige Befüllung: ersten Port auswählen und Firmware-Version lesen
             self._on_port_selected(0)
+        else:
+            self._file_panel.set_device_connected(False)
 
     def _on_port_selected(self, index: int):
         """Wird aufgerufen wenn der Nutzer ein Gerät auswählt – liest Firmware-Version."""
         port = self._port_combo.itemData(index)
         if not port:
             self._status_mode.setText("MicroPython")
+            self._file_panel.set_device_connected(False)
             return
         self._status_mode.setText(f"MicroPython  –  {port}")
+        self._file_panel.set_device_connected(True)
         self._device_panel.refresh(port)
         # mpremote REPL starten – der REPL-Banner zeigt Firmware-Version
         self._console.set_shell_mode("micropython", port=port)
