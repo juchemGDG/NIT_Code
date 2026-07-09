@@ -288,6 +288,9 @@ class GitCloneDialog(QDialog):
         self._pw_toggle = QPushButton("👁")
         self._pw_toggle.setCheckable(True)
         self._pw_toggle.setFixedSize(32, 28)
+        # Ohne padding:0 schneidet das Dialog-Stylesheet (padding: 6px 14px
+        # für alle QPushButton) das Auge bei der festen Größe ab.
+        self._pw_toggle.setStyleSheet("QPushButton { padding: 0px; }")
         self._pw_toggle.setToolTip("Passwort anzeigen / verbergen")
         self._pw_toggle.toggled.connect(
             lambda checked: self._password_edit.setEchoMode(
@@ -1802,9 +1805,18 @@ class MainWindow(QMainWindow):
     # Git-Aktionen
     # ──────────────────────────────────────────────────────────────────────
     def _resolve_git_executable(self) -> str | None:
-        """Liefert ein nutzbares Git-Programm aus Einstellung oder PATH."""
-        candidates: list[str] = []
+        """Liefert ein nutzbares Git-Programm aus Einstellung oder PATH.
+
+        Das Ergebnis wird gecacht: Auf Schulservern (Git auf Netzlaufwerk,
+        Virenscanner) dauert der ``git --version``-Check sonst vor jeder
+        Git-Aktion mehrere Sekunden.
+        """
         chosen = (self._settings_git_executable or "").strip()
+        cached = getattr(self, "_git_exec_cache", None)
+        if cached is not None and cached[0] == chosen and Path(cached[1]).is_file():
+            return cached[1]
+
+        candidates: list[str] = []
         if chosen:
             candidates.append(chosen)
         path_git = shutil.which("git")
@@ -1834,11 +1846,12 @@ class MainWindow(QMainWindow):
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=3,
+                    timeout=15,
                 )
             except Exception:
                 continue
             if res.returncode == 0:
+                self._git_exec_cache = (chosen, str(p))
                 return str(p)
         return None
 

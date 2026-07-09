@@ -1761,8 +1761,8 @@ class _PipWorker(QThread):
 class _PipListWorker(QThread):
     """Liest die installierten Pakete (``pip list``) im Hintergrund.
 
-    Synchron würde das den Dialog beim Öffnen bis zu 15 s einfrieren
-    (z. B. bei langsamem Netzlaufwerk-Python).
+    Synchron würde das den Dialog beim Öffnen bis zu 60 s einfrieren
+    (z. B. bei langsamem Netzlaufwerk-Python auf Schulservern).
     """
     result = pyqtSignal(list)   # Ausgabezeilen (ohne Header)
     error  = pyqtSignal(str)
@@ -1776,10 +1776,15 @@ class _PipListWorker(QThread):
         try:
             r = subprocess.run(
                 [self._python, "-m", "pip", "list", "--format=columns"],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True, text=True, timeout=60,
             )
             lines = [ln for ln in r.stdout.splitlines()[2:] if ln.strip()]
             self.result.emit(lines)
+        except subprocess.TimeoutExpired:
+            self.error.emit(
+                "Zeitüberschreitung beim Lesen der Paketliste (60 s) – "
+                "der Python-Interpreter reagiert sehr langsam."
+            )
         except Exception as e:
             self.error.emit(str(e))
 
