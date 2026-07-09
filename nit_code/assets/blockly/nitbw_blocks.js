@@ -78,6 +78,12 @@
       code: 'oled.draw_rect(%X%, %Y%, %W%, %H%)' });
   B({ type: 'oled_circle', parts: ['OLED Kreis x', { f: 'X', d: 64, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 32, lo: 0, hi: 63 }, 'r', { f: 'R', d: 10, lo: 1, hi: 64 }],
       code: 'oled.draw_circle(%X%, %Y%, %R%)' });
+  B({ type: 'oled_svg', parts: ['OLED zeige SVG-Datei', { txt: 'DATEI', d: 'bild.svg' }],
+      code: "oled.show_svg('%DATEI%')",
+      tip: 'Zeigt eine SVG-Datei vom Board (nur einfache Formen: Linien, Rechtecke, Kreise, Pfade). Danach "OLED anzeigen" aufrufen.' });
+  B({ type: 'oled_bmp', parts: ['OLED zeige BMP-Datei', { txt: 'DATEI', d: 'bild.bmp' }],
+      code: "oled.show_bmp('%DATEI%')",
+      tip: 'Zeigt eine BMP-Datei vom Board (1/24/32 Bit, wird schwarz/weiss umgewandelt). Danach "OLED anzeigen" aufrufen.' });
 
   // ════════════════════════ LCD-Display (I2C) ═════════════════════════
   B({ type: 'lcd_init', parts: ['LCD-Display Adresse', { txt: 'ADDR', d: '0x27' }],
@@ -107,6 +113,36 @@
   B({ type: 'niton_ton', parts: ['NITon spiele Note', { sel: 'NOTE', o: NOTEN }, 'Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.ton(%NOTE%, %DAUER%)' });
   B({ type: 'niton_pause', parts: ['NITon Pause Dauer', { sel: 'DAUER', o: DAUERN }], code: 'niton.ton(0, %DAUER%)' });
   B({ type: 'niton_tempo', parts: ['NITon Tempo (BPM)', { f: 'BPM', d: 120, lo: 20, hi: 400 }], code: 'niton.setGeschw(%BPM%)' });
+
+  // ════════════════════════ MP3-Player MP3-TF-16P (UART) ══════════════
+  B({ type: 'mp3_init', parts: ['MP3-Player TX Pin', { f: 'TX', d: 17, lo: 0, hi: 40 }, 'RX Pin', { f: 'RX', d: 16, lo: 0, hi: 40 }],
+      defs: [['from_machine_pin', 'from machine import Pin'],
+             ['from_machine_uart', 'from machine import UART'],
+             ['from_nitbw_mp3', 'from nitbw_mp3 import MP3TF16P'],
+             ['inst_mp3_uart', 'mp3_uart = UART(2, baudrate=9600, tx=Pin(%TX%), rx=Pin(%RX%))'],
+             ['inst_mp3', 'mp3 = MP3TF16P(mp3_uart)'],
+             ['inst_mp3_source', 'mp3.set_source(MP3TF16P.DEVICE_TF)']],
+      tip: 'MP3-Modul MP3-TF-16P (DFPlayer-kompatibel) an UART2. TX des ESP32 an RX des Moduls und umgekehrt. '
+        + 'Die Musik liegt auf der MicroSD-Karte (Ordner MP3: 0001.mp3, 0002.mp3, ...).' });
+  B({ type: 'mp3_volume', parts: ['MP3 Lautstärke', { f: 'VOL', d: 20, lo: 0, hi: 30 }], code: 'mp3.set_volume(%VOL%)',
+      tip: 'Lautstärke 0 bis 30.' });
+  B({ type: 'mp3_lauter', parts: ['MP3 lauter'], code: 'mp3.volume_up()' });
+  B({ type: 'mp3_leiser', parts: ['MP3 leiser'], code: 'mp3.volume_down()' });
+  B({ type: 'mp3_play', parts: ['MP3 spiele Titel Nr.', { f: 'NR', d: 1, lo: 1, hi: 3000 }], code: 'mp3.play_mp3(%NR%)',
+      tip: 'Spielt die Datei aus dem Ordner MP3 der SD-Karte (Nr. 1 = 0001.mp3).' });
+  B({ type: 'mp3_play_folder', parts: ['MP3 spiele Ordner', { f: 'ORDNER', d: 1, lo: 1, hi: 99 }, 'Titel', { f: 'NR', d: 1, lo: 1, hi: 255 }],
+      code: 'mp3.play_folder(folder=%ORDNER%, track=%NR%)',
+      tip: 'Spielt eine Datei aus einem nummerierten Ordner (Ordner 01..99, Datei 001.mp3..255.mp3).' });
+  B({ type: 'mp3_pause', parts: ['MP3 Pause'], code: 'mp3.pause()' });
+  B({ type: 'mp3_weiter', parts: ['MP3 fortsetzen'], code: 'mp3.resume()' });
+  B({ type: 'mp3_stop', parts: ['MP3 Stopp'], code: 'mp3.stop()' });
+  B({ type: 'mp3_next', parts: ['MP3 nächster Titel'], code: 'mp3.next()' });
+  B({ type: 'mp3_prev', parts: ['MP3 vorheriger Titel'], code: 'mp3.previous()' });
+  B({ type: 'mp3_eq', parts: ['MP3 Equalizer', { sel: 'MODE', o: [['normal', '0'], ['Pop', '1'], ['Rock', '2'], ['Jazz', '3'], ['Klassik', '4'], ['Bass', '5']] }],
+      code: 'mp3.set_eq(%MODE%)' });
+  B({ type: 'mp3_repeat', parts: ['MP3 Titel wiederholen', { sel: 'EIN', o: [['ein', 'True'], ['aus', 'False']] }], code: 'mp3.repeat_current(%EIN%)' });
+  B({ type: 'mp3_loop_all', parts: ['MP3 alle Titel wiederholen', { sel: 'EIN', o: [['ein', 'True'], ['aus', 'False']] }], code: 'mp3.loop_all(%EIN%)' });
+  B({ type: 'mp3_random', parts: ['MP3 Zufallswiedergabe'], code: 'mp3.random_all()' });
 
   // ════════════════════════ MPU6050 (Lage/Bewegung, I2C) ══════════════
   B({ type: 'mpu_init', parts: ['MPU6050 einrichten'],

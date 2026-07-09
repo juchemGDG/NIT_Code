@@ -832,6 +832,8 @@ class MainWindow(QMainWindow):
 
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
+        self._add_action(m_help, "🤖  NiT_Coder (ais.chat) …", self._show_ais_prompt)
+        m_help.addSeparator()
         self._add_action(m_help, "🐞  Fehler melden …", self._report_bug)
         m_help.addSeparator()
         self._add_action(m_help, f"Über {APP_NAME}", self._show_about)
@@ -2917,6 +2919,11 @@ class MainWindow(QMainWindow):
             console = "… (gekürzt) …\n" + console[-4000:]
         dlg = BugReportDialog(code=code, console=console, parent=self)
         dlg.exec()
+
+    def _show_ais_prompt(self):
+        """Zeigt die Vorlage, um den NiT_Coder als Dialogpartner auf ais.chat anzulegen."""
+        from .ais_prompt_dialog import AisChatPromptDialog
+        AisChatPromptDialog(parent=self).exec()
 
     def _show_about(self):
         QMessageBox.about(

@@ -212,6 +212,10 @@ def _classify(value):
             return ("neopixel", p, num)
     if fn == "I2C":
         return ("i2c",)
+    if fn == "UART":
+        tx = _pin_num(next((kw.value for kw in value.keywords if kw.arg == "tx"), None))
+        rx = _pin_num(next((kw.value for kw in value.keywords if kw.arg == "rx"), None))
+        return ("uart", tx, rx)
     if fn in _LIB_KIND:
         return ("lib", _LIB_KIND[fn])
     return None
@@ -235,6 +239,13 @@ _LIB_KIND = {
     "BME280": "bme280", "Pulssensor": "puls", "TCS3200": "tcs", "TOF": "tof",
     "KY023": "joy", "RTC": "rtc", "Compass": "compass", "AS7262": "as7262",
     "MPU6050": "mpu", "ESPNow": "espnow", "MQTTClient": "mqtt", "MLearn": "mlearn",
+    "MP3TF16P": "mp3",
+}
+
+# Benannte Equalizer-Konstanten der MP3-Bibliothek → Dropdown-Wert des Blocks
+_MP3_EQ = {
+    "MP3TF16P.EQ_NORMAL": "0", "MP3TF16P.EQ_POP": "1", "MP3TF16P.EQ_ROCK": "2",
+    "MP3TF16P.EQ_JAZZ": "3", "MP3TF16P.EQ_CLASSIC": "4", "MP3TF16P.EQ_BASS": "5",
 }
 
 
@@ -258,6 +269,14 @@ def _conv(node, conv):
     if conv == "richt":
         s = _src(node)
         return s if s in ("VOR", "ZURUECK") else None
+    if conv == "bool":
+        s = _src(node)
+        return s if s in ("True", "False") else None
+    if conv == "eq":
+        s = _src(node)
+        if s in _MP3_EQ:
+            return _MP3_EQ[s]
+        return s if s in ("0", "1", "2", "3", "4", "5") else None
     return None
 
 
@@ -331,6 +350,8 @@ _LIB_METHODS = {
                                            ("W", ("pos", 2, "int")), ("H", ("pos", 3, "int"))], []),
         "draw_circle": ("oled_circle", False, [("X", ("pos", 0, "int")), ("Y", ("pos", 1, "int")),
                                                ("R", ("pos", 2, "int"))], []),
+        "show_svg": ("oled_svg", False, [("DATEI", ("pos", 0, "str"))], []),
+        "show_bmp": ("oled_bmp", False, [("DATEI", ("pos", 0, "str"))], []),
     },
     "lcd": {
         "print": ("lcd_print", False, [("SP", ("arg", 1, "spalte", "int")), ("ZE", ("arg", 2, "zeile", "int"))],
@@ -381,6 +402,23 @@ _LIB_METHODS = {
         "check_msg": ("mqtt_check", False, [], []),
         "publish": ("mqtt_publish", False, [("TOPIC", ("pos", 0, "bstr"))], [("WERT", 1)]),
     },
+    "mp3": {
+        "set_volume": ("mp3_volume", False, [("VOL", ("pos", 0, "int"))], []),
+        "volume_up": ("mp3_lauter", False, [], []),
+        "volume_down": ("mp3_leiser", False, [], []),
+        "play_mp3": ("mp3_play", False, [("NR", ("pos", 0, "int"))], []),
+        "play_folder": ("mp3_play_folder", False, [("ORDNER", ("arg", 0, "folder", "int")),
+                                                   ("NR", ("arg", 1, "track", "int"))], []),
+        "pause": ("mp3_pause", False, [], []),
+        "resume": ("mp3_weiter", False, [], []),
+        "stop": ("mp3_stop", False, [], []),
+        "next": ("mp3_next", False, [], []),
+        "previous": ("mp3_prev", False, [], []),
+        "set_eq": ("mp3_eq", False, [("MODE", ("pos", 0, "eq"))], []),
+        "repeat_current": ("mp3_repeat", False, [("EIN", ("pos", 0, "bool"))], []),
+        "loop_all": ("mp3_loop_all", False, [("EIN", ("pos", 0, "bool"))], []),
+        "random_all": ("mp3_random", False, [], []),
+    },
     "mlearn": {
         "load_csv": ("mlearn_load", False, [("DATEI", ("pos", 0, "str")), ("TARGET", ("kw", "target", "int"))], []),
         "add_sample": ("mlearn_add", False, [], [("FEATURES", 0), ("LABEL", 1)]),
@@ -407,6 +445,7 @@ _LIB_METHODS = {
 _LIB_SPECIAL = {
     "toene": {"ton"}, "niton": {"ton"}, "bme280": {"read_all"},
     "mpu": {"read_accel", "read_gyro"}, "joy": {"daten"},
+    "mp3": {"set_source"},   # erzeugt der mp3_init-Block selbst → wird weggelassen
 }
 _NITON_NOTES = {"c", "d", "e", "f", "g", "a", "h", "c2"}
 _NITON_DAUER = {"viertel", "achtel", "halbe", "ganze", "viertelpunkt", "halbepunkt", "vierteltriole"}
@@ -416,7 +455,20 @@ def _lib_allowed(kind):
     return set(_LIB_METHODS.get(kind, {})) | _LIB_SPECIAL.get(kind, set())
 
 
-def _lib_init_block(kind, call):
+def _lib_init_block(kind, call, st=None):
+    if kind == "mp3":
+        # Konstruktor bekommt nur das UART-Objekt – die Pins stehen in dessen
+        # Zuweisung, die in der Symboltabelle als ("uart", tx, rx) vermerkt ist.
+        fields = {}
+        arg = call.args[0] if call.args else None
+        if isinstance(arg, ast.Name) and st:
+            u = st.get(arg.id)
+            if u and u[0] == "uart":
+                if u[1] is not None:
+                    fields["TX"] = u[1]
+                if u[2] is not None:
+                    fields["RX"] = u[2]
+        return _blk("mp3_init", fields=fields or None)
     spec = _LIB_INIT.get(kind)
     if not spec:
         return None
@@ -454,6 +506,8 @@ def _lib_method_stmt(kind, method, call, st):
         return _toene_ton(call)
     if kind == "niton" and method == "ton":
         return _niton_ton(call)
+    if kind == "mp3" and method == "set_source":
+        return _DROP   # gehört zur Instanz-Einrichtung, erzeugt der mp3_init-Block
     spec = _LIB_METHODS.get(kind, {}).get(method)
     if spec and spec[1] is False:
         return _apply_method(spec, call, st)
@@ -536,14 +590,14 @@ def _build_symtab(tree):
             parents[child] = parent
     ok = {}
     for var, kind in cand.items():
-        if kind[0] == "i2c":
+        if kind[0] in ("i2c", "uart"):
             continue
         if _usages_ok(tree, parents, var, kind):
             ok[var] = kind
-    # I2C-Busse nur entfernen, wenn ALLE Verwendungen in gemappte Lib-Konstruktoren gehen
+    # I2C-/UART-Busse nur entfernen, wenn ALLE Verwendungen in gemappte Lib-Konstruktoren gehen
     mapped_calls = {id(callnode[v]) for v in ok}
     for var, kind in cand.items():
-        if kind[0] == "i2c" and _i2c_droppable(tree, parents, var, mapped_calls):
+        if kind[0] in ("i2c", "uart") and _i2c_droppable(tree, parents, var, mapped_calls):
             ok[var] = kind
     return ok
 
@@ -765,8 +819,8 @@ def _hw_assign(var, value, st):
         return _blk("nit_neopixel_init",
                     fields={"PIN": kind[1], "NUM": kind[2]})
     if kind[0] == "lib":
-        return _lib_init_block(kind[1], value)   # Init-Block (oled_init, servo_init, …)
-    # Pin/ADC/DAC/PWM und I2C-Bus: Instanz wird vom Operations-/Init-Block erzeugt
+        return _lib_init_block(kind[1], value, st)   # Init-Block (oled_init, servo_init, …)
+    # Pin/ADC/DAC/PWM und I2C-/UART-Bus: Instanz wird vom Operations-/Init-Block erzeugt
     return None
 
 

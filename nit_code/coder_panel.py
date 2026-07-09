@@ -186,6 +186,10 @@ OLED-Display (SSD1306 / SH1106, I2C):
   oled.hline(x,y,l) / oled.vline(x,y,l) / oled.line(x1,y1,x2,y2)
   oled.draw_rect(x,y,w,h) / oled.fill_rect(x,y,w,h,farbe)
   oled.draw_circle(x,y,r) / oled.fill_circle(x,y,r)
+  oled.show_svg('bild.svg')   # SVG-Datei vom Board (einfache Formen: line/rect/circle/path)
+  oled.show_bmp('bild.bmp')   # BMP-Datei vom Board (1/24/32 Bit, wird schwarz/weiss)
+  oled.show_image(daten, x, y) / oled.slideshow(['bild1', 'bild2'], pause=2.0)
+  oled.progress_bar(...) / oled.draw_bar(...)
   oled.show()   # nach jeder Zeichenoperation aufrufen
   oled.clear()
 
@@ -209,6 +213,22 @@ Toene – erweitert mit Notenkonstanten (NITon):
   ton.ton(c, viertel)
   ton.ton(0, viertel)        # Pause/Rest (Hoehe 0); ton.pause(ms) erwartet Millisekunden
   ton.setGeschw(140) / ton.setLegato(90)
+
+MP3-Player MP3-TF-16P (DFPlayer-kompatibel, UART, Musik auf MicroSD-Karte):
+  from machine import Pin, UART
+  from nitbw_mp3 import MP3TF16P
+  mp3_uart = UART(2, baudrate=9600, tx=Pin(17), rx=Pin(16))
+  mp3 = MP3TF16P(mp3_uart)
+  mp3.set_source(MP3TF16P.DEVICE_TF)   # SD-Karte als Quelle, einmalig nach dem Start
+  mp3.set_volume(20)                   # 0 bis 30
+  mp3.play_mp3(nr)                     # Datei aus Ordner MP3 (0001.mp3, 0002.mp3, ...)
+  mp3.play_folder(folder=1, track=3)   # Ordner 01..99, Datei 001.mp3..255.mp3
+  mp3.pause() / mp3.resume() / mp3.stop() / mp3.next() / mp3.previous()
+  mp3.volume_up() / mp3.volume_down() / mp3.get_volume()
+  mp3.set_eq(modus)                    # 0=normal 1=pop 2=rock 3=jazz 4=classic 5=bass
+  mp3.repeat_current(True) / mp3.loop_all(True) / mp3.loop_folder(folder)
+  mp3.random_all()
+  mp3.advert_play(nr) / mp3.advert_stop()   # Einspieler aus Ordner ADVERT
 
 Ultraschall HC-SR04:
   from nitbw_ultraschall import Ultraschall

@@ -43,7 +43,20 @@
       "Bash(pip install *)",
       "Bash(python -c \"import micropython_stdlib_stubs, micropython_esp32_stubs; import pathlib; print\\(pathlib.Path\\(micropython_stdlib_stubs.__file__\\).parent\\); print\\(pathlib.Path\\(micropython_esp32_stubs.__file__\\).parent\\)\")",
       "Bash(find /usr/local/python/3.12.1/lib/python3.12/site-packages -maxdepth 2 -name \"*.pyi\" | grep -i micropython | head -20 && echo \"---\" && ls /usr/local/python/3.12.1/lib/python3.12/site-packages | grep -i micropython)",
-      "Read(//usr/local/python/3.12.1/lib/python3.12/site-packages/**)"
+      "Read(//usr/local/python/3.12.1/lib/python3.12/site-packages/**)",
+      "Bash(curl -s \"https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/commits?per_page=15\")",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents/MP3\")",
+      "Bash(curl -s https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/main/MP3/README.md)",
+      "Bash(curl -s https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/main/MP3/nitbw_mp3.py)",
+      "Bash(curl -s https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/main/MP3/beispiel_mp3.py)",
+      "Bash(curl -s https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/main/MP3/beispiel_mp3_ordner.py)",
+      "Bash(git -C /workspaces/NIT_PyEd log --oneline -5 -- nit_code/assets/blockly/nitbw_blocks.js nit_code/coder_panel.py)",
+      "Bash(curl -s \"https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents/OLED\")",
+      "Bash(curl -s https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/main/OLED/README.md)",
+      "Bash(python firmware/sync_from_nit_code.py --check)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/workspaces/NIT_PyEd/nit_code/coder_panel.py'\\).read\\(\\)\\); ast.parse\\(open\\('/workspaces/NIT_PyEd/nit_code/py2blockly.py'\\).read\\(\\)\\); print\\('PY_OK'\\)\")",
+      "Bash(QT_QPA_PLATFORM=offscreen python3 -c ' *)"
     ],
     "additionalDirectories": [
       "/workspaces/NIT_Code"
