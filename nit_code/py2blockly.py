@@ -234,6 +234,13 @@ def _suite(stmts, st):
         if out and isinstance(out[-1], dict) and out[-1].get("type") == "wlan_connect" \
                 and _is_wlan_wait(s, st):
             continue
+        # Nackter String als Anweisung ('''…'''-Kommentar/Docstring) →
+        # Kommentar-Blöcke (# …), eine Zeile pro Block, statt grauem Roh-Code.
+        if (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)
+                and isinstance(s.value.value, str)):
+            out.extend(_blk("nit_comment", fields={"TEXT": line.strip()})
+                       for line in s.value.value.splitlines() if line.strip())
+            continue
         out.append(_stmt(s, st))
     return out
 
@@ -1349,7 +1356,12 @@ def _joinedstr(node, st):
         if isinstance(v, ast.Constant) and isinstance(v.value, str):
             parts.append(_blk("text", fields={"TEXT": v.value}))
         elif isinstance(v, ast.FormattedValue):
-            parts.append(_expr(_strip_str(v.value), st))
+            if v.format_spec is not None or v.conversion != -1:
+                # Formatangabe ({x:.2f}) bzw. Konvertierung ({x!r}) hat keinen
+                # Block – als Roh-Ausdruck erhalten statt still zu verwerfen.
+                parts.append(_raw_expr(ast.JoinedStr(values=[v])))
+            else:
+                parts.append(_expr(_strip_str(v.value), st))
         else:
             parts.append(_raw_expr(v))
     if not parts:
