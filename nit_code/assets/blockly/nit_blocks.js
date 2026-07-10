@@ -423,6 +423,95 @@
     return 'np.write()\n';
   });
 
+  // ── WLAN (Standard-MicroPython: import network, KEINE nitbw-Bibliothek) ──
+  // Alle Blöcke erzeugen Instanz + active(True) selbst; der Import-Abschnitt
+  // dedupliziert. Kanonischer Instanzname "wlan" (Rück-Mapping py2blockly.py).
+  function wlanDefs() {
+    P.definitions_['import_network'] = 'import network';
+    P.definitions_['inst_wlan'] = 'wlan = network.WLAN(network.STA_IF)';
+    P.definitions_['inst_wlan_active'] = 'wlan.active(True)';
+  }
+
+  Blockly.Blocks['wlan_init'] = {
+    init: function () {
+      this.appendDummyInput().appendField('WLAN einschalten');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(PIN_COLOUR);
+      this.setTooltip('Schaltet das WLAN ein (Stationsmodus), ohne zu verbinden. '
+        + 'Zum Verbinden reicht der Block "verbinde mit WLAN" allein.');
+    }
+  };
+  reg('wlan_init', function () {
+    wlanDefs();
+    return '';   // Instanz + active(True) stehen oben – kein Code im Hauptprogramm
+  });
+
+  Blockly.Blocks['wlan_connect'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('verbinde mit WLAN')
+        .appendField(new Blockly.FieldTextInput('WLAN-Name'), 'SSID')
+        .appendField('Passwort')
+        .appendField(new Blockly.FieldTextInput(''), 'PASS');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(PIN_COLOUR);
+      this.setTooltip('Verbindet mit dem WLAN und wartet, bis die Verbindung steht. '
+        + 'Bei einem offenen WLAN das Passwort leer lassen.');
+    }
+  };
+  reg('wlan_connect', function (block) {
+    wlanDefs();
+    P.definitions_['from_time_sleep_ms'] = 'from time import sleep_ms';
+    var ssid = block.getFieldValue('SSID') || '';
+    var pass = block.getFieldValue('PASS') || '';
+    var args = '"' + ssid + '"' + (pass ? ', "' + pass + '"' : '');
+    return 'wlan.connect(' + args + ')\n'
+      + 'while not wlan.isconnected():\n'
+      + P.INDENT + 'sleep_ms(200)\n';
+  });
+
+  Blockly.Blocks['wlan_connected'] = {
+    init: function () {
+      this.appendDummyInput().appendField('WLAN verbunden?');
+      this.setOutput(true, 'Boolean');
+      this.setColour(PIN_COLOUR);
+      this.setTooltip('Wahr, wenn eine WLAN-Verbindung besteht.');
+    }
+  };
+  reg('wlan_connected', function () {
+    wlanDefs();
+    return ['wlan.isconnected()', ord('FUNCTION_CALL')];
+  });
+
+  Blockly.Blocks['wlan_ip'] = {
+    init: function () {
+      this.appendDummyInput().appendField('eigene IP-Adresse');
+      this.setOutput(true, 'String');
+      this.setColour(PIN_COLOUR);
+      this.setTooltip('Die IP-Adresse des Boards im WLAN (als Text).');
+    }
+  };
+  reg('wlan_ip', function () {
+    wlanDefs();
+    return ['wlan.ifconfig()[0]', ord('MEMBER')];
+  });
+
+  Blockly.Blocks['wlan_disconnect'] = {
+    init: function () {
+      this.appendDummyInput().appendField('WLAN trennen');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(PIN_COLOUR);
+      this.setTooltip('Trennt die WLAN-Verbindung.');
+    }
+  };
+  reg('wlan_disconnect', function () {
+    wlanDefs();
+    return 'wlan.disconnect()\n';
+  });
+
   // ════════════════════════════════════════════════════════════════════════
   //  Datenstrukturen: Tupel und Dictionary
   // ════════════════════════════════════════════════════════════════════════

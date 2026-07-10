@@ -307,6 +307,16 @@ ESP-NOW (Funk zwischen zwei ESP32):
   esp.send("AA:BB:CC:DD:EE:FF", "Nachricht")
   msg, sender = esp.receive(timeout_ms=250)
 
+WLAN verbinden (Standard-MicroPython, KEINE nitbw-Bibliothek; Variable IMMER wlan):
+  import network
+  wlan = network.WLAN(network.STA_IF)
+  wlan.active(True)
+  wlan.connect("SSID", "PASSWORT")
+  while not wlan.isconnected():
+      sleep_ms(200)
+  wlan.isconnected() / wlan.disconnect()
+  wlan.ifconfig()[0]   # eigene IP-Adresse
+
 MQTT (WiFi, Broker z.B. Raspberry Pi):
   import network
   from nitbw_mqtt import MQTTClient

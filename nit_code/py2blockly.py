@@ -203,6 +203,18 @@ def _text_join2(a, b):
                 inputs={"ADD0": _val(a), "ADD1": _val(b)})
 
 
+def _strip_str(node):
+    """Äußeres ``str(…)`` eines text_join-Teils entfernen.
+
+    Der 'verbinde'-Block hüllt bei der Code-Erzeugung jedes Teil selbst in
+    ``str(…)`` – ohne das Entfernen würde pro Rundlauf (Code → Blöcke → Code)
+    eine weitere ``str(str(…))``-Schicht wachsen."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "str" and len(node.args) == 1 and not node.keywords):
+        return node.args[0]
+    return node
+
+
 def _chain(blocks):
     blocks = [b for b in blocks if b]
     if not blocks:
@@ -215,7 +227,34 @@ def _chain(blocks):
 
 
 def _suite(stmts, st):
-    return [_stmt(s, st) for s in stmts]
+    out = []
+    for s in stmts:
+        # Die Warteschleife ``while not wlan.isconnected(): sleep_ms(…)`` steckt
+        # schon im wlan_connect-Block – direkt nach einem gemappten connect weg.
+        if out and isinstance(out[-1], dict) and out[-1].get("type") == "wlan_connect" \
+                and _is_wlan_wait(s, st):
+            continue
+        out.append(_stmt(s, st))
+    return out
+
+
+def _is_wlan_wait(node, st) -> bool:
+    """``while not wlan.isconnected(): sleep_ms(…)/sleep(…)/pass``?"""
+    if not (isinstance(node, ast.While) and not node.orelse and len(node.body) == 1):
+        return False
+    t = node.test
+    if not (isinstance(t, ast.UnaryOp) and isinstance(t.op, ast.Not)
+            and isinstance(t.operand, ast.Call) and not t.operand.args
+            and isinstance(t.operand.func, ast.Attribute)
+            and t.operand.func.attr == "isconnected"
+            and isinstance(t.operand.func.value, ast.Name)
+            and st.get(t.operand.func.value.id) == ("lib", "wlan")):
+        return False
+    body = node.body[0]
+    if isinstance(body, ast.Pass):
+        return True
+    return (isinstance(body, ast.Expr) and isinstance(body.value, ast.Call)
+            and _src(body.value.func).rsplit(".", 1)[-1] in ("sleep", "sleep_ms"))
 
 
 # ── Hardware-Erkennung (Symboltabelle) ────────────────────────────────────────
@@ -239,7 +278,18 @@ def _pin_num(node):
 
 def _classify(value):
     """RHS einer Zuweisung → Hardware-Art (Tuple) oder None."""
-    if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Name):
+    if not isinstance(value, ast.Call):
+        return None
+    # WLAN-Station (Standard-MicroPython): ``network.WLAN(network.STA_IF)``
+    # bzw. ``WLAN(STA_IF)``; ohne Argument ist STA_IF der Default.
+    # Access-Point (AP_IF) hat keine Blöcke und bleibt Roh-Code.
+    if _attr_name(value.func) == "network.WLAN" \
+            or (isinstance(value.func, ast.Name) and value.func.id == "WLAN"):
+        arg = _src(value.args[0]) if value.args else ""
+        if arg in ("", "network.STA_IF", "STA_IF") and not value.keywords:
+            return ("lib", "wlan")
+        return None
+    if not isinstance(value.func, ast.Name):
         return None
     fn = value.func.id
     if fn == "Pin" and len(value.args) >= 2 and isinstance(value.args[0], ast.Constant):
@@ -398,6 +448,7 @@ _LIB_INIT = {
     "as7262": ("as7262_init", []),
     "mpu": ("mpu_init", []),
     "espnow": ("espnow_init", []),
+    "wlan": ("wlan_init", []),
     "mqtt": ("mqtt_init", [("SERVER", ("kw", "server", "str")), ("ID", ("kw", "client_id", "bstr"))]),
     "mlearn": ("mlearn_init", [("K", ("kw", "k", "int"))]),
 }
@@ -465,6 +516,14 @@ _LIB_METHODS = {
         "add_peer": ("espnow_peer", False, [("MAC", ("pos", 0, "str"))], []),
         "send": ("espnow_send", False, [("MAC", ("pos", 0, "str"))], [("MSG", 1)]),
     },
+    "wlan": {
+        # connect: Passwort optional (offenes WLAN) – fehlt es, bleibt das
+        # PASS-Feld leer (Block-Default ''), der Generator lässt es dann weg.
+        "connect": ("wlan_connect", False, [("SSID", ("pos", 0, "str")),
+                                            ("PASS", ("pos", 1, "str"))], []),
+        "disconnect": ("wlan_disconnect", False, [], []),
+        "isconnected": ("wlan_connected", True, [], []),
+    },
     "mqtt": {
         "connect": ("mqtt_connect", False, [], []),
         "check_msg": ("mqtt_check", False, [], []),
@@ -523,7 +582,7 @@ _LIB_INST = {
     "dht": "dht", "bme280": "bme280", "puls": "puls", "tcs": "farbsensor",
     "tof": "tof", "joy": "joystick", "rtc": "rtc", "compass": "kompass",
     "as7262": "spektral", "mpu": "mpu", "espnow": "espnow",
-    "mqtt": "mqtt_client", "mlearn": "model",
+    "mqtt": "mqtt_client", "mlearn": "model", "wlan": "wlan",
 }
 
 # Mehrfach-Zuweisungs-Methoden: Die Mess-Blöcke erzeugen FESTE Zielnamen
@@ -600,6 +659,9 @@ def _lib_method_stmt(kind, method, call, st):
         return _niton_ton(call)
     if kind == "mp3" and method == "set_source":
         return _DROP   # gehört zur Instanz-Einrichtung, erzeugt der mp3_init-Block
+    if kind == "wlan" and method == "active":
+        # active(True) erzeugt jeder WLAN-Block selbst; active(False) → Roh-Code
+        return _DROP if call.args and _lit_bit(call.args[0]) == "1" else None
     spec = _LIB_METHODS.get(kind, {}).get(method)
     if spec and spec[1] is False:
         return _apply_method(spec, call, st)
@@ -1043,7 +1105,7 @@ def _print_join(args, st):
         if isinstance(a, ast.Constant) and isinstance(a.value, str):
             parts.append(["s", a.value])
         else:
-            parts.append(["e", a])
+            parts.append(["e", _strip_str(a)])
     merged = []
     for kind, v in parts:
         if kind == "s" and merged and merged[-1][0] == "s":
@@ -1186,11 +1248,28 @@ def _name_used(var, body):
 
 
 # ── Ausdrücke ─────────────────────────────────────────────────────────────────
+def _wlan_ip_expr(node, st):
+    """``wlan.ifconfig()[0]`` → wlan_ip-Block, sonst None."""
+    if not (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Call)
+            and isinstance(node.slice, ast.Constant) and node.slice.value == 0):
+        return None
+    f = node.value.func
+    if (isinstance(f, ast.Attribute) and f.attr == "ifconfig"
+            and not node.value.args and not node.value.keywords
+            and isinstance(f.value, ast.Name)
+            and st.get(f.value.id) == ("lib", "wlan")):
+        return _blk("wlan_ip")
+    return None
+
+
 def _expr(node, st):
     try:
         hw = _hw_call_expr(node, st)
         if hw is not None:
             return hw
+        ip = _wlan_ip_expr(node, st)
+        if ip is not None:
+            return ip
         if isinstance(node, ast.Call):
             cast = _cast_block(node, st)
             if cast is not None:
@@ -1228,7 +1307,8 @@ def _expr(node, st):
             # "%d" % x) als Roh-Ausdruck.
             stringish = _is_stringish(node.left) or _is_stringish(node.right)
             if op == "ADD" and stringish:
-                return _text_join2(_expr(node.left, st), _expr(node.right, st))
+                return _text_join2(_expr(_strip_str(node.left), st),
+                                   _expr(_strip_str(node.right), st))
             if stringish:
                 return _raw_expr(node)
             if op == "MODULO":
@@ -1269,7 +1349,7 @@ def _joinedstr(node, st):
         if isinstance(v, ast.Constant) and isinstance(v.value, str):
             parts.append(_blk("text", fields={"TEXT": v.value}))
         elif isinstance(v, ast.FormattedValue):
-            parts.append(_expr(v.value, st))
+            parts.append(_expr(_strip_str(v.value), st))
         else:
             parts.append(_raw_expr(v))
     if not parts:
