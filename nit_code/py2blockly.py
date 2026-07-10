@@ -7,8 +7,10 @@ Block-Editor zu erzeugen ("Coder → Blockly"). Erkannt werden:
 - Funktionen: ``def`` → echte Funktions-Blöcke (procedures_def*) mit Parametern
   und Rückgabe; Aufrufe eigener Funktionen → procedures_call*
 - Typumwandlung int()/float()/str() → nit_cast
-- Variablen (=, +=), Vergleiche, Arithmetik, Logik, print,
-  sleep/sleep_ms (auch ``time.sleep``/``time.sleep_ms``)
+- Variablen (=, +=), Vergleiche, Arithmetik, Logik,
+  print (auch mit mehreren Argumenten → 'verbinde'-Block),
+  sleep/sleep_ms (auch ``time.sleep``/``time.sleep_ms``),
+  Zufall ``randint``/``random`` (auch ``random.``-Schreibweise)
 - Hardware-BEFEHLE werden auf die echten Blöcke abgebildet (nicht Roh-Text):
   digitale Aus-/Eingänge (Pin, inkl. ``.on()``/``.off()``), ADC, DAC, PWM,
   NeoPixel. Dafür wird vorab eine kleine Symboltabelle aufgebaut (welche
@@ -100,14 +102,26 @@ def python_to_block_state(code: str) -> dict:
 
 
 def _raw_code_tokens(blocks) -> set:
-    """Alle Bezeichner, die in Roh-Blöcken (nit_raw/nit_raw_expr) vorkommen."""
+    """Alle BEZEICHNER, die Roh-Blöcke (nit_raw/nit_raw_expr) benutzen.
+
+    Per ``ast`` statt Text-Suche, damit Wörter in Strings (z. B.
+    ``print("MPU6050 bereit")``) keinen Import fälschlich festhalten. Der
+    Roh-Code stammt aus ``ast.unparse`` und ist daher parsebar; zur
+    Sicherheit gibt es einen Regex-Fallback."""
     tokens: set = set()
+
+    def add_names(code):
+        try:
+            for n in ast.walk(ast.parse(code)):
+                if isinstance(n, ast.Name):
+                    tokens.add(n.id)
+        except SyntaxError:
+            tokens.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
 
     def walk(b):
         if isinstance(b, dict):
             if b.get("type") in ("nit_raw", "nit_raw_expr"):
-                code = b.get("fields", {}).get("CODE", "")
-                tokens.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
+                add_names(b.get("fields", {}).get("CODE", ""))
             for v in b.values():
                 walk(v)
         elif isinstance(b, list):
@@ -402,6 +416,9 @@ _LIB_METHODS = {
                                                ("R", ("pos", 2, "int"))], []),
         "show_svg": ("oled_svg", False, [("DATEI", ("pos", 0, "str"))], []),
         "show_bmp": ("oled_bmp", False, [("DATEI", ("pos", 0, "str"))], []),
+        "show_image": ("oled_image", False, [("DATEI", ("pos", 0, "str")),
+                                             ("X", ("arg", 1, "x", "int")),
+                                             ("Y", ("arg", 2, "y", "int"))], []),
     },
     "lcd": {
         "print": ("lcd_print", False, [("SP", ("arg", 1, "spalte", "int")), ("ZE", ("arg", 2, "zeile", "int"))],
@@ -998,6 +1015,9 @@ def _expr_statement(value, st):
                 return _blk("text_print", inputs={"TEXT": _val(_expr(args[0], st))})
             if fn == "print" and not args:
                 return _blk("text_print", inputs={"TEXT": _val(_blk("text", fields={"TEXT": ""}))})
+            if fn == "print" and len(args) >= 2 \
+                    and not any(isinstance(a, ast.Starred) for a in args):
+                return _blk("text_print", inputs={"TEXT": _val(_print_join(args, st))})
             if fn == "sleep" and len(args) == 1:
                 return _blk("nit_warte", inputs={"SEK": _val(_expr(args[0], st))})
             if fn == "sleep_ms" and len(args) == 1:
@@ -1006,6 +1026,61 @@ def _expr_statement(value, st):
         if cb is not None:
             return cb
     return _raw_stmt(value)
+
+
+def _print_join(args, st):
+    """``print("Wert:", x)`` → 'verbinde'-Block (text_join).
+
+    print trennt seine Argumente mit Leerzeichen – die werden hier in
+    benachbarte Text-Literale gezogen (``"Wert:"`` → ``"Wert: "``), damit die
+    Ausgabe identisch bleibt und keine überflüssigen Block-Teile entstehen.
+    Zwischen zwei Nicht-Literalen entsteht ein eigener ``" "``-Text-Block."""
+    parts = []   # Liste aus ["s", text] (Literal) bzw. ["e", node] (Ausdruck)
+    for i, a in enumerate(args):
+        if i:
+            parts.append(["s", " "])
+        if isinstance(a, ast.Constant) and isinstance(a.value, str):
+            parts.append(["s", a.value])
+        else:
+            parts.append(["e", a])
+    merged = []
+    for kind, v in parts:
+        if kind == "s" and merged and merged[-1][0] == "s":
+            merged[-1][1] += v
+        else:
+            merged.append([kind, v])
+    blocks = [_blk("text", fields={"TEXT": v}) if kind == "s" else _expr(v, st)
+              for kind, v in merged]
+    if len(blocks) == 1:
+        return blocks[0]
+    inputs = {"ADD%d" % i: _val(b) for i, b in enumerate(blocks)}
+    return _blk("text_join", extra_state={"itemCount": len(blocks)}, inputs=inputs)
+
+
+def _random_block(call, st):
+    """``randint(a, b)``/``random.randint(a, b)`` → math_random_int,
+    ``random()``/``random.random()`` → math_random_float; sonst None.
+
+    Die Standard-Blöcke erzeugen ``import random`` + ``random.randint(…)`` –
+    gleichwertig zur from-Import-Schreibweise des Quellcodes."""
+    f = call.func
+    if isinstance(f, ast.Attribute):
+        if not (isinstance(f.value, ast.Name) and f.value.id == "random"):
+            return None
+        name = f.attr
+    elif isinstance(f, ast.Name):
+        name = f.id
+    else:
+        return None
+    if call.keywords:
+        return None
+    if name == "randint" and len(call.args) == 2:
+        return _blk("math_random_int", inputs={
+            "FROM": _val(_expr(call.args[0], st)),
+            "TO": _val(_expr(call.args[1], st))})
+    if name == "random" and not call.args:
+        return _blk("math_random_float")
+    return None
 
 
 def _hw_call_stmt(call, st):
@@ -1122,6 +1197,9 @@ def _expr(node, st):
             cb = _call_block(node, st, statement=False)
             if cb is not None:
                 return cb
+            rnd = _random_block(node, st)
+            if rnd is not None:
+                return rnd
             return _raw_expr(node)
         if isinstance(node, ast.Constant):
             v = node.value

@@ -84,6 +84,10 @@
   B({ type: 'oled_bmp', parts: ['OLED zeige BMP-Datei', { txt: 'DATEI', d: 'bild.bmp' }],
       code: "oled.show_bmp('%DATEI%')",
       tip: 'Zeigt eine BMP-Datei vom Board (1/24/32 Bit, wird schwarz/weiss umgewandelt). Danach "OLED anzeigen" aufrufen.' });
+  B({ type: 'oled_image', parts: ['OLED zeige Bild', { txt: 'DATEI', d: 'bild1_bitmap' }, 'bei x', { f: 'X', d: 0, lo: 0, hi: 127 }, 'y', { f: 'Y', d: 0, lo: 0, hi: 63 }],
+      code: "oled.show_image('%DATEI%', %X%, %Y%)",
+      tip: 'Zeigt ein vorbereitetes Bitmap-Bild (mit svg_zu_bitmap.py auf dem PC erzeugt, '
+        + 'Modulname ohne .py angeben). Danach "OLED anzeigen" aufrufen.' });
 
   // ════════════════════════ LCD-Display (I2C) ═════════════════════════
   B({ type: 'lcd_init', parts: ['LCD-Display Adresse', { txt: 'ADDR', d: '0x27' }],
