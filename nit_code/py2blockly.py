@@ -7,20 +7,32 @@ Block-Editor zu erzeugen ("Coder → Blockly"). Erkannt werden:
 - Funktionen: ``def`` → echte Funktions-Blöcke (procedures_def*) mit Parametern
   und Rückgabe; Aufrufe eigener Funktionen → procedures_call*
 - Typumwandlung int()/float()/str() → nit_cast
-- Variablen (=, +=), Vergleiche, Arithmetik, Logik, print, sleep/sleep_ms
+- Variablen (=, +=), Vergleiche, Arithmetik, Logik, print,
+  sleep/sleep_ms (auch ``time.sleep``/``time.sleep_ms``)
 - Hardware-BEFEHLE werden auf die echten Blöcke abgebildet (nicht Roh-Text):
-  digitale Aus-/Eingänge (Pin), ADC, DAC, PWM, NeoPixel. Dafür wird vorab eine
-  kleine Symboltabelle aufgebaut (welche Variable ist welcher Pin/ADC/…), die
-  Instanz-Zeilen (z. B. ``led = Pin(2, Pin.OUT)``) entfallen dann, weil die
-  Operations-Blöcke sie selbst erzeugen – inklusive der nötigen Importe.
+  digitale Aus-/Eingänge (Pin, inkl. ``.on()``/``.off()``), ADC, DAC, PWM,
+  NeoPixel. Dafür wird vorab eine kleine Symboltabelle aufgebaut (welche
+  Variable ist welcher Pin/ADC/…), die Instanz-Zeilen (z. B.
+  ``led = Pin(2, Pin.OUT)``) entfallen dann, weil die Operations-Blöcke sie
+  selbst erzeugen – inklusive der nötigen Importe.
+- Bibliotheks-Variablen mit dem KANONISCHEN Instanznamen der Blöcke (z. B.
+  ``oled``, ``servo``, ``np`` – siehe nitbw_blocks.js) dürfen auch TEILWEISE
+  abgebildet werden: bekannte Methoden werden Blöcke, unbekannte bleiben
+  Roh-Zeilen und verweisen auf dieselbe Instanz, die der Init-Block erzeugt.
+  Bei anderen Variablennamen gilt weiterhin alles-oder-nichts, damit nie
+  ein Roh-Aufruf auf eine entfernte Instanz zeigt.
 
 Alles übrige fällt auf einen Roh-Python-Block (``nit_raw``/``nit_raw_expr``)
 zurück, der den Quelltext unverändert enthält – so bleibt das Programm immer
-vollständig und ausführbar. Bewusst deterministisch (Python ``ast``).
+vollständig und ausführbar. Original-Importe werden nur übernommen, wenn ein
+Roh-Block einen der importierten Namen wirklich benutzt (die Blöcke erzeugen
+ihre Importe selbst). Bewusst deterministisch (Python ``ast``).
 """
 import ast
+import re
 
-_DROP = object()   # Signal: diese Zeile bewusst weglassen (Block erzeugt sie selbst)
+_DROP = object()      # Signal: diese Zeile bewusst weglassen (Block erzeugt sie selbst)
+_MISSING = object()   # Signal: Argument nicht angegeben → Block-Standardwert verwenden
 
 _BINOP = {ast.Add: "ADD", ast.Sub: "MINUS", ast.Mult: "MULTIPLY",
           ast.Div: "DIVIDE", ast.Pow: "POWER", ast.Mod: "MODULO"}
@@ -30,7 +42,6 @@ _CMP = {ast.Eq: "EQ", ast.NotEq: "NEQ", ast.Lt: "LT",
 
 def python_to_block_state(code: str) -> dict:
     """Python-Quelltext → Blockly-Serialisierungs-State."""
-    import json as _json
     try:
         tree = ast.parse(code)
         st = _build_symtab(tree)
@@ -60,13 +71,12 @@ def python_to_block_state(code: str) -> dict:
             main_nodes.append(n)
         main_blocks = [b for b in _suite(main_nodes, st) if b]
 
-        # Bleiben Roh-ANWEISUNGEN übrig (z. B. nicht abgebildete Bibliotheks-
-        # methode), so werden die Original-Importe als Blöcke vorangestellt, damit
-        # der erzeugte Code lauffähig bleibt. Roh-AUSDRÜCKE (z. B. int(input()))
-        # zählen NICHT – sie nutzen nur Builtins/vorhandene Variablen und brauchen
-        # keine Bibliotheks-Importe. Vollständig abgebildete Programme bleiben sauber.
-        if any('"nit_raw"' in _json.dumps(b) for b in func_blocks + main_blocks):
-            main_blocks = _collect_imports(tree) + main_blocks
+        # Original-Importe nur übernehmen, wenn ein Roh-Block einen der
+        # importierten Namen wirklich benutzt (z. B. ``oled.fill(0)`` braucht
+        # keinen Import mehr – den erzeugt der oled_init-Block selbst; eine
+        # rohe ``math.sqrt``-Zeile braucht dagegen ``import math``).
+        # Vollständig abgebildete Programme bleiben sauber.
+        main_blocks = _needed_imports(tree, func_blocks + main_blocks) + main_blocks
         chain = _chain(main_blocks)
 
         tops = list(func_blocks)
@@ -89,10 +99,43 @@ def python_to_block_state(code: str) -> dict:
         return {"blocks": {"languageVersion": 0, "blocks": [head]}}
 
 
-def _collect_imports(tree):
+def _raw_code_tokens(blocks) -> set:
+    """Alle Bezeichner, die in Roh-Blöcken (nit_raw/nit_raw_expr) vorkommen."""
+    tokens: set = set()
+
+    def walk(b):
+        if isinstance(b, dict):
+            if b.get("type") in ("nit_raw", "nit_raw_expr"):
+                code = b.get("fields", {}).get("CODE", "")
+                tokens.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
+            for v in b.values():
+                walk(v)
+        elif isinstance(b, list):
+            for v in b:
+                walk(v)
+
+    walk(blocks)
+    return tokens
+
+
+def _needed_imports(tree, blocks):
+    """Original-Importe, deren gebundene Namen in Roh-Blöcken benutzt werden.
+
+    Die abgebildeten Blöcke erzeugen ihre Importe selbst (from machine import
+    Pin, from time import sleep, from nitbw_… import …); hier kommen nur die
+    Importe zurück, die verbleibender Roh-Code tatsächlich noch braucht."""
+    tokens = _raw_code_tokens(blocks)
+    if not tokens:
+        return []
     out = []
     for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import):
+            bound = [a.asname or a.name.split(".")[0] for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            bound = [a.asname or a.name for a in node.names]
+        else:
+            continue
+        if any(n == "*" or n in tokens for n in bound):
             out.append(_raw_stmt(_src(node)))
     return out
 
@@ -290,19 +333,26 @@ def _arg_node(call, pos, kwname):
 
 
 def _extract(src, call):
+    """Feld-Wert aus dem Aufruf holen.
+
+    Rückgabe: Wert, ``_MISSING`` (Argument nicht angegeben → Feld weglassen,
+    der Block nutzt seinen Standardwert) oder ``None`` (Argument vorhanden,
+    aber nicht als Feld darstellbar → Aufruf bleibt Roh-Code)."""
     tag = src[0]
     if tag == "const":
         return src[1]
     if tag == "pos":
         i, conv = src[1], src[2]
-        return _conv(call.args[i], conv) if i < len(call.args) else None
+        return _conv(call.args[i], conv) if i < len(call.args) else _MISSING
     if tag == "kw":
-        return _conv(_kw(call, src[1]), src[2])
+        node = _kw(call, src[1])
+        return _conv(node, src[2]) if node is not None else _MISSING
     if tag == "arg":            # positional ODER Schlüsselwort: ('arg', pos, kwname, conv)
-        return _conv(_arg_node(call, src[1], src[2]), src[3])
+        node = _arg_node(call, src[1], src[2])
+        return _conv(node, src[3]) if node is not None else _MISSING
     if tag == "pin":            # Pin-Nummer aus Pin(N) an Position i
         i = src[1]
-        return _pin_num(call.args[i]) if i < len(call.args) else None
+        return _pin_num(call.args[i]) if i < len(call.args) else _MISSING
     return None
 
 
@@ -441,18 +491,40 @@ _LIB_METHODS = {
     },
 }
 
-# Zusätzlich erlaubte (speziell behandelte) Methoden je Bibliothek
-_LIB_SPECIAL = {
-    "toene": {"ton"}, "niton": {"ton"}, "bme280": {"read_all"},
-    "mpu": {"read_accel", "read_gyro"}, "joy": {"daten"},
-    "mp3": {"set_source"},   # erzeugt der mp3_init-Block selbst → wird weggelassen
-}
 _NITON_NOTES = {"c", "d", "e", "f", "g", "a", "h", "c2"}
 _NITON_DAUER = {"viertel", "achtel", "halbe", "ganze", "viertelpunkt", "halbepunkt", "vierteltriole"}
 
+# Kanonische Instanznamen, die die *_init-Blöcke erzeugen (siehe
+# nitbw_blocks.js bzw. nit_blocks.js). Heißt die Variable im Quelltext
+# genauso, dürfen unbekannte Methoden als Roh-Zeilen stehen bleiben – sie
+# verweisen dann auf genau die Instanz, die der Init-Block anlegt.
+_LIB_INST = {
+    "oled": "oled", "lcd": "lcd", "toene": "speaker", "niton": "niton",
+    "mp3": "mp3", "us": "ultraschall", "servo": "servo",
+    "stepperdir": "motor", "stepperuln": "motor", "ds18b20": "ds18b20",
+    "dht": "dht", "bme280": "bme280", "puls": "puls", "tcs": "farbsensor",
+    "tof": "tof", "joy": "joystick", "rtc": "rtc", "compass": "kompass",
+    "as7262": "spektral", "mpu": "mpu", "espnow": "espnow",
+    "mqtt": "mqtt_client", "mlearn": "model",
+}
 
-def _lib_allowed(kind):
-    return set(_LIB_METHODS.get(kind, {})) | _LIB_SPECIAL.get(kind, set())
+# Mehrfach-Zuweisungs-Methoden: Die Mess-Blöcke erzeugen FESTE Zielnamen
+# (z. B. ``ax, ay, az = mpu.read_accel()``); die Lese-Blöcke (mpu_ax, …)
+# greifen auf genau diese Namen zu. Andere Zielnamen → Roh-Zeile.
+_MULTI_TARGETS = {
+    ("bme280", "read_all"): ("temperatur", "druck", "feuchtigkeit"),
+    ("mpu", "read_accel"): ("ax", "ay", "az"),
+    ("mpu", "read_gyro"): ("gx", "gy", "gz"),
+    ("joy", "daten"): "d",
+}
+
+
+def _canonical_name(kind) -> str:
+    if kind[0] == "lib":
+        return _LIB_INST.get(kind[1], "")
+    if kind[0] == "neopixel":
+        return "np"
+    return ""
 
 
 def _lib_init_block(kind, call, st=None):
@@ -476,7 +548,7 @@ def _lib_init_block(kind, call, st=None):
     fields = {}
     for fname, src in fspec:
         v = _extract(src, call)
-        if v is not None:
+        if v is not None and v is not _MISSING:
             fields[fname] = v
     return _blk(btype, fields=fields or None)
 
@@ -486,8 +558,10 @@ def _apply_method(spec, call, st):
     fields = {}
     for fname, src in fspec:
         v = _extract(src, call)
+        if v is _MISSING:
+            continue        # Argument weggelassen → Block-Standardwert
         if v is None:
-            return None
+            return None     # Argument nicht darstellbar → Roh-Code
         fields[fname] = v
     inputs = {}
     for spec_in in ispec:
@@ -547,8 +621,28 @@ def _niton_ton(call):
     return _blk("niton_ton", fields={"NOTE": note, "DAUER": dauer})
 
 
+def _multi_targets_match(tgt, expected) -> bool:
+    """Zuweisungsziel(e) gegen die festen Namen des Mess-Blocks prüfen."""
+    if isinstance(expected, tuple):
+        return (isinstance(tgt, ast.Tuple) and len(tgt.elts) == len(expected)
+                and all(isinstance(e, ast.Name) and e.id == x
+                        for e, x in zip(tgt.elts, expected)))
+    return isinstance(tgt, ast.Name) and tgt.id == expected
+
+
+_MULTI_BLOCK = {
+    ("bme280", "read_all"): "bme280_read",
+    ("mpu", "read_accel"): "mpu_accel",
+    ("mpu", "read_gyro"): "mpu_gyro",
+    ("joy", "daten"): "joy_lesen",
+}
+
+
 def _multi_assign_block(node, st):
-    """Mehrfach-Zuweisungen wie ``ax, ay, az = mpu.read_accel()`` → Mess-Block."""
+    """Mehrfach-Zuweisungen wie ``ax, ay, az = mpu.read_accel()`` → Mess-Block.
+
+    Nur mit den kanonischen Zielnamen (siehe _MULTI_TARGETS) – die erzeugen
+    die Blöcke fest, und die zugehörigen Lese-Blöcke greifen darauf zu."""
     if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
         return False
     val = node.value
@@ -558,23 +652,21 @@ def _multi_assign_block(node, st):
     kind = st[val.func.value.id]
     if not (isinstance(kind, tuple) and kind[0] == "lib"):
         return False
-    k, m = kind[1], val.func.attr
-    tgt = node.targets[0]
-    if k == "bme280" and m == "read_all" and isinstance(tgt, ast.Tuple):
-        return _blk("bme280_read")
-    if k == "mpu" and m == "read_accel" and isinstance(tgt, ast.Tuple):
-        return _blk("mpu_accel")
-    if k == "mpu" and m == "read_gyro" and isinstance(tgt, ast.Tuple):
-        return _blk("mpu_gyro")
-    if k == "joy" and m == "daten" and isinstance(tgt, ast.Name):
-        return _blk("joy_lesen")
+    key = (kind[1], val.func.attr)
+    btype = _MULTI_BLOCK.get(key)
+    if btype and _multi_targets_match(node.targets[0], _MULTI_TARGETS[key]):
+        return _blk(btype)
     return False
 
 
 def _build_symtab(tree):
-    """Erkennt Hardware-/Bibliotheks-Variablen, aber nur wenn ALLE ihre
-    Verwendungen abbildbar sind (sonst würde das Entfernen der Instanz-Zeile
-    undefinierte Namen erzeugen)."""
+    """Erkennt Hardware-/Bibliotheks-Variablen.
+
+    Regel: Eine Variable wird abgebildet, wenn ALLE ihre Verwendungen
+    abbildbar sind (sonst würde das Entfernen der Instanz-Zeile undefinierte
+    Namen erzeugen) – ODER wenn sie den kanonischen Instanznamen der Blöcke
+    trägt (dann erzeugt der Init-Block genau diese Instanz und unbekannte
+    Methoden dürfen als Roh-Zeilen darauf verweisen)."""
     cand, callnode = {}, {}
     for n in ast.walk(tree):
         if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
@@ -593,6 +685,11 @@ def _build_symtab(tree):
         if kind[0] in ("i2c", "uart"):
             continue
         if _usages_ok(tree, parents, var, kind):
+            ok[var] = kind
+        elif kind[0] in ("lib", "neopixel") and var == _canonical_name(kind):
+            # Teil-Abbildung: nur bei lib/neopixel sicher, weil dort der
+            # Init-Block die Instanz IMMER erzeugt (bei Pin/ADC/PWM entsteht
+            # sie erst durch einen abgebildeten Operations-Block).
             ok[var] = kind
     # I2C-/UART-Busse nur entfernen, wenn ALLE Verwendungen in gemappte Lib-Konstruktoren gehen
     mapped_calls = {id(callnode[v]) for v in ok}
@@ -614,18 +711,36 @@ def _i2c_droppable(tree, parents, var, mapped_calls):
     return True
 
 
+def _lib_usage_ok(kind, method, call, parents):
+    """Prüft eine einzelne Bibliotheks-Verwendung auf echte Abbildbarkeit.
+
+    Statt nur den Methodennamen zu kennen, muss der Aufruf im richtigen
+    Kontext (Anweisung/Ausdruck) tatsächlich in einen Block konvertierbar
+    sein – sonst entstünde eine Roh-Zeile, deren Instanz entfernt wurde."""
+    key = (kind, method)
+    if key in _MULTI_TARGETS:
+        assign = parents.get(call)
+        return (isinstance(assign, ast.Assign) and len(assign.targets) == 1
+                and _multi_targets_match(assign.targets[0], _MULTI_TARGETS[key]))
+    if isinstance(parents.get(call), ast.Expr):     # Aufruf als Anweisung
+        b = _lib_method_stmt(kind, method, call, {})
+        return b is _DROP or b is not None
+    return _lib_method_expr(kind, method, call, {}) is not None
+
+
 def _usages_ok(tree, parents, var, kind):
     k = kind[0]
     if k == "lib":
-        allowed = _lib_allowed(kind[1])
         for n in ast.walk(tree):
             if not (isinstance(n, ast.Name) and n.id == var):
                 continue
             if isinstance(n.ctx, ast.Store):
                 continue
             p = parents.get(n)
-            if not (isinstance(p, ast.Attribute) and isinstance(parents.get(p), ast.Call)
-                    and p.attr in allowed):
+            call = parents.get(p) if isinstance(p, ast.Attribute) else None
+            if not (isinstance(call, ast.Call) and call.func is p):
+                return False
+            if not _lib_usage_ok(kind[1], p.attr, call, parents):
                 return False
         return True
     for n in ast.walk(tree):
@@ -648,6 +763,8 @@ def _usages_ok(tree, parents, var, kind):
         m = p.attr
         if k == "pin_out":
             if m == "value" and len(call.args) == 1 and _lit_bit(call.args[0]) is not None:
+                continue
+            if m in ("on", "off") and not call.args:
                 continue
         elif k == "pin_in":
             if m == "value" and not call.args:
@@ -866,6 +983,15 @@ def _expr_statement(value, st):
             return None
         if hw is not None:
             return hw
+        # time.sleep(x)/time.sleep_ms(x) – wie das nackte sleep()/sleep_ms()
+        f = value.func
+        if (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                and f.value.id in ("time", "utime") and f.value.id not in st
+                and len(value.args) == 1 and not value.keywords):
+            if f.attr == "sleep":
+                return _blk("nit_warte", inputs={"SEK": _val(_expr(value.args[0], st))})
+            if f.attr == "sleep_ms":
+                return _blk("nit_warte_ms", inputs={"MS": _val(_expr(value.args[0], st))})
         if isinstance(value.func, ast.Name) and not value.keywords:
             fn, args = value.func.id, value.args
             if fn == "print" and len(args) == 1:
@@ -895,6 +1021,9 @@ def _hw_call_stmt(call, st):
         bit = _lit_bit(call.args[0])
         if bit is not None:
             return _blk("nit_pin_write", fields={"PIN": kind[1], "VAL": bit})
+    if k == "pin_out" and m in ("on", "off") and not call.args:
+        return _blk("nit_pin_write",
+                    fields={"PIN": kind[1], "VAL": "1" if m == "on" else "0"})
     if k == "dac" and m == "write" and len(call.args) == 1:
         return _blk("nit_dac_write", fields={"PIN": kind[1]},
                     inputs={"WERT": _val(_expr(call.args[0], st))})

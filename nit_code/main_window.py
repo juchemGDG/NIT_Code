@@ -819,7 +819,8 @@ class MainWindow(QMainWindow):
         self._m_blocks = mb.addMenu("Blöcke")
         self._add_action(self._m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
         self._add_action(
-            self._m_blocks, "🔁  Code → Blöcke (aktuelle Datei)", self._blocks_from_current_code
+            self._m_blocks, "🔁  Code → Blöcke (aktuelle Datei)  (BETA)",
+            self._blocks_from_current_code,
         )
 
         # ── Visualisieren ──

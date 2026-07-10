@@ -58,10 +58,16 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('/workspaces/NIT_PyEd/nit_code/coder_panel.py'\\).read\\(\\)\\); ast.parse\\(open\\('/workspaces/NIT_PyEd/nit_code/py2blockly.py'\\).read\\(\\)\\); print\\('PY_OK'\\)\")",
       "Bash(QT_QPA_PLATFORM=offscreen python3 -c ' *)",
       "Bash(python -c \"import PyQt6\")",
-      "Bash(QT_QPA_PLATFORM=offscreen python -c ' *)"
+      "Bash(QT_QPA_PLATFORM=offscreen python -c ' *)",
+      "Bash(python /tmp/test_py2blockly.py)",
+      "Bash(npm install *)",
+      "Bash(python /tmp/blockly_test/dump_states.py)",
+      "Bash(node roundtrip.js)"
     ],
     "additionalDirectories": [
-      "/workspaces/NIT_Code"
+      "/workspaces/NIT_Code",
+      "/tmp",
+      "/tmp/blockly_test"
     ]
   }
 }
