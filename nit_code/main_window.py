@@ -1219,7 +1219,9 @@ class MainWindow(QMainWindow):
 
     def _do_save(self, tab: EditorTab, path: str, silent: bool = False):
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            # newline="\n": kein Umschreiben in \r\n auf Windows – die Datei
+            # bleibt beim Laden/Speichern-Zyklus byte-identisch.
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(tab.editor.get_text())
             if hasattr(tab.editor, "sci"):
                 tab.editor.sci.setModified(False)

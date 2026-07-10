@@ -64,6 +64,10 @@ class CodeEditor(QWidget):
         # Allgemein
         sci.setUtf8(True)
         sci.setFont(QFont("JetBrains Mono, Fira Code, Consolas, monospace", 12))
+        # Zeilenenden immer \n: Der QScintilla-Default ist das Plattform-EOL
+        # (Windows: \r\n) – beim Speichern im Textmodus wird daraus \r\r\n
+        # und beim nächsten Laden eine Leerzeile pro Zeile.
+        sci.setEolMode(QsciScintilla.EolMode.EolUnix)
 
         # Farben
         sci.setPaper(_hex(t["bg_editor"]))
@@ -152,6 +156,9 @@ class CodeEditor(QWidget):
     # Öffentliche API
     # ------------------------------------------------------------------
     def set_text(self, text: str):
+        # \r\n/\r vereinheitlichen – auch Dateien aus anderen Editoren oder
+        # bereits mit \r\r\n beschädigte Dateien kommen sauber an.
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
         if HAS_QSCI:
             self.sci.setText(text)
         else:
@@ -159,7 +166,7 @@ class CodeEditor(QWidget):
 
     def get_text(self) -> str:
         if HAS_QSCI:
-            return self.sci.text()
+            return self.sci.text().replace("\r\n", "\n").replace("\r", "\n")
         return self.sci.toPlainText()
 
     def goto_line(self, line: int):

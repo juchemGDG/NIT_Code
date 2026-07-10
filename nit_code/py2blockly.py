@@ -28,7 +28,8 @@ Alles übrige fällt auf einen Roh-Python-Block (``nit_raw``/``nit_raw_expr``)
 zurück, der den Quelltext unverändert enthält – so bleibt das Programm immer
 vollständig und ausführbar. Original-Importe werden nur übernommen, wenn ein
 Roh-Block einen der importierten Namen wirklich benutzt (die Blöcke erzeugen
-ihre Importe selbst). Bewusst deterministisch (Python ``ast``).
+ihre Importe selbst) – dann als eigener ``nit_import``-Block, nicht als
+grauer Roh-Block. Bewusst deterministisch (Python ``ast``).
 """
 import ast
 import re
@@ -150,7 +151,7 @@ def _needed_imports(tree, blocks):
         else:
             continue
         if any(n == "*" or n in tokens for n in bound):
-            out.append(_raw_stmt(_src(node)))
+            out.append(_blk("nit_import", fields={"CODE": _src(node)}))
     return out
 
 

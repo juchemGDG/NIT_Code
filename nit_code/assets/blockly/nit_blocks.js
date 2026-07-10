@@ -121,6 +121,30 @@
   };
   reg('nit_raw_expr', function (block) { return [block.getFieldValue('CODE'), ord('ATOMIC')]; });
 
+  // ── Bibliothek einbinden ───────────────────────────────────────────────────
+  // Import-Zeilen (import …, import … as …, from … import …) bekommen bei
+  // "Python → Blockly" diesen Block statt des grauen Roh-Blocks. Der Code
+  // wandert in den Import-Abschnitt; der 'rawimp_'-Schlüssel dedupliziert
+  // mit Importen aus nit_raw und den von Blöcken erzeugten Importen.
+  Blockly.Blocks['nit_import'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('Bibliothek einbinden:')
+        .appendField(new Blockly.FieldTextInput('import math'), 'CODE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip('Bindet eine Bibliothek ein (import …, import … as …, from … import …).');
+    }
+  };
+  reg('nit_import', function (block) {
+    var code = (block.getFieldValue('CODE') || '').trim();
+    if (!code) return '';
+    if (!/^(from |import )/.test(code)) code = 'import ' + code;
+    P.definitions_['rawimp_' + code] = code;
+    return '';
+  });
+
   // ── Typumwandlung int()/float()/str() ─────────────────────────────────────
   // Wichtigster Einstiegs-Block: input() liefert immer Text, für Rechnungen
   // braucht man int(input(...)) bzw. float(...).
