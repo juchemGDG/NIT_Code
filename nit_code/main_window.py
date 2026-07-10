@@ -42,6 +42,50 @@ from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
 from .tutor_panel import TutorPanel
+from .net_hints import git_network_hint
+
+
+def _git_network_env() -> dict | None:
+    """Umgebung für Git-Netzwerkbefehle: System-Proxy an Git durchreichen.
+
+    Im Schulnetz nutzt der Browser den in Windows hinterlegten Proxy
+    automatisch – Git (libcurl) dagegen NICHT. Ohne Proxy-Variablen versucht
+    Git eine Direktverbindung, die die Firewall blockiert ("Failed to connect
+    to …:443"), obwohl die Domain am Proxy freigegeben ist.
+
+    ``urllib.request.getproxies()`` liest unter Windows die System-Proxy-
+    Einstellungen aus der Registry. Sind Proxy-Variablen bereits gesetzt
+    (z. B. per Gruppenrichtlinie oder von Hand), wird nichts verändert.
+    Rückgabe: komplette Umgebung mit Proxy-Variablen – oder None
+    (= Umgebung unverändert erben, kein Proxy erkannt/nötig).
+    """
+    for key in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        if os.environ.get(key):
+            return None
+    try:
+        import urllib.request
+        proxies = urllib.request.getproxies()
+    except Exception:
+        return None
+    http_p = proxies.get("http", "")
+    https_p = proxies.get("https", "") or http_p
+    if not https_p:
+        return None
+    # urllib meldet den Windows-Systemproxy "proxy:port" als
+    # "https://proxy:port" – gemeint ist aber fast immer ein normaler
+    # HTTP-Proxy (CONNECT). Mit https://-Schema würde git/curl TLS zum Proxy
+    # selbst aufbauen und scheitern, daher auf http:// zurückdrehen.
+    if https_p.startswith("https://"):
+        stripped = https_p[len("https://"):]
+        if not http_p or http_p.removeprefix("http://") == stripped:
+            https_p = "http://" + stripped
+    env = os.environ.copy()
+    env["HTTPS_PROXY"] = https_p
+    env["HTTP_PROXY"] = http_p or https_p
+    no = proxies.get("no")
+    if no:
+        env["NO_PROXY"] = no
+    return env
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -774,6 +818,9 @@ class MainWindow(QMainWindow):
         # ── Blöcke (in Einstellungen abschaltbar) ──
         self._m_blocks = mb.addMenu("Blöcke")
         self._add_action(self._m_blocks, "🧩  Block-Editor öffnen …", self._open_block_editor)
+        self._add_action(
+            self._m_blocks, "🔁  Code → Blöcke (aktuelle Datei)", self._blocks_from_current_code
+        )
 
         # ── Visualisieren ──
         m_viz = mb.addMenu("Visualisieren")
@@ -1333,6 +1380,25 @@ class MainWindow(QMainWindow):
             win = getattr(self, "_block_window", None)
             if win is not None:
                 win.close()
+
+    def _blocks_from_current_code(self):
+        """Menü „Blöcke": Code des aktiven Editor-Tabs als Blöcke anzeigen.
+
+        Nutzt denselben deterministischen Python→Blockly-Umwandler wie
+        „Coder → Blockly" (py2blockly, AST-basiert – keine KI nötig). Nicht
+        abbildbare Zeilen landen in Roh-Python-Blöcken, das Programm bleibt
+        dadurch immer vollständig.
+        """
+        code = self._current_editor_text().strip()
+        if not code:
+            QMessageBox.information(
+                self,
+                "Code → Blöcke",
+                "Der aktuelle Editor-Tab ist leer.\n\n"
+                "Bitte zuerst eine Python-Datei öffnen oder Code schreiben.",
+            )
+            return
+        self._open_blocks_from_code(code)
 
     def _open_blocks_from_code(self, code: str):
         """Coder → Blockly: erzeugten Python-Code als Blöcke im Block-Editor zeigen."""
@@ -2038,7 +2104,12 @@ class MainWindow(QMainWindow):
         self._console.append_info(f"[Git] Arbeitsordner: {cwd}\n")
         self._console.append_info(f"[Git] Befehl: {' '.join(log_cmd)}\n")
 
-        proc = ProcessRunner(effective_cmd, cwd=cwd)
+        env = _git_network_env()
+        if env is not None:
+            self._console.append_info(
+                f"[Git] System-Proxy wird verwendet: {env['HTTPS_PROXY']}\n"
+            )
+        proc = ProcessRunner(effective_cmd, cwd=cwd, env=env)
         # stderr puffern: Git schreibt Fortschritts-/Info-Meldungen auf stderr,
         # auch bei Erfolg. Erst nach Prozessende entscheiden ob rot (Fehler) oder normal.
         stderr_buf: list[str] = []
@@ -2060,6 +2131,9 @@ class MainWindow(QMainWindow):
                     on_success()
             else:
                 self._console.append_error(f"[Git] Fehler (Code {code})\n")
+                hint = git_network_hint("".join(stderr_buf))
+                if hint:
+                    self._console.append_info(hint + "\n")
             if on_finish is not None:
                 on_finish(code)
 
@@ -2369,7 +2443,7 @@ class MainWindow(QMainWindow):
             on_done()
             return
         self._console.append_info("[Git] Hole Remote-Stand …\n")
-        proc = ProcessRunner(cmd, cwd=repo)
+        proc = ProcessRunner(cmd, cwd=repo, env=_git_network_env())
         # on_done erst nach Rückkehr aus dem finished-Slot starten (sauberer Dialog).
         proc.finished_run.connect(lambda code: QTimer.singleShot(0, on_done))
         self._retire_process()

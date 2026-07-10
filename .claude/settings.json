@@ -56,7 +56,9 @@
       "Bash(curl -s https://raw.githubusercontent.com/juchemGDG/NIT_Bibliotheken/main/OLED/README.md)",
       "Bash(python firmware/sync_from_nit_code.py --check)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('/workspaces/NIT_PyEd/nit_code/coder_panel.py'\\).read\\(\\)\\); ast.parse\\(open\\('/workspaces/NIT_PyEd/nit_code/py2blockly.py'\\).read\\(\\)\\); print\\('PY_OK'\\)\")",
-      "Bash(QT_QPA_PLATFORM=offscreen python3 -c ' *)"
+      "Bash(QT_QPA_PLATFORM=offscreen python3 -c ' *)",
+      "Bash(python -c \"import PyQt6\")",
+      "Bash(QT_QPA_PLATFORM=offscreen python -c ' *)"
     ],
     "additionalDirectories": [
       "/workspaces/NIT_Code"

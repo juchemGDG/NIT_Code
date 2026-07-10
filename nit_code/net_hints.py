@@ -67,6 +67,58 @@ def friendly_network_error(err) -> str:
     return ""
 
 
+def git_network_hint(output: str) -> str:
+    """Verständlicher Hinweis zu Git-Netzwerkfehlern (clone/pull/push) – oder "".
+
+    Git bringt seine eigene Netzwerkschicht (libcurl) mit und nutzt – anders
+    als der Browser – den Windows-System-Proxy nicht automatisch. NIT_Code
+    reicht den System-Proxy zwar an Git durch (siehe ``_git_network_env`` im
+    Hauptfenster), aber bei PAC-Skripten oder Sonderkonfigurationen bleibt
+    nur die manuelle Einrichtung – die erklärt dieser Hinweis.
+    """
+    low = (output or "").lower()
+
+    if ("failed to connect" in low or "could not connect to server" in low
+            or "couldn't connect to server" in low
+            or "connection timed out" in low or "operation timed out" in low):
+        return (
+            "→ Git konnte den Server nicht direkt erreichen. Im Schulnetz muss\n"
+            "   auch Git den Internet-Proxy verwenden – NIT_Code gibt dazu den in\n"
+            "   Windows hinterlegten System-Proxy automatisch an Git weiter.\n"
+            "   Wird der Proxy nur über ein Automatik-Skript (PAC) verteilt,\n"
+            "   findet Git ihn nicht; dann einmalig einrichten (Proxy-Adresse\n"
+            "   beim Administrator erfragen):\n"
+            "       git config --global http.proxy http://PROXYNAME:PORT\n"
+            "   Zusätzlich muss der Git-Server (z. B. gitcamp-bw.de) am Proxy\n"
+            "   für ALLE Programme freigegeben sein, nicht nur für den Browser."
+        )
+
+    if "407" in low or "proxy authentication required" in low:
+        return (
+            "→ Der Internet-Proxy der Schule verlangt eine Anmeldung und lässt\n"
+            "   Git deshalb nicht durch (der Browser meldet sich automatisch mit\n"
+            "   der Windows-Anmeldung an, Git kann das nicht). Bitte den\n"
+            "   Administrator, den Git-Server am Proxy ohne Anmeldung freizugeben."
+        )
+
+    if "ssl certificate problem" in low or "unable to get local issuer" in low:
+        return (
+            "→ Zertifikatsproblem – im Schulnetz prüft vermutlich ein Proxy den\n"
+            "   HTTPS-Verkehr (TLS-Inspektion). Git unter Windows einmalig auf den\n"
+            "   Windows-Zertifikatspeicher umstellen:\n"
+            "       git config --global http.sslBackend schannel"
+        )
+
+    if "could not resolve host" in low:
+        return (
+            "→ Der Server wurde nicht gefunden – vermutlich besteht keine\n"
+            "   Internetverbindung (WLAN/Netzwerkkabel prüfen) oder das Schulnetz\n"
+            "   blockiert die Adresse."
+        )
+
+    return ""
+
+
 def with_network_hint(err, prefix: str = "") -> str:
     """Fehlermeldung plus (falls erkannt) verständlicher Hinweis."""
     msg = f"{prefix}{err}"
