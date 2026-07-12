@@ -103,7 +103,7 @@ def python_to_block_state(code: str) -> dict:
 
 
 def _raw_code_tokens(blocks) -> set:
-    """Alle BEZEICHNER, die Roh-Blöcke (nit_raw/nit_raw_expr) benutzen.
+    """Alle BEZEICHNER, die Roh-Blöcke (nit_raw/nit_raw_expr/nit_class) benutzen.
 
     Per ``ast`` statt Text-Suche, damit Wörter in Strings (z. B.
     ``print("MPU6050 bereit")``) keinen Import fälschlich festhalten. Der
@@ -121,7 +121,7 @@ def _raw_code_tokens(blocks) -> set:
 
     def walk(b):
         if isinstance(b, dict):
-            if b.get("type") in ("nit_raw", "nit_raw_expr"):
+            if b.get("type") in ("nit_raw", "nit_raw_expr", "nit_class"):
                 add_names(b.get("fields", {}).get("CODE", ""))
             for v in b.values():
                 walk(v)
@@ -888,29 +888,45 @@ def _func_returns(node):
     return out
 
 
+def _is_ifreturn(stmt) -> bool:
+    """``if bedingung: return [wert]`` ohne else – entspricht genau Blocklys
+    eingebautem procedures_ifreturn-Block (typischer Rekursionsabbruch)."""
+    return (isinstance(stmt, ast.If) and not stmt.orelse
+            and len(stmt.body) == 1 and isinstance(stmt.body[0], ast.Return))
+
+
 def _analyze_func(node):
     """``def`` analysieren. Liefert (params, rumpf_stmts, return_ausdruck|None)
     oder None, wenn Signatur/Rückgabe-Stil nicht sauber als Block darstellbar ist.
 
     Bewusst konservativ: nur einfache Positionsparameter (keine Defaults, *args,
-    **kwargs, keyword-only). Eine Rückgabe wird nur als abschließendes
-    ``return wert`` akzeptiert – frühe/mehrfache returns blieben als Block
-    mehrdeutig und fallen auf den Roh-Block zurück (weiterhin lauffähig)."""
+    **kwargs, keyword-only). Als Rückgaben werden ein abschließendes
+    ``return wert`` sowie frühe Returns der Form ``if bedingung: return [wert]``
+    akzeptiert – Letztere bildet Blocklys procedures_ifreturn ab. Der Stil muss
+    einheitlich sein (Funktion mit Rückgabe ↔ frühe Returns mit Wert); alles
+    andere bleibt mehrdeutig und fällt auf den Roh-Block zurück (weiterhin
+    lauffähig)."""
     a = node.args
     if (a.posonlyargs or a.kwonlyargs or a.vararg or a.kwarg
             or a.defaults or a.kw_defaults):
         return None
     params = [arg.arg for arg in a.args]
     body = list(node.body)
-    returns = _func_returns(node)
+    returns = _func_returns(node)                  # in Quelltext-Reihenfolge
+    ret = None
+    if returns and body and body[-1] is returns[-1]:
+        body, ret = body[:-1], returns.pop().value  # nacktes ``return`` → ret None
     if not returns:
-        return (params, body, None)
-    if len(returns) == 1 and body and body[-1] is returns[0]:
-        ret = returns[0]
-        if ret.value is None:
-            return (params, body[:-1], None)      # nacktes ``return`` → ohne Rückgabe
-        return (params, body[:-1], ret.value)
-    return None                                    # frühe/mehrfache returns → Roh-Block
+        return (params, body, ret)
+    # Verbleibende (frühe) Returns: nur als ``if bedingung: return [wert]``
+    # darstellbar, und nur wenn Wert/kein Wert zum Funktionstyp passt.
+    covered = set()
+    for n in ast.walk(node):
+        if _is_ifreturn(n) and (n.body[0].value is None) == (ret is None):
+            covered.add(id(n.body[0]))
+    if all(id(r) in covered for r in returns):
+        return (params, body, ret)
+    return None
 
 
 def _func_def_block(node, st):
@@ -924,7 +940,13 @@ def _func_def_block(node, st):
         vid = st[" vars"].setdefault(p, "pid_" + p)   # deterministische id je Name
         param_state.append({"name": p, "id": vid})
     inputs = {}
-    stack = _chain([b for b in _suite(body, st) if b])
+    # Innerhalb des Rumpfs darf ``if bedingung: return [wert]`` zum
+    # procedures_ifreturn-Block werden ("bare" ohne / "value" mit Rückgabewert).
+    st[" ifret"] = "value" if ret is not None else "bare"
+    try:
+        stack = _chain([b for b in _suite(body, st) if b])
+    finally:
+        del st[" ifret"]
     if stack:
         inputs["STACK"] = _val(stack)
     extra = {"params": param_state} if param_state else None
@@ -970,6 +992,11 @@ def _stmt(node, st):
     try:
         if isinstance(node, (ast.Import, ast.ImportFrom, ast.Pass)):
             return None  # Importe erzeugen die Blöcke selbst wieder
+        if isinstance(node, ast.Global) and " ifret" in st:
+            # In konvertierten Funktionsrümpfen erzeugt Blocklys Generator die
+            # ``global``-Zeile selbst neu – als Roh-Block würde bei jedem
+            # Rundlauf eine weitere Zeile anwachsen (wie einst str(str(…))).
+            return None
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
             tgt = node.targets[0]
             # Mehrfach-Rückgabe (bme280.read_all(), mpu.read_accel(), joystick.daten())
@@ -1005,6 +1032,10 @@ def _stmt(node, st):
             return _blk("controls_flow_statements", fields={"FLOW": "CONTINUE"})
         if isinstance(node, ast.Expr):
             return _expr_statement(node.value, st)
+        if isinstance(node, ast.ClassDef):
+            # Anzeige-Block "Klasse: Name" statt unbeschrifteter Textwand; der
+            # Quelltext bleibt unverändert im CODE-Feld (keine Modellierung).
+            return _blk("nit_class", fields={"NAME": node.name, "CODE": _src(node)})
         return _raw_stmt(node)
     except Exception:
         return _raw_stmt(node)
@@ -1185,7 +1216,30 @@ def _hw_call_stmt(call, st):
     return None
 
 
+def _ifreturn_block(node, st):
+    """``if bedingung: return [wert]`` im Funktionsrumpf → procedures_ifreturn.
+
+    Der extraState ist der Mutations-XML-String (Blockly fällt beim JSON-Laden
+    für Blöcke mit domToMutation auf genau dieses Format zurück); value=1
+    bedeutet "mit Rückgabewert". None, wenn das Muster nicht passt oder wir
+    nicht in einem Funktionsrumpf sind – dann normaler falls-Block."""
+    mode = st.get(" ifret")
+    if mode is None or not _is_ifreturn(node):
+        return None
+    ret = node.body[0]
+    if (ret.value is None) != (mode == "bare"):
+        return None
+    inputs = {"CONDITION": _val(_expr(node.test, st))}
+    if ret.value is not None:
+        inputs["VALUE"] = _val(_expr(ret.value, st))
+    return _blk("procedures_ifreturn", inputs=inputs,
+                extra_state='<mutation value="%d"></mutation>' % (ret.value is not None))
+
+
 def _if_block(node, st):
+    ifret = _ifreturn_block(node, st)
+    if ifret is not None:
+        return ifret
     clauses, else_body, cur = [], None, node
     while True:
         clauses.append((cur.test, cur.body))
@@ -1298,6 +1352,12 @@ def _expr(node, st):
                 return _blk("text", fields={"TEXT": v})
             return _raw_expr(node)
         if isinstance(node, ast.Name):
+            # Dunder-Namen (__name__, __file__, …) sind keine Nutzer-Variablen;
+            # als variables_get würde der Python-Generator sie umbenennen
+            # (__name__ → __name__2, da reserviert) und z. B. den
+            # ``if __name__ == "__main__"``-Wächter im Rundlauf zerstören.
+            if node.id.startswith("__") and node.id.endswith("__"):
+                return _raw_expr(node)
             return _blk("variables_get", fields={"VAR": {"name": node.id}})
         if isinstance(node, ast.JoinedStr):
             return _joinedstr(node, st)

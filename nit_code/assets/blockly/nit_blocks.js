@@ -121,6 +121,29 @@
   };
   reg('nit_raw_expr', function (block) { return [block.getFieldValue('CODE'), ord('ATOMIC')]; });
 
+  // ── Klasse (Anzeige-Block für "Coder → Blockly") ──────────────────────────
+  // Hält eine komplette Klassendefinition unverändert – wie nit_raw, aber mit
+  // "Klasse: Name"-Kopf statt Textwand. Bewusst NICHT in der Toolbox: Der
+  // Block entsteht nur beim Umwandeln von Code, der bereits Klassen enthält;
+  // im Anfangsunterricht begegnet man ihm daher nie.
+  Blockly.Blocks['nit_class'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('Klasse:')
+        .appendField(new Blockly.FieldLabelSerializable(''), 'NAME');
+      this.appendDummyInput()
+        .appendField(new Blockly.FieldTextInput(''), 'CODE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#7d8794');
+      this.setTooltip('Eine Python-Klasse (unverändert übernommen). '
+        + 'Platz sparen: Rechtsklick → "Block zusammenfalten".');
+    }
+  };
+  reg('nit_class', function (block) {
+    return block.getFieldValue('CODE') + '\n';
+  });
+
   // ── Bibliothek einbinden ───────────────────────────────────────────────────
   // Import-Zeilen (import …, import … as …, from … import …) bekommen bei
   // "Python → Blockly" diesen Block statt des grauen Roh-Blocks. Der Code
