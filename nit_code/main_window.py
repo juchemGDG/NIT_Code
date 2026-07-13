@@ -735,7 +735,7 @@ class MainWindow(QMainWindow):
         self._settings_plot_y_mode: str = "auto"      # "auto" | "fixed"
         self._settings_plot_y_min: float = 0.0
         self._settings_plot_y_max: float = 100.0
-        self._settings_plot_x_mode: str = "sliding"   # "sliding" | "sweep"
+        self._settings_plot_x_mode: str = "sliding"   # "sliding" | "sweep" | "xy"
         self._settings_plot_x_min: int = 0
         self._settings_plot_x_max: int = 500
         self._settings_store = QSettings()

@@ -168,6 +168,61 @@
   B({ type: 'mpu_gy', parts: ['Drehrate y'], out: 'Number', outOrder: 'ATOMIC', code: 'gy' });
   B({ type: 'mpu_gz', parts: ['Drehrate z'], out: 'Number', outOrder: 'ATOMIC', code: 'gz' });
 
+  // ════════════════════════ GY-61 / ADXL335 (Beschleunigung, analog) ══
+  B({ type: 'gy61_init', parts: ['GY61 X-Pin', { f: 'X', d: 34, lo: 0, hi: 40 }, 'Y-Pin', { f: 'Y', d: 35, lo: 0, hi: 40 }, 'Z-Pin', { f: 'Z', d: 32, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_gy61', 'from nitbw_gy61 import GY61'],
+             ['inst_gy61', 'gy61 = GY61(x_pin=%X%, y_pin=%Y%, z_pin=%Z%)']],
+      tip: 'Beschleunigungssensor GY-61 (ADXL335) an drei ADC-Pins (XOUT/YOUT/ZOUT).' });
+  B({ type: 'gy61_kalibrieren', parts: ['GY61 Ruhelage kalibrieren'], code: 'gy61.kalibrieren_ruhelage()',
+      tip: 'Einmalig zu Beginn: Sensor flach hinlegen und ruhig halten.' });
+  B({ type: 'gy61_messen', parts: ['GY61 Beschleunigung messen (g)'], code: 'ax, ay, az = gy61.lesen_g()' });
+  B({ type: 'gy61_ax', parts: ['GY61 Beschleunigung x (g)'], out: 'Number', outOrder: 'ATOMIC', code: 'ax' });
+  B({ type: 'gy61_ay', parts: ['GY61 Beschleunigung y (g)'], out: 'Number', outOrder: 'ATOMIC', code: 'ay' });
+  B({ type: 'gy61_az', parts: ['GY61 Beschleunigung z (g)'], out: 'Number', outOrder: 'ATOMIC', code: 'az' });
+  B({ type: 'gy61_messen_ms2', parts: ['GY61 Beschleunigung messen (m/s²)'], code: 'mx, my, mz = gy61.lesen_ms2()' });
+  B({ type: 'gy61_mx', parts: ['GY61 Beschleunigung x (m/s²)'], out: 'Number', outOrder: 'ATOMIC', code: 'mx' });
+  B({ type: 'gy61_my', parts: ['GY61 Beschleunigung y (m/s²)'], out: 'Number', outOrder: 'ATOMIC', code: 'my' });
+  B({ type: 'gy61_mz', parts: ['GY61 Beschleunigung z (m/s²)'], out: 'Number', outOrder: 'ATOMIC', code: 'mz' });
+  B({ type: 'gy61_neigung', parts: ['GY61 Neigung messen'], code: 'pitch, roll = gy61.neigung_grad()' });
+  B({ type: 'gy61_pitch', parts: ['GY61 Nick-Winkel (pitch)'], out: 'Number', outOrder: 'ATOMIC', code: 'pitch' });
+  B({ type: 'gy61_roll', parts: ['GY61 Roll-Winkel (roll)'], out: 'Number', outOrder: 'ATOMIC', code: 'roll' });
+  B({ type: 'gy61_betrag', parts: ['GY61 Gesamtbeschleunigung (g)'], out: 'Number', code: 'gy61.betrag_g()' });
+  B({ type: 'gy61_bewegt', parts: ['GY61 bewegt? Schwelle (g)', { txt: 'SCHWELLE', d: '0.15' }],
+      out: 'Boolean', code: 'gy61.ist_bewegt(schwelle_g=%SCHWELLE%)',
+      tip: 'Wahr, wenn der Betrag der Beschleunigung um mehr als die Schwelle von 1 g abweicht.' });
+
+  // ════════════════════════ INA219 (Strom/Spannung, I2C) ══════════════
+  B({ type: 'ina_init', parts: ['INA219 Adresse', { txt: 'ADDR', d: '0x40' }, 'Shunt (Ohm)', { txt: 'SHUNT', d: '0.1' }, 'max. Strom (A)', { txt: 'MAXA', d: '2.0' }],
+      defs: [['from_nitbw_ina219', 'from nitbw_ina219 import INA219']].concat(I2C_DEFS).concat([
+        ['inst_ina219', 'ina219 = INA219(i2c, addr=%ADDR%, shunt_ohms=%SHUNT%, max_expected_current=%MAXA%)']]),
+      tip: 'Strom-/Spannungssensor INA219 am I2C-Bus (Shunt typisch 0,1 Ohm).' });
+  B({ type: 'ina_busv', parts: ['Busspannung (V)'], out: 'Number', code: 'ina219.read_bus_voltage_v()' });
+  B({ type: 'ina_lastv', parts: ['Lastspannung (V)'], out: 'Number', code: 'ina219.read_load_voltage_v()',
+      tip: 'Spannung an der Last: Busspannung plus Shuntspannung.' });
+  B({ type: 'ina_shunt', parts: ['Shuntspannung (mV)'], out: 'Number', code: 'ina219.read_shunt_voltage_mv()' });
+  B({ type: 'ina_strom', parts: ['Strom (mA)'], out: 'Number', code: 'ina219.read_current_ma()',
+      tip: 'Zusammen mit der Spannung z. B. für eine U-I-Kennlinie: print(spannung, strom).' });
+  B({ type: 'ina_leistung', parts: ['Leistung (mW)'], out: 'Number', code: 'ina219.read_power_mw()' });
+
+  // ════════════════════════ ADS1015 (4-Kanal-ADC, I2C) ════════════════
+  var ADS_PGA = [['±6,144 V', 'PGA_6_144V'], ['±4,096 V', 'PGA_4_096V'], ['±2,048 V', 'PGA_2_048V'],
+                 ['±1,024 V', 'PGA_1_024V'], ['±0,512 V', 'PGA_0_512V'], ['±0,256 V', 'PGA_0_256V']];
+  var ADS_KANAL = [['A0', '0'], ['A1', '1'], ['A2', '2'], ['A3', '3']];
+  var ADS_DIFF = [['A0-A1', 'MUX_DIFF_0_1'], ['A0-A3', 'MUX_DIFF_0_3'], ['A1-A3', 'MUX_DIFF_1_3'], ['A2-A3', 'MUX_DIFF_2_3']];
+  B({ type: 'ads_init', parts: ['ADS1015 Adresse', { txt: 'ADDR', d: '0x48' }, 'Messbereich', { sel: 'PGA', o: ADS_PGA }],
+      defs: [['from_nitbw_ads1015', 'from nitbw_ads1015 import ADS1015']].concat(I2C_DEFS).concat([
+        ['inst_ads1015', 'ads1015 = ADS1015(i2c, addr=%ADDR%, pga=ADS1015.%PGA%)']]),
+      tip: 'Analog-Digital-Wandler ADS1015 mit 4 Kanälen (A0–A3) am I2C-Bus. '
+        + 'Messbereich = größte messbare Spannung (PGA).' });
+  B({ type: 'ads_spannung', parts: ['ADS1015 Spannung (V) Kanal', { sel: 'KANAL', o: ADS_KANAL }],
+      out: 'Number', code: 'ads1015.read_voltage(%KANAL%)' });
+  B({ type: 'ads_roh', parts: ['ADS1015 Rohwert Kanal', { sel: 'KANAL', o: ADS_KANAL }],
+      out: 'Number', code: 'ads1015.read_raw(%KANAL%)',
+      tip: 'Roher 12-Bit-Wert (−2048 bis 2047).' });
+  B({ type: 'ads_diff', parts: ['ADS1015 Differenz (V)', { sel: 'MUX', o: ADS_DIFF }],
+      out: 'Number', code: 'ads1015.read_diff_voltage(ADS1015.%MUX%)',
+      tip: 'Differenzmessung zwischen zwei Kanälen (z. B. A0 gegen A1).' });
+
   // ════════════════════════ Ultraschall HC-SR04 ═══════════════════════
   B({ type: 'us_init', parts: ['Ultraschall Trigger Pin', { f: 'TRIG', d: 5, lo: 0, hi: 40 }, 'Echo Pin', { f: 'ECHO', d: 18, lo: 0, hi: 40 }],
       defs: [['from_nitbw_ultraschall', 'from nitbw_ultraschall import Ultraschall'],

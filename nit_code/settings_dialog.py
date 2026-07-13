@@ -403,11 +403,12 @@ class SettingsDialog(QDialog):
         y_row.addStretch()
         form_pl.addRow("Y Min / Max:", y_row)
 
-        # Rechtsachse (X): gleitend oder fester Indexbereich (Sweep)
+        # Rechtsachse (X): gleitend, fester Indexbereich (Sweep) oder X-Y (Kennlinie)
         self._combo_plot_x = QComboBox()
         self._combo_plot_x.setFixedWidth(190)
         self._combo_plot_x.addItem("Gleitend (letzte Werte)", "sliding")
         self._combo_plot_x.addItem("Fester Bereich (Sweep)", "sweep")
+        self._combo_plot_x.addItem("X-Y (Kennlinie)", "xy")
         self._combo_plot_x.setCurrentIndex(max(0, self._combo_plot_x.findData(plot_x_mode)))
         form_pl.addRow("Rechtsachse (X):", self._combo_plot_x)
 

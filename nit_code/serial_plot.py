@@ -11,8 +11,10 @@ ausreichend und hält das PyInstaller-Bundle schlank.
 Achsen sind konfigurierbar (Standardwerte aus den Einstellungen, live in der
 Plotter-Leiste übersteuerbar):
 - Hochachse (Y): automatisch (gleitend) ODER feste Grenzen (Min/Max).
-- Rechtsachse (X): gleitend (letzte N Werte) ODER fester Indexbereich (Sweep:
-  füllt sich von Min bis Max und bleibt dann stehen).
+- Rechtsachse (X): gleitend (letzte N Werte), fester Indexbereich (Sweep:
+  füllt sich von Min bis Max und bleibt dann stehen) ODER X-Y (Kennlinie):
+  eine der gesendeten Größen liefert die X-Werte, die übrigen werden darüber
+  aufgetragen – z. B. ``print(U, I)`` für eine U-I-Kennlinie.
 
 Eingabe-Konvention (an der Arduino-IDE orientiert):
 - Eine Zahl pro Zeile → eine Kurve: ``print(temp)``
@@ -50,7 +52,7 @@ DEFAULT_CONFIG = {
     "y_mode": "auto",   # "auto" | "fixed"
     "y_min": 0.0,
     "y_max": 100.0,
-    "x_mode": "sliding",  # "sliding" | "sweep"
+    "x_mode": "sliding",  # "sliding" | "sweep" | "xy"
     "x_min": 0,
     "x_max": 500,
 }
@@ -116,11 +118,12 @@ class _PlotCanvas(QWidget):
         series = self._plot._series
         has_any = any(s.values for s in series.values())
         if not has_any:
-            p.setPen(QColor(THEME["text_dim"]))
-            p.drawText(
-                self.rect(), Qt.AlignmentFlag.AlignCenter,
-                "Noch keine Messwerte …\n\nGib im Programm Zahlen aus, z. B.  print(temp, feuchte)",
-            )
+            self._hint(p, "Noch keine Messwerte …\n\n"
+                          "Gib im Programm Zahlen aus, z. B.  print(temp, feuchte)")
+            return
+
+        if self._plot._x_mode == "xy":
+            self._paint_xy(p, w, h, left, top, pw, ph)
             return
 
         # ── X-Bereich bestimmen ────────────────────────────────────────────
@@ -169,24 +172,7 @@ class _PlotCanvas(QWidget):
         def y_at(val: float) -> float:
             return top + ph - (val - ymin) / yspan * ph
 
-        # ── Gitter + y-Beschriftung ────────────────────────────────────────
-        grid_pen = QPen(QColor(THEME["border"]))
-        grid_pen.setWidth(1)
-        p.setFont(QFont("sans-serif", 8))
-        for i in range(5):
-            val = ymax - (ymax - ymin) * i / 4
-            y = top + ph * i / 4
-            p.setPen(grid_pen)
-            p.drawLine(left, int(y), left + pw, int(y))
-            p.setPen(QColor(THEME["text_dim"]))
-            p.drawText(2, int(y) + 4, left - 8, 12,
-                       Qt.AlignmentFlag.AlignRight, _fmt(val))
-
-        # x-Achsenbeschriftung (Start-/Endindex)
-        p.setPen(QColor(THEME["text_dim"]))
-        p.drawText(left, h - 6, _fmt(xL))
-        p.drawText(left + pw - 60, h - 6, 60, 12,
-                   Qt.AlignmentFlag.AlignRight, _fmt(xR))
+        self._draw_grid(p, h, left, top, pw, ph, xL, xR, ymin, ymax)
 
         # ── Kurven (auf den Plotbereich begrenzt) ──────────────────────────
         p.setClipRect(left, top, pw, ph)
@@ -208,15 +194,121 @@ class _PlotCanvas(QWidget):
         p.setClipping(False)
 
         # ── Legende mit aktuellem Wert ─────────────────────────────────────
+        self._draw_legend(p, left, top, [
+            (ci, f"{name} = {_fmt(s.values[-1])}")
+            for ci, (name, s) in enumerate(series.items()) if s.values
+        ])
+
+    def _paint_xy(self, p: QPainter, w: int, h: int,
+                  left: int, top: int, pw: int, ph: int):
+        """X-Y-Modus (Kennlinie): Eine Größe liefert die X-Werte, die übrigen
+        werden – gepaart über den Messpunkt-Index – darüber aufgetragen."""
+        plot = self._plot
+        series = plot._series
+        xs_key = plot._xy_series_key()
+        xs = series.get(xs_key) if xs_key is not None else None
+
+        # Punktepaare (x, y) je Kurve bilden; Pairing über absolute Indizes,
+        # damit ein durch _HARD_CAP gekürzter Puffer nichts verschiebt.
+        curves: "OrderedDict[str, list[tuple[float, float]]]" = OrderedDict()
+        if xs is not None and xs.values:
+            for name, s in series.items():
+                if name == xs_key or not s.values:
+                    continue
+                lo = max(xs.start, s.start)
+                hi = min(xs.next_index, s.next_index)
+                pts = [(xs.values[i - xs.start], s.values[i - s.start])
+                       for i in range(lo, hi)]
+                if pts:
+                    curves[name] = pts
+        if not curves:
+            self._hint(p, "X-Y-Modus: mindestens zwei Größen pro Zeile ausgeben,\n"
+                          "z. B.  print(U, I)  – oben wählen, welche auf die X-Achse kommt.")
+            return
+
+        # ── Achsenbereiche ─────────────────────────────────────────────────
+        all_x = [x for pts in curves.values() for x, _ in pts]
+        xL, xR = min(all_x), max(all_x)
+        if xL == xR:
+            xL, xR = xL - 1, xR + 1
+        xpad = (xR - xL) * 0.04
+        xL, xR = xL - xpad, xR + xpad
+
+        if plot._y_mode == "fixed":
+            ymin, ymax = plot._y_min, plot._y_max
+        else:
+            all_y = [y for pts in curves.values() for _, y in pts]
+            ymin, ymax = min(all_y), max(all_y)
+            if ymin == ymax:
+                ymin, ymax = ymin - 1, ymax + 1
+            pad = (ymax - ymin) * 0.08
+            ymin, ymax = ymin - pad, ymax + pad
+        if ymax <= ymin:
+            ymax = ymin + 1
+        yspan, xspan = ymax - ymin, xR - xL
+
+        self._draw_grid(p, h, left, top, pw, ph, xL, xR, ymin, ymax)
+
+        # ── Kurven (in Messreihenfolge verbunden) ──────────────────────────
+        p.setClipRect(left, top, pw, ph)
+        for ci, (name, _s) in enumerate(series.items()):
+            pts = curves.get(name)
+            if not pts:
+                continue
+            pen = QPen(QColor(_SERIES_COLORS[ci % len(_SERIES_COLORS)]))
+            pen.setWidth(2)
+            p.setPen(pen)
+            prev = None
+            for xv, yv in pts:
+                x = left + (xv - xL) / xspan * pw
+                y = top + ph - (yv - ymin) / yspan * ph
+                if prev is not None:
+                    p.drawLine(int(prev[0]), int(prev[1]), int(x), int(y))
+                # Einzelpunkte sichtbar machen, solange noch keine Linie entsteht.
+                p.drawPoint(int(x), int(y))
+                prev = (x, y)
+        p.setClipping(False)
+
+        self._draw_legend(p, left, top, [
+            (ci, f"{name} → X ({_fmt(s.values[-1])})" if name == xs_key
+                 else f"{name} = {_fmt(s.values[-1])}")
+            for ci, (name, s) in enumerate(series.items()) if s.values
+        ])
+
+    # ── Zeichen-Helfer ───────────────────────────────────────────────────────
+    def _hint(self, p: QPainter, text: str):
+        p.setPen(QColor(THEME["text_dim"]))
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, text)
+
+    def _draw_grid(self, p: QPainter, h: int, left: int, top: int,
+                   pw: int, ph: int, xL: float, xR: float,
+                   ymin: float, ymax: float):
+        """Gitter, y-Beschriftung und x-Achsenbeschriftung (Start/Ende)."""
+        grid_pen = QPen(QColor(THEME["border"]))
+        grid_pen.setWidth(1)
+        p.setFont(QFont("sans-serif", 8))
+        for i in range(5):
+            val = ymax - (ymax - ymin) * i / 4
+            y = top + ph * i / 4
+            p.setPen(grid_pen)
+            p.drawLine(left, int(y), left + pw, int(y))
+            p.setPen(QColor(THEME["text_dim"]))
+            p.drawText(2, int(y) + 4, left - 8, 12,
+                       Qt.AlignmentFlag.AlignRight, _fmt(val))
+        p.setPen(QColor(THEME["text_dim"]))
+        p.drawText(left, h - 6, _fmt(xL))
+        p.drawText(left + pw - 60, h - 6, 60, 12,
+                   Qt.AlignmentFlag.AlignRight, _fmt(xR))
+
+    def _draw_legend(self, p: QPainter, left: int, top: int,
+                     entries: list[tuple[int, str]]):
+        """Legende oben links; entries = [(Farbindex, Text), …]."""
         p.setFont(QFont("sans-serif", 9))
         lx, ly = left + 6, top + 6
-        for ci, (name, s) in enumerate(series.items()):
-            if not s.values:
-                continue
-            color = QColor(_SERIES_COLORS[ci % len(_SERIES_COLORS)])
-            p.fillRect(lx, ly, 10, 10, color)
+        for ci, text in entries:
+            p.fillRect(lx, ly, 10, 10, QColor(_SERIES_COLORS[ci % len(_SERIES_COLORS)]))
             p.setPen(QColor(THEME["text"]))
-            p.drawText(lx + 16, ly + 10, f"{name} = {_fmt(s.values[-1])}")
+            p.drawText(lx + 16, ly + 10, text)
             ly += 16
 
 
@@ -236,6 +328,7 @@ class SerialPlot(QWidget):
         self._x_mode = DEFAULT_CONFIG["x_mode"]
         self._x_min = DEFAULT_CONFIG["x_min"]
         self._x_max = DEFAULT_CONFIG["x_max"]
+        self._xy_key: str | None = None   # Kurve, die im X-Y-Modus die X-Werte liefert
         self._build_ui()
 
         self._repaint_timer = QTimer(self)
@@ -284,6 +377,7 @@ class SerialPlot(QWidget):
         self._x_combo = QComboBox()
         self._x_combo.addItem("Gleitend", "sliding")
         self._x_combo.addItem("Sweep", "sweep")
+        self._x_combo.addItem("X-Y (Kennlinie)", "xy")
         self._setup_combo(self._x_combo)
         bar.addWidget(self._x_combo)
         self._x_min_spin = self._make_int_spin()
@@ -291,6 +385,13 @@ class SerialPlot(QWidget):
         bar.addWidget(self._x_min_spin)
         bar.addWidget(QLabel("…"))
         bar.addWidget(self._x_max_spin)
+
+        # Nur im X-Y-Modus sichtbar: welche Größe liefert die X-Werte?
+        self._xy_lbl = QLabel("X-Wert:")
+        bar.addWidget(self._xy_lbl)
+        self._xy_combo = QComboBox()
+        self._setup_combo(self._xy_combo)
+        bar.addWidget(self._xy_combo)
 
         bar.addStretch()
         root.addLayout(bar)
@@ -302,6 +403,7 @@ class SerialPlot(QWidget):
         self._sync_controls_from_state()
         self._y_combo.currentIndexChanged.connect(self._on_axis_controls_changed)
         self._x_combo.currentIndexChanged.connect(self._on_axis_controls_changed)
+        self._xy_combo.currentIndexChanged.connect(self._on_axis_controls_changed)
         for sp in (self._y_min_spin, self._y_max_spin, self._x_min_spin, self._x_max_spin):
             sp.valueChanged.connect(self._on_axis_controls_changed)
         self.refresh_theme()
@@ -372,6 +474,9 @@ class SerialPlot(QWidget):
         x_sweep = self._x_mode == "sweep"
         self._x_min_spin.setEnabled(x_sweep)
         self._x_max_spin.setEnabled(x_sweep)
+        xy = self._x_mode == "xy"
+        self._xy_lbl.setVisible(xy)
+        self._xy_combo.setVisible(xy)
 
     def _on_axis_controls_changed(self, *_):
         """Live-Übersteuerung über die Plotter-Leiste (nicht persistent)."""
@@ -381,8 +486,31 @@ class SerialPlot(QWidget):
         self._y_max = self._y_max_spin.value()
         self._x_min = self._x_min_spin.value()
         self._x_max = self._x_max_spin.value()
+        if self._xy_combo.count():
+            self._xy_key = self._xy_combo.currentData()
         self._update_controls_enabled()
         self._canvas.update()
+
+    # ── X-Y-Modus ─────────────────────────────────────────────────────────────
+    def _xy_series_key(self) -> str | None:
+        """Die Kurve, die im X-Y-Modus die X-Werte liefert (Fallback: erste)."""
+        if self._xy_key in self._series:
+            return self._xy_key
+        return next(iter(self._series), None)
+
+    def _refresh_xy_combo(self):
+        """X-Wert-Auswahl an die vorhandenen Kurven angleichen."""
+        names = list(self._series.keys())
+        if names == [self._xy_combo.itemData(i) for i in range(self._xy_combo.count())]:
+            return
+        self._xy_combo.blockSignals(True)
+        self._xy_combo.clear()
+        for n in names:
+            self._xy_combo.addItem(n, n)
+        key = self._xy_series_key()
+        if key is not None:
+            self._xy_combo.setCurrentIndex(names.index(key))
+        self._xy_combo.blockSignals(False)
 
     # ── Steuerung ───────────────────────────────────────────────────────────
     def _on_pause(self, paused: bool):
@@ -393,6 +521,7 @@ class SerialPlot(QWidget):
         self._series.clear()
         self._linebuf = ""
         self._dirty = False
+        self._refresh_xy_combo()
         self._canvas.update()
 
     # ── Dateneingabe ──────────────────────────────────────────────────────────
@@ -422,6 +551,7 @@ class SerialPlot(QWidget):
         if s is None:
             s = _Series()
             self._series[key] = s
+            self._refresh_xy_combo()
         # Im Sweep-Modus nach Erreichen von x_max einfrieren.
         if self._x_mode == "sweep" and s.next_index > self._x_max:
             return
@@ -459,10 +589,11 @@ class SerialPlot(QWidget):
             f" min-width:120px; }}"
         )
         lbl_style = f"color:{THEME['text']};"
-        for c in (self._y_combo, self._x_combo, self._y_min_spin, self._y_max_spin,
+        for c in (self._y_combo, self._x_combo, self._xy_combo,
+                  self._y_min_spin, self._y_max_spin,
                   self._x_min_spin, self._x_max_spin):
             c.setStyleSheet(ctrl_style)
-        for lbl in (self._y_lbl, self._x_lbl):
+        for lbl in (self._y_lbl, self._x_lbl, self._xy_lbl):
             lbl.setStyleSheet(lbl_style)
         self._pause_chk.setStyleSheet(lbl_style)
         self.setStyleSheet(f"background:{THEME['terminal_bg']};")

@@ -348,6 +348,31 @@ Lage-/Bewegungssensor MPU6050 (I2C):
   mpu.is_level(threshold=5.0) / mpu.read_orientation_text()
   mpu.calibrate_gyro(samples=200)   # einmalig zu Beginn (Sensor ruhig halten)
 
+Beschleunigungssensor GY-61 / ADXL335 (3 analoge ADC-Pins, KEIN I2C):
+  from nitbw_gy61 import GY61
+  gy61 = GY61(x_pin=34, y_pin=35, z_pin=32)
+  ax, ay, az = gy61.lesen_g()          # g
+  mx, my, mz = gy61.lesen_ms2()        # m/s^2
+  pitch, roll = gy61.neigung_grad()    # Grad
+  gy61.betrag_g() / gy61.ist_bewegt(schwelle_g=0.15)
+  gy61.kalibrieren_ruhelage(samples=200)   # einmalig: Sensor flach + ruhig halten
+
+Strom-/Spannungssensor INA219 (I2C):
+  from nitbw_ina219 import INA219
+  ina219 = INA219(i2c, addr=0x40, shunt_ohms=0.1, max_expected_current=2.0)
+  ina219.read_bus_voltage_v()      # V
+  ina219.read_load_voltage_v()     # V (Bus- + Shuntspannung)
+  ina219.read_shunt_voltage_mv()   # mV
+  ina219.read_current_ma()         # mA
+  ina219.read_power_mw()           # mW
+
+Analog-Digital-Wandler ADS1015 (I2C, 4 Kanaele A0-A3, 12 Bit):
+  from nitbw_ads1015 import ADS1015
+  ads1015 = ADS1015(i2c, addr=0x48, pga=ADS1015.PGA_4_096V)
+  ads1015.read_voltage(0)    # Spannung Kanal 0 in V
+  ads1015.read_raw(0)        # Rohwert (-2048..2047)
+  ads1015.read_diff_voltage(ADS1015.MUX_DIFF_0_1)   # Differenz A0-A1 in V
+
 Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   from nitbw_mlearn import MLearn
   model = MLearn(k=3)

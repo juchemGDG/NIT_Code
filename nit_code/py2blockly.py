@@ -365,8 +365,12 @@ _LIB_KIND = {
     "BME280": "bme280", "Pulssensor": "puls", "TCS3200": "tcs", "TOF": "tof",
     "KY023": "joy", "RTC": "rtc", "Compass": "compass", "AS7262": "as7262",
     "MPU6050": "mpu", "ESPNow": "espnow", "MQTTClient": "mqtt", "MLearn": "mlearn",
-    "MP3TF16P": "mp3",
+    "MP3TF16P": "mp3", "GY61": "gy61", "INA219": "ina", "ADS1015": "ads",
 }
+
+# ADS1015-Klassenkonstanten, die als Dropdown-Werte in den Blöcken stehen.
+_ADS_PGA = {"PGA_6_144V", "PGA_4_096V", "PGA_2_048V", "PGA_1_024V", "PGA_0_512V", "PGA_0_256V"}
+_ADS_MUX = {"MUX_DIFF_0_1", "MUX_DIFF_0_3", "MUX_DIFF_1_3", "MUX_DIFF_2_3"}
 
 # Benannte Equalizer-Konstanten der MP3-Bibliothek → Dropdown-Wert des Blocks
 _MP3_EQ = {
@@ -403,6 +407,19 @@ def _conv(node, conv):
         if s in _MP3_EQ:
             return _MP3_EQ[s]
         return s if s in ("0", "1", "2", "3", "4", "5") else None
+    if conv == "hexint":       # I2C-Adresse: Ganzzahl als Hex-Literal (0x40) darstellen
+        if isinstance(node, ast.Constant) and isinstance(node.value, int):
+            return hex(node.value)
+        return _src(node) or None
+    if conv == "chan":         # ADS1015-Kanalnummer 0–3 → Dropdown-Wert (String)
+        if isinstance(node, ast.Constant) and node.value in (0, 1, 2, 3):
+            return str(node.value)
+        return None
+    if conv in ("ads_pga", "ads_mux"):   # ADS1015.PGA_… / ADS1015.MUX_DIFF_… → Konstantenname
+        s = _src(node)
+        if s.startswith("ADS1015."):
+            s = s[len("ADS1015."):]
+        return s if s in (_ADS_PGA if conv == "ads_pga" else _ADS_MUX) else None
     return None
 
 
@@ -469,6 +486,12 @@ _LIB_INIT = {
     "wlan": ("wlan_init", []),
     "mqtt": ("mqtt_init", [("SERVER", ("kw", "server", "str")), ("ID", ("kw", "client_id", "bstr"))]),
     "mlearn": ("mlearn_init", [("K", ("kw", "k", "int"))]),
+    "gy61": ("gy61_init", [("X", ("arg", 0, "x_pin", "int")), ("Y", ("arg", 1, "y_pin", "int")),
+                           ("Z", ("arg", 2, "z_pin", "int"))]),
+    # Erstes Positional-Argument ist jeweils das i2c-Objekt.
+    "ina": ("ina_init", [("ADDR", ("arg", 1, "addr", "hexint")), ("SHUNT", ("arg", 2, "shunt_ohms", "raw")),
+                         ("MAXA", ("arg", 3, "max_expected_current", "raw"))]),
+    "ads": ("ads_init", [("ADDR", ("arg", 1, "addr", "hexint")), ("PGA", ("arg", 2, "pga", "ads_pga"))]),
 }
 
 # Methoden: kind -> { methode: (block_type, is_value, [(field, source)], [(input, pos_idx)]) }
@@ -584,6 +607,23 @@ _LIB_METHODS = {
         "save_model": ("mlearn_save", False, [("DATEI", ("pos", 0, "str")), ("TYP", ("kw", "model_type", "str"))], []),
         "load_model": ("mlearn_load_model", False, [("DATEI", ("pos", 0, "str"))], []),
     },
+    "gy61": {
+        "kalibrieren_ruhelage": ("gy61_kalibrieren", False, [], []),
+        "betrag_g": ("gy61_betrag", True, [], []),
+        "ist_bewegt": ("gy61_bewegt", True, [("SCHWELLE", ("arg", 0, "schwelle_g", "raw"))], []),
+    },
+    "ina": {
+        "read_bus_voltage_v": ("ina_busv", True, [], []),
+        "read_load_voltage_v": ("ina_lastv", True, [], []),
+        "read_shunt_voltage_mv": ("ina_shunt", True, [], []),
+        "read_current_ma": ("ina_strom", True, [], []),
+        "read_power_mw": ("ina_leistung", True, [], []),
+    },
+    "ads": {
+        "read_voltage": ("ads_spannung", True, [("KANAL", ("arg", 0, "channel", "chan"))], []),
+        "read_raw": ("ads_roh", True, [("KANAL", ("arg", 0, "channel", "chan"))], []),
+        "read_diff_voltage": ("ads_diff", True, [("MUX", ("arg", 0, "mux", "ads_mux"))], []),
+    },
 }
 
 _NITON_NOTES = {"c", "d", "e", "f", "g", "a", "h", "c2"}
@@ -601,6 +641,7 @@ _LIB_INST = {
     "tof": "tof", "joy": "joystick", "rtc": "rtc", "compass": "kompass",
     "as7262": "spektral", "mpu": "mpu", "espnow": "espnow",
     "mqtt": "mqtt_client", "mlearn": "model", "wlan": "wlan",
+    "gy61": "gy61", "ina": "ina219", "ads": "ads1015",
 }
 
 # Mehrfach-Zuweisungs-Methoden: Die Mess-Blöcke erzeugen FESTE Zielnamen
@@ -611,6 +652,9 @@ _MULTI_TARGETS = {
     ("mpu", "read_accel"): ("ax", "ay", "az"),
     ("mpu", "read_gyro"): ("gx", "gy", "gz"),
     ("joy", "daten"): "d",
+    ("gy61", "lesen_g"): ("ax", "ay", "az"),
+    ("gy61", "lesen_ms2"): ("mx", "my", "mz"),
+    ("gy61", "neigung_grad"): ("pitch", "roll"),
 }
 
 
@@ -733,6 +777,9 @@ _MULTI_BLOCK = {
     ("mpu", "read_accel"): "mpu_accel",
     ("mpu", "read_gyro"): "mpu_gyro",
     ("joy", "daten"): "joy_lesen",
+    ("gy61", "lesen_g"): "gy61_messen",
+    ("gy61", "lesen_ms2"): "gy61_messen_ms2",
+    ("gy61", "neigung_grad"): "gy61_neigung",
 }
 
 
