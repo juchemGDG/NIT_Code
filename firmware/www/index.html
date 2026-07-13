@@ -209,6 +209,16 @@
     <category name="Listen" colour="260">
       <block type="lists_create_with"></block>
       <block type="lists_length"></block>
+      <block type="lists_setIndex">
+        <field name="MODE">INSERT</field>
+        <field name="WHERE">LAST</field>
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_getIndex">
+        <field name="MODE">REMOVE</field>
+        <field name="WHERE">LAST</field>
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
       <block type="lists_getIndex">
         <value name="VALUE"><block type="variables_get"></block></value>
       </block>

@@ -346,6 +346,17 @@ def _lit_bit(node):
     return None
 
 
+def _lit_int(node):
+    """Liefert ein Integer-Literal (auch negatives), sonst None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return node.value
+    if (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub)
+            and isinstance(node.operand, ast.Constant)
+            and isinstance(node.operand.value, int)):
+        return -node.operand.value
+    return None
+
+
 # ── nitbw-Bibliotheken: Registry für das Rück-Mapping ─────────────────────────
 _LIB_KIND = {
     "OLED": "oled", "LCD": "lcd", "TOENE": "toene", "NITon": "niton",
@@ -1095,6 +1106,9 @@ def _neopixel_set(target, value, st):
 
 def _expr_statement(value, st):
     if isinstance(value, ast.Call):
+        lst = _list_call_stmt(value, st)
+        if lst is not None:
+            return lst
         # Hardware-Methode auf bekannter Variable?
         hw = _hw_call_stmt(value, st)
         if hw is _DROP:
@@ -1216,6 +1230,58 @@ def _hw_call_stmt(call, st):
     return None
 
 
+def _list_call_stmt(call, st):
+    """Listen-Methoden im Anweisungskontext auf Blockly-Listenblöcke mappen."""
+    f = call.func
+    if not (isinstance(f, ast.Attribute) and not call.keywords):
+        return None
+
+    if f.attr == "append" and len(call.args) == 1:
+        return _blk("lists_setIndex",
+                    fields={"MODE": "INSERT", "WHERE": "LAST"},
+                    inputs={"LIST": _val(_expr(f.value, st)),
+                            "TO": _val(_expr(call.args[0], st))})
+
+    if f.attr == "pop" and len(call.args) in (0, 1):
+        fields = {"MODE": "REMOVE"}
+        inputs = {"VALUE": _val(_expr(f.value, st))}
+        if len(call.args) == 0:
+            fields["WHERE"] = "LAST"
+            return _blk("lists_getIndex", fields=fields, inputs=inputs)
+
+        idx = _lit_int(call.args[0])
+        if idx == 0:
+            fields["WHERE"] = "FIRST"
+            return _blk("lists_getIndex", fields=fields, inputs=inputs)
+        if idx == -1:
+            fields["WHERE"] = "LAST"
+            return _blk("lists_getIndex", fields=fields, inputs=inputs)
+
+    return None
+
+
+def _list_call_expr(call, st):
+    """Listen-Methoden im Ausdruckskontext auf Blockly-Listenblöcke mappen."""
+    f = call.func
+    if not (isinstance(f, ast.Attribute) and f.attr == "pop" and not call.keywords):
+        return None
+
+    fields = {"MODE": "GET_REMOVE"}
+    inputs = {"VALUE": _val(_expr(f.value, st))}
+    if len(call.args) == 0:
+        fields["WHERE"] = "LAST"
+        return _blk("lists_getIndex", fields=fields, inputs=inputs)
+    if len(call.args) == 1:
+        idx = _lit_int(call.args[0])
+        if idx == 0:
+            fields["WHERE"] = "FIRST"
+            return _blk("lists_getIndex", fields=fields, inputs=inputs)
+        if idx == -1:
+            fields["WHERE"] = "LAST"
+            return _blk("lists_getIndex", fields=fields, inputs=inputs)
+    return None
+
+
 def _ifreturn_block(node, st):
     """``if bedingung: return [wert]`` im Funktionsrumpf → procedures_ifreturn.
 
@@ -1325,6 +1391,10 @@ def _wlan_ip_expr(node, st):
 
 def _expr(node, st):
     try:
+        if isinstance(node, ast.Call):
+            lst = _list_call_expr(node, st)
+            if lst is not None:
+                return lst
         hw = _hw_call_expr(node, st)
         if hw is not None:
             return hw
