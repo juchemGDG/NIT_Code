@@ -818,6 +818,40 @@
   // und bindet dafür "from numbers import Number" ein. Das ist für den
   // Unterricht unnötig kompliziert. Wir erzeugen stattdessen schlichtes
   //   VAR += N   bzw. bei negativem N   VAR -= N
+  var _origListsSetIndex = (P.forBlock && P.forBlock['lists_setIndex']) || P['lists_setIndex'];
+
+  function _listVarInfoFromSetIndexBlock(block) {
+    var listBlock = block.getInputTargetBlock('LIST');
+    if (!listBlock || listBlock.type !== 'variables_get') return null;
+    var varId = listBlock.getFieldValue('VAR');
+    if (!varId) return null;
+    return { id: varId, name: P.getVariableName(varId) };
+  }
+
+  function _hasExplicitVarSet(workspace, varId) {
+    var blocks = workspace.getAllBlocks(false);
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      if (b.type === 'variables_set' && b.getFieldValue('VAR') === varId) return true;
+    }
+    return false;
+  }
+
+  // Für den Einsteiger-Block "in der Liste füge ... ein": Falls die Liste nur
+  // als Variable verwendet wird und nirgends explizit gesetzt ist, automatisch
+  // als leere Liste initialisieren (einmalig im Setup-Abschnitt).
+  reg('lists_setIndex', function (block) {
+    var code = _origListsSetIndex ? _origListsSetIndex(block, P) : '';
+    if (block.getFieldValue('MODE') !== 'INSERT') return code;
+
+    var info = _listVarInfoFromSetIndexBlock(block);
+    if (!info) return code;
+    if (_hasExplicitVarSet(block.workspace, info.id)) return code;
+
+    P.definitions_['inst_auto_list_' + info.name] = info.name + ' = []';
+    return code;
+  });
+
   reg('math_change', function (block) {
     var delta = (P.valueToCode(block, 'DELTA', ord('ADDITIVE')) || '0').trim();
     var name = P.getVariableName(block.getFieldValue('VAR'));
