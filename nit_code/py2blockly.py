@@ -366,6 +366,7 @@ _LIB_KIND = {
     "KY023": "joy", "RTC": "rtc", "Compass": "compass", "AS7262": "as7262",
     "MPU6050": "mpu", "ESPNow": "espnow", "MQTTClient": "mqtt", "MLearn": "mlearn",
     "MP3TF16P": "mp3", "GY61": "gy61", "INA219": "ina", "ADS1015": "ads",
+    "HX711AD": "hx",
 }
 
 # ADS1015-Klassenkonstanten, die als Dropdown-Werte in den Blöcken stehen.
@@ -492,6 +493,7 @@ _LIB_INIT = {
     "ina": ("ina_init", [("ADDR", ("arg", 1, "addr", "hexint")), ("SHUNT", ("arg", 2, "shunt_ohms", "raw")),
                          ("MAXA", ("arg", 3, "max_expected_current", "raw"))]),
     "ads": ("ads_init", [("ADDR", ("arg", 1, "addr", "hexint")), ("PGA", ("arg", 2, "pga", "ads_pga"))]),
+    "hx": ("hx_init", [("DT", ("arg", 0, "dt_pin", "int")), ("SCK", ("arg", 1, "sck_pin", "int"))]),
 }
 
 # Methoden: kind -> { methode: (block_type, is_value, [(field, source)], [(input, pos_idx)]) }
@@ -624,6 +626,14 @@ _LIB_METHODS = {
         "read_raw": ("ads_roh", True, [("KANAL", ("arg", 0, "channel", "chan"))], []),
         "read_diff_voltage": ("ads_diff", True, [("MUX", ("arg", 0, "mux", "ads_mux"))], []),
     },
+    "hx": {
+        "set_skala": ("hx_skala", False, [("SKALA", ("arg", 0, "scale", "raw"))], []),
+        "tara": ("hx_tara", False, [], []),
+        "kalibrieren": ("hx_kalibrieren", False, [("GEWICHT", ("arg", 0, "referenz_gewicht", "raw"))], []),
+        "messen_gewicht": ("hx_gewicht", True, [], []),
+        "messen_wert": ("hx_wert", True, [], []),
+        "messen_roh": ("hx_roh", True, [], []),
+    },
 }
 
 _NITON_NOTES = {"c", "d", "e", "f", "g", "a", "h", "c2"}
@@ -641,7 +651,7 @@ _LIB_INST = {
     "tof": "tof", "joy": "joystick", "rtc": "rtc", "compass": "kompass",
     "as7262": "spektral", "mpu": "mpu", "espnow": "espnow",
     "mqtt": "mqtt_client", "mlearn": "model", "wlan": "wlan",
-    "gy61": "gy61", "ina": "ina219", "ads": "ads1015",
+    "gy61": "gy61", "ina": "ina219", "ads": "ads1015", "hx": "waage",
 }
 
 # Mehrfach-Zuweisungs-Methoden: Die Mess-Blöcke erzeugen FESTE Zielnamen

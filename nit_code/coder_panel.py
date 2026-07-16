@@ -373,6 +373,16 @@ Analog-Digital-Wandler ADS1015 (I2C, 4 Kanaele A0-A3, 12 Bit):
   ads1015.read_raw(0)        # Rohwert (-2048..2047)
   ads1015.read_diff_voltage(ADS1015.MUX_DIFF_0_1)   # Differenz A0-A1 in V
 
+Waage / Waegezelle HX711 (2 GPIO-Pins DT + SCK, KEIN I2C; Variable IMMER waage):
+  from nitbw_hx711ad import HX711AD
+  waage = HX711AD(dt_pin=19, sck_pin=18)
+  waage.set_skala(1000.0)          # Kalibrierfaktor (Rohwert pro Einheit, Startwert 5-kg-Zelle)
+  waage.tara(n=20, median=True)    # Nullpunkt setzen (Waage vorher leeren!)
+  waage.kalibrieren(referenz_gewicht=100.0, n=20, median=True)   # nach tara(), bekanntes Gewicht auflegen
+  waage.messen_gewicht(n=5, median=True)   # Gewicht in kalibrierter Einheit (z. B. g)
+  waage.messen_wert(n=5, median=True)      # Rohwert nach Tara-Korrektur
+  waage.messen_roh()                       # signed 24-bit Rohwert
+
 Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   from nitbw_mlearn import MLearn
   model = MLearn(k=3)

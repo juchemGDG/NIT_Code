@@ -223,6 +223,28 @@
       out: 'Number', code: 'ads1015.read_diff_voltage(ADS1015.%MUX%)',
       tip: 'Differenzmessung zwischen zwei Kanälen (z. B. A0 gegen A1).' });
 
+  // ════════════════════════ HX711 (Waage / Wägezelle) ═════════════════
+  B({ type: 'hx_init', parts: ['Waage (HX711) DT-Pin', { f: 'DT', d: 19, lo: 0, hi: 40 }, 'SCK-Pin', { f: 'SCK', d: 18, lo: 0, hi: 40 }],
+      defs: [['from_nitbw_hx711ad', 'from nitbw_hx711ad import HX711AD'],
+             ['inst_hx711ad', 'waage = HX711AD(dt_pin=%DT%, sck_pin=%SCK%)']],
+      tip: 'Wägezelle mit HX711-Verstärker an zwei GPIO-Pins (DT/DOUT und SCK).' });
+  B({ type: 'hx_skala', parts: ['Waage Kalibrierfaktor', { txt: 'SKALA', d: '1000.0' }],
+      code: 'waage.set_skala(%SKALA%)',
+      tip: 'Rohwert pro Einheit (z. B. pro Gramm). Grober Startwert für 5-kg-Wägezellen: 1000. '
+        + 'Genauer wird es mit dem Kalibrier-Block.' });
+  B({ type: 'hx_tara', parts: ['Waage Tara (Nullpunkt setzen)'], code: 'waage.tara(n=20, median=True)',
+      tip: 'Waage vorher leeren und ruhig halten.' });
+  B({ type: 'hx_kalibrieren', parts: ['Waage kalibrieren mit Referenzgewicht', { txt: 'GEWICHT', d: '100.0' }],
+      code: 'waage.kalibrieren(referenz_gewicht=%GEWICHT%, n=20, median=True)',
+      tip: 'Erst Tara ohne Last, dann bekanntes Gewicht auflegen und diesen Block ausführen. '
+        + 'Einheit frei wählbar (z. B. Gramm) – Messungen liefern danach diese Einheit.' });
+  B({ type: 'hx_gewicht', parts: ['Waage Gewicht'], out: 'Number', code: 'waage.messen_gewicht(n=5, median=True)',
+      tip: 'Gewicht in der kalibrierten Einheit (z. B. Gramm).' });
+  B({ type: 'hx_wert', parts: ['Waage Messwert (nach Tara)'], out: 'Number', code: 'waage.messen_wert(n=5, median=True)',
+      tip: 'Offset-korrigierter Rohwert (ohne Kalibrierfaktor).' });
+  B({ type: 'hx_roh', parts: ['Waage Rohwert'], out: 'Number', code: 'waage.messen_roh()',
+      tip: 'Roher 24-Bit-Wert des HX711 (signed).' });
+
   // ════════════════════════ Ultraschall HC-SR04 ═══════════════════════
   B({ type: 'us_init', parts: ['Ultraschall Trigger Pin', { f: 'TRIG', d: 5, lo: 0, hi: 40 }, 'Echo Pin', { f: 'ECHO', d: 18, lo: 0, hi: 40 }],
       defs: [['from_nitbw_ultraschall', 'from nitbw_ultraschall import Ultraschall'],
