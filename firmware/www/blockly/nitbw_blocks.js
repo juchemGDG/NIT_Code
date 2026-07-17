@@ -230,8 +230,9 @@
       tip: 'Wägezelle mit HX711-Verstärker an zwei GPIO-Pins (DT/DOUT und SCK).' });
   B({ type: 'hx_skala', parts: ['Waage Kalibrierfaktor', { txt: 'SKALA', d: '1000.0' }],
       code: 'waage.set_skala(%SKALA%)',
-      tip: 'Rohwert pro Einheit (z. B. pro Gramm). Grober Startwert für 5-kg-Wägezellen: 1000. '
-        + 'Genauer wird es mit dem Kalibrier-Block.' });
+      tip: 'Rohwert pro Einheit (z. B. pro Gramm). Der Wert ist systemabhängig (Zelle, Mechanik, '
+        + 'Montage) und nicht an die Nennlast gekoppelt – bei einer 5-kg-Zelle können z. B. 400, 800 '
+        + 'oder 1500 richtig sein. Am besten mit dem Kalibrier-Block bestimmen; 1000 ist nur ein Platzhalter.' });
   B({ type: 'hx_tara', parts: ['Waage Tara (Nullpunkt setzen)'], code: 'waage.tara(n=20, median=True)',
       tip: 'Waage vorher leeren und ruhig halten.' });
   B({ type: 'hx_kalibrieren', parts: ['Waage kalibrieren mit Referenzgewicht', { txt: 'GEWICHT', d: '100.0' }],

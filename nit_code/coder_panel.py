@@ -376,7 +376,8 @@ Analog-Digital-Wandler ADS1015 (I2C, 4 Kanaele A0-A3, 12 Bit):
 Waage / Waegezelle HX711 (2 GPIO-Pins DT + SCK, KEIN I2C; Variable IMMER waage):
   from nitbw_hx711ad import HX711AD
   waage = HX711AD(dt_pin=19, sck_pin=18)
-  waage.set_skala(1000.0)          # Kalibrierfaktor (Rohwert pro Einheit, Startwert 5-kg-Zelle)
+  waage.set_skala(1000.0)          # Kalibrierfaktor (Rohwert pro Einheit; systemabhaengig,
+                                   # NICHT an Nennlast gekoppelt - immer per kalibrieren() bestimmen)
   waage.tara(n=20, median=True)    # Nullpunkt setzen (Waage vorher leeren!)
   waage.kalibrieren(referenz_gewicht=100.0, n=20, median=True)   # nach tara(), bekanntes Gewicht auflegen
   waage.messen_gewicht(n=5, median=True)   # Gewicht in kalibrierter Einheit (z. B. g)
