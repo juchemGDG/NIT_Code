@@ -146,12 +146,29 @@ async function stopProgram() {
 }
 
 // ── Konsolen-Ausgabe pollen ─────────────────────────────────────────────
+// Adaptiv: solange Ausgaben kommen, schnell pollen (Konsole wirkt "live");
+// bei Funkstille schrittweise bis POLL_MAX zurückfahren, denn jede Anfrage
+// unterbricht das Nutzerprogramm auf dem Single-Core-ESP32 kurz.
+const POLL_MIN = 200;
+const POLL_MAX = 1200;
+let pollDelay = POLL_MIN;
+let pollGen = 0;   // entwertet alte Poll-Ketten (z. B. bei erneutem "Ausführen")
+
 function startPolling() {
   stopPolling();
-  pollTimer = setInterval(fetchOutput, 600);
+  pollDelay = POLL_MIN;
+  const gen = pollGen;
+  pollTimer = setTimeout(() => pollOnce(gen), pollDelay);
 }
 function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  pollGen++;
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+}
+// setTimeout-Kette statt setInterval: die nächste Anfrage startet erst,
+// wenn die vorige fertig ist – sonst stauen sich bei trägem Board Requests.
+async function pollOnce(gen) {
+  await fetchOutput();
+  if (gen === pollGen) pollTimer = setTimeout(() => pollOnce(gen), pollDelay);
 }
 async function fetchOutput() {
   try {
@@ -163,6 +180,8 @@ async function fetchOutput() {
         const isErr = line.indexOf('Traceback') === 0 || line.indexOf('Error') >= 0;
         logLine(line, isErr ? 'err' : null);
       }
+      pollDelay = data.lines.length ? POLL_MIN
+                                    : Math.min(pollDelay * 1.5, POLL_MAX);
     }
     if (typeof data.next === 'number') outputCursor = data.next;
     if (!data.running) {
@@ -172,6 +191,7 @@ async function fetchOutput() {
     }
   } catch (e) {
     // Board evtl. beim Neustart – Polling ruhig weiterlaufen lassen
+    pollDelay = POLL_MAX;
   }
 }
 
