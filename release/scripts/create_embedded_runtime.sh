@@ -101,7 +101,11 @@ case "$(uname -m)" in
     ;;
 esac
 
-ASSET="cpython-${PBS_PYTHON_VERSION}+${PBS_RELEASE}-${ARCH_TAG}-${OS_TAG}-install_only.tar.gz"
+# "_stripped"-Variante: gleiche Runtime, aber ohne Debug-Symbole im
+# Interpreter-Binary. Spart allein auf Linux/macOS oft 60-80 MB, ohne
+# Funktionsverlust fuer Schueler-Programme (Debug-Symbole braucht nur, wer
+# CPython selbst debuggt).
+ASSET="cpython-${PBS_PYTHON_VERSION}+${PBS_RELEASE}-${ARCH_TAG}-${OS_TAG}-install_only_stripped.tar.gz"
 URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_RELEASE}/${ASSET}"
 
 if [[ -d "$RUNTIME_DIR" ]]; then
@@ -152,6 +156,23 @@ if [[ "$SKIP_REQUIREMENTS" -eq 0 ]]; then
 else
   echo "Ueberspringe Paket-Installation (--skip-requirements)."
 fi
+
+# Nicht benoetigte Anteile entfernen (Build-only-Tools/redundante Doku).
+# tcl/tk bleibt erhalten: tkinter/turtle wird von Schueler-Programmen
+# unterstuetzt (siehe nit_code/micropython_dialogs.py). include/ und
+# pkgconfig fliegen raus, weil auf den Zielrechnern ohnehin kein
+# C-Compiler vorhanden ist - Header ohne Compiler nuetzen niemandem, und
+# pyserial/requests sind reine Python-Pakete, die nie kompiliert werden.
+echo "Entferne nicht benoetigte Runtime-Anteile ..."
+STDLIB_DIR="$("$RUNTIME_PY" -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
+rm -rf \
+  "$RUNTIME_DIR/python/share/man" \
+  "$RUNTIME_DIR/python/share/terminfo" \
+  "$RUNTIME_DIR/python/include" \
+  "$RUNTIME_DIR/python/lib/pkgconfig" \
+  "$STDLIB_DIR/idlelib" \
+  "$STDLIB_DIR/ensurepip" \
+  "$STDLIB_DIR/lib2to3"
 
 # .pyc-Dateien hash-basiert (PEP 552) neu erzeugen: Standard-.pyc sind
 # mtime-basiert und gelten nach dem Kopieren/Entpacken auf anderen Rechnern

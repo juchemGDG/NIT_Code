@@ -37,7 +37,9 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
     default { throw "Nicht unterstuetzte Architektur: $($env:PROCESSOR_ARCHITECTURE)" }
 }
 
-$Asset = "cpython-$PbsPythonVersion+$PbsRelease-$ArchTag-pc-windows-msvc-install_only.tar.gz"
+# "_stripped"-Variante: gleiche Runtime, aber ohne Debug-Symbole - spart
+# spuerbar Groesse ohne Funktionsverlust fuer Schueler-Programme.
+$Asset = "cpython-$PbsPythonVersion+$PbsRelease-$ArchTag-pc-windows-msvc-install_only_stripped.tar.gz"
 $Url = "https://github.com/astral-sh/python-build-standalone/releases/download/$PbsRelease/$Asset"
 
 if (-not $SkipRequirements -and -not (Test-Path $ReqFile)) {
@@ -101,6 +103,25 @@ if (-not $SkipRequirements) {
     }
 } else {
     Write-Host "Ueberspringe Paket-Installation (-SkipRequirements)."
+}
+
+# Nicht benoetigte Anteile entfernen (Build-only-Tools/redundante Doku).
+# tcl/tk bleibt erhalten: tkinter/turtle wird von Schueler-Programmen
+# unterstuetzt (siehe nit_code/micropython_dialogs.py). include/libs fliegen
+# raus, weil auf den Zielrechnern ohnehin kein C-Compiler vorhanden ist -
+# pyserial/requests sind reine Python-Pakete, die nie kompiliert werden.
+Write-Host "Entferne nicht benoetigte Runtime-Anteile ..."
+$StdlibDir = & $RuntimePy -c "import sysconfig; print(sysconfig.get_path('stdlib'))"
+foreach ($p in @(
+    (Join-Path $RuntimeDir "python/include"),
+    (Join-Path $RuntimeDir "python/libs"),
+    (Join-Path $StdlibDir "idlelib"),
+    (Join-Path $StdlibDir "ensurepip"),
+    (Join-Path $StdlibDir "lib2to3")
+)) {
+    if (Test-Path $p) {
+        Remove-Item $p -Recurse -Force
+    }
 }
 
 # .pyc hash-basiert (PEP 552) neu erzeugen: mtime-basierte .pyc gelten nach
