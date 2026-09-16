@@ -11,6 +11,7 @@ import os
 import subprocess
 import venv
 import platform
+import hashlib
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -133,6 +134,19 @@ def pip_install(venv_dir: Path):
     subprocess.check_call([str(python), "-m", "pip", "install", "-r", str(REQ_FILE)])
 
 
+def _requirements_hash() -> str:
+    return hashlib.sha256(REQ_FILE.read_bytes()).hexdigest()
+
+
+def _requirements_stamp(venv_dir: Path) -> Path:
+    return venv_dir / ".requirements_hash"
+
+
+def _requirements_up_to_date(venv_dir: Path) -> bool:
+    stamp = _requirements_stamp(venv_dir)
+    return stamp.exists() and stamp.read_text().strip() == _requirements_hash()
+
+
 def run_editor(venv_dir: Path):
     python = _venv_python(venv_dir)
     project_dir = str(PROJECT_DIR)
@@ -149,17 +163,13 @@ def main():
     if not venv_dir.exists():
         create_venv(venv_dir, base_python)
         pip_install(venv_dir)
-    else:
-        # Prüfen ob Pakete installiert sind
-        python = _venv_python(venv_dir)
-        try:
-            subprocess.check_call(
-                [str(python), "-c", "import PyQt6; import PyQt6.QtWebEngineWidgets"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError:
-            pip_install(venv_dir)
+        _requirements_stamp(venv_dir).write_text(_requirements_hash())
+    elif not _requirements_up_to_date(venv_dir):
+        # requirements.txt hat sich seit der letzten Installation geändert
+        # (z. B. neue Pakete) – ohne diesen Vergleich würde eine bereits
+        # bestehende .venv mit funktionierendem PyQt6 nie nachziehen.
+        pip_install(venv_dir)
+        _requirements_stamp(venv_dir).write_text(_requirements_hash())
     run_editor(venv_dir)
 
 
