@@ -9,7 +9,7 @@ from urllib.parse import urlparse, urlunparse, quote as urlquote
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings
 from PyQt6.QtGui import (
-    QAction, QFont, QIcon, QKeySequence, QColor, QPalette,
+    QAction, QFont, QIcon, QKeySequence, QColor, QPalette, QShortcut,
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -41,6 +41,7 @@ from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
+from .terminal_panel import ClaudeTerminalPanel, pty_available
 from .tutor_panel import TutorPanel
 from .net_hints import git_network_hint
 
@@ -1043,13 +1044,25 @@ class MainWindow(QMainWindow):
         self._tutor_panel.set_code_provider(self._current_editor_text)
         self._aischat_panel  = AisChatPanel()
         self._coder_panel    = CoderPanel()
-        self._ai_stack.addWidget(self._tutor_panel)    # Index 0 → Infi/Ollama
-        self._ai_stack.addWidget(self._aischat_panel)  # Index 1 → AIS-Chat
-        self._ai_stack.addWidget(self._coder_panel)    # Index 2 → Code-Generator
+        self._claude_terminal_panel = ClaudeTerminalPanel()
+        self._ai_stack.addWidget(self._tutor_panel)          # Index 0 → Infi/Ollama
+        self._ai_stack.addWidget(self._aischat_panel)        # Index 1 → AIS-Chat
+        self._ai_stack.addWidget(self._coder_panel)          # Index 2 → Code-Generator
+        self._ai_stack.addWidget(self._claude_terminal_panel)  # Index 3 → Claude-Terminal (Easter Egg)
         self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
         self._coder_panel.open_as_blocks_requested.connect(self._open_blocks_from_code)
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
+
+        # Verstecktes Easter Egg: Terminal mit `claude` im Sketchbook-Ordner.
+        # Bewusst OHNE Menüpunkt/Einstellung – nur per Tastenkürzel erreichbar
+        # und nur wirksam, wenn die `claude`-CLI auf diesem Rechner tatsächlich
+        # installiert ist. SuS-Rechner haben sie nicht, daher taucht hier für
+        # sie nichts auf – nicht im Menü, nicht in den Einstellungen.
+        self._claude_terminal_shortcut = QShortcut(
+            QKeySequence("Ctrl+Alt+Shift+C"), self,
+        )
+        self._claude_terminal_shortcut.activated.connect(self._toggle_claude_terminal)
 
         self._main_splitter.setSizes([230, 980, 0])
         # Nur der Editor-Bereich wächst beim Vergrößern des Fensters
@@ -1507,6 +1520,35 @@ class MainWindow(QMainWindow):
     def _toggle_plotter(self, checked: bool):
         """Blendet den Serial Plotter (Live-Graph der Zahlenausgabe) ein/aus."""
         self._console.set_plotter_visible(checked)
+
+    def _toggle_claude_terminal(self):
+        """Verstecktes Easter Egg (Ctrl+Alt+Shift+C): Terminal mit `claude` im
+        Sketchbook-Ordner ein-/ausblenden.
+
+        Bewusst kein Fehlerdialog, wenn `claude` fehlt – ein Rechner ohne die
+        CLI (jeder SuS-Rechner) soll beim Drücken des Kürzels einfach gar
+        nichts tun, als gäbe es das Feature nicht.
+        """
+        if not pty_available() or not shutil.which("claude"):
+            return
+        currently_shown = (
+            self._ai_stack.isVisible()
+            and self._ai_stack.currentWidget() is self._claude_terminal_panel
+        )
+        if currently_shown:
+            self._apply_settings()   # zurück zum regulären KI-Panel-Zustand
+            return
+        self._main_splitter.setCollapsible(2, False)
+        self._ai_stack.setMinimumWidth(0)
+        self._ai_stack.setMaximumWidth(16777215)
+        self._ai_stack.setCurrentIndex(3)
+        self._ai_stack.setVisible(True)
+        sizes = self._main_splitter.sizes()
+        if sizes[2] == 0:
+            total = sum(sizes)
+            self._main_splitter.setSizes([sizes[0], total - sizes[0] - 520, 520])
+        self._claude_terminal_panel.start_claude(self._settings_sketchbook)
+        self._claude_terminal_panel.focus_terminal()
 
     def _current_editor_text(self) -> str:
         """Liefert den Code des aktuell aktiven Editor-Tabs (für Infis „Code zeigen")."""
@@ -3310,6 +3352,7 @@ class MainWindow(QMainWindow):
         self._tutor_panel.refresh_theme()
         self._coder_panel.refresh_theme()
         self._aischat_panel.refresh_theme()
+        self._claude_terminal_panel.refresh_theme()
         for attr in ("_parsons_window", "_csv_window"):
             win = getattr(self, attr, None)
             if win is not None:
@@ -3422,5 +3465,6 @@ class MainWindow(QMainWindow):
         scan = getattr(self, "_port_scan_worker", None)
         if scan is not None and scan.isRunning():
             scan.wait(1000)
+        self._claude_terminal_panel.stop()   # sonst bleibt `claude` als Waisenprozess hängen
         self._save_persistent_settings()
         event.accept()

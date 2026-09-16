@@ -18,14 +18,23 @@ Nur Unix (macOS/Linux) – Windows hat kein natives PTY, das bräuchte
 """
 from __future__ import annotations
 
-import fcntl
 import math
 import os
 import struct
 import subprocess
 import sys
-import termios
 import threading
+
+try:
+    # Unix-only Standardmodule. Der Import darf auf Windows nicht scheitern,
+    # sonst crasht schon der bloße ``import terminal_panel`` die ganze App.
+    # Aufrufer müssen vorher pty_available() prüfen – auf Windows bleiben
+    # fcntl/termios dann einfach ungenutzt.
+    import fcntl
+    import termios
+except ImportError:  # Windows
+    fcntl = None
+    termios = None
 
 import pyte
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
@@ -33,7 +42,7 @@ from PyQt6.QtGui import (
     QColor, QFont, QFontDatabase, QFontMetrics, QKeyEvent, QPainter, QResizeEvent,
     QWheelEvent,
 )
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from .config import THEME
 
@@ -272,8 +281,8 @@ class TerminalWidget(QWidget):
         self._screen.reset()
         self._pty = _PtyProcess(cmd, cwd, self._cols, self._rows, parent=self)
         self._pty.data_ready.connect(self._on_data)
-        self._pty.finished_run.connect(self.finished_run)
-        self._pty.start_failed.connect(self.start_failed)
+        self._pty.finished_run.connect(self._on_finished)
+        self._pty.start_failed.connect(self._on_start_failed)
         self._pty.start()
 
     def stop(self):
@@ -283,6 +292,17 @@ class TerminalWidget(QWidget):
 
     def is_running(self) -> bool:
         return self._pty is not None
+
+    def _on_finished(self, rc: int):
+        self._pty = None
+        self.finished_run.emit(rc)
+
+    def _on_start_failed(self, message: str):
+        # Prozess (z. B. `claude`) konnte gar nicht erst gestartet werden
+        # (Binary fehlt/PATH) – sonst würde is_running() fälschlich True
+        # bleiben und ein erneuter start()-Versuch stillschweigend nichts tun.
+        self._pty = None
+        self.start_failed.emit(message)
 
     # ── Eingehende Daten ─────────────────────────────────────────────────────
     def _on_data(self, data: bytes):
@@ -432,3 +452,66 @@ class TerminalWidget(QWidget):
     def closeEvent(self, event):
         self.stop()
         super().closeEvent(event)
+
+
+class ClaudeTerminalPanel(QWidget):
+    """Kopfzeile (Ordner/Status) + eingebettetes Terminal für ``claude``.
+
+    Bewusst NICHT über ``settings_dialog.tutor_mode`` erreichbar – dieses Panel
+    ist nur per verstecktem Tastenkürzel in main_window.py zugänglich (siehe
+    dortigen Kommentar). Kein Menüpunkt, keine sichtbare Einstellung.
+    """
+
+    process_exited = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 4, 8, 4)
+        self._header_label = QLabel("🤖  Claude Code")
+        header_layout.addWidget(self._header_label)
+        header_layout.addStretch()
+        layout.addWidget(header)
+
+        self._terminal = TerminalWidget()
+        self._terminal.finished_run.connect(self._on_finished)
+        self._terminal.start_failed.connect(self._on_start_failed)
+        layout.addWidget(self._terminal, 1)
+
+        self._header = header
+        self.refresh_theme()
+
+    def start_claude(self, folder: str):
+        """Startet ``claude`` im angegebenen Ordner – falls nicht schon aktiv."""
+        if self._terminal.is_running():
+            return
+        self._header_label.setText(f"🤖  Claude Code  –  {folder}")
+        self._terminal.start(["claude"], cwd=folder)
+        self._terminal.setFocus()
+
+    def stop(self):
+        self._terminal.stop()
+
+    def is_running(self) -> bool:
+        return self._terminal.is_running()
+
+    def focus_terminal(self):
+        self._terminal.setFocus()
+
+    def _on_finished(self, rc: int):
+        self._header_label.setText(f"🤖  Claude Code  –  beendet (Code {rc})")
+        self.process_exited.emit(rc)
+
+    def _on_start_failed(self, message: str):
+        self._header_label.setText(f"🤖  Claude Code  –  Start fehlgeschlagen: {message}")
+
+    def refresh_theme(self):
+        self._header.setStyleSheet(
+            f"background:{THEME['bg_panel']}; border-bottom:1px solid {THEME['border']};"
+        )
+        self._header_label.setStyleSheet(f"color:{THEME['text']}; font-weight:bold;")
