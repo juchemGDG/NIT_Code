@@ -14,11 +14,15 @@ GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 | **MicroPython** | Direktes Programmieren für ESP32, micro:bit (v1/v2), Raspberry Pi Pico 2 / Pico 2W |
 | **Firmware flashen** | MicroPython-Firmware von lokaler Datei oder micropython.org flashen |
 | **Bibliotheks-Manager** | Bibliotheken aus [NIT_Bibliotheken](https://github.com/juchemGDG/NIT_Bibliotheken) direkt auf den Controller laden – online oder (in Schulnetzen ohne Internet) offline aus einem entpackten ZIP-Ordner |
-| **Block-Editor** | Blockbasiert programmieren (wie Snap!/Scratch) und automatisch in lesbaren Python-/MicroPython-Code umwandeln – inkl. GPIO-, ADC-, DAC-, NeoPixel- und nitbw-Bibliotheks-Blöcken |
-| **Serial Plotter** | Zahlenausgabe eines laufenden Programms live als Graph – ideal für Sensorwerte (Temperatur, Abstand, Helligkeit). Bei Bedarf über „Ausführen → 📈 Serial Plotter" einblendbar |
+| **Block-Editor** | Blockbasiert programmieren (wie Snap!/Scratch) und automatisch in lesbaren Python-/MicroPython-Code umwandeln – inkl. GPIO-, ADC-, DAC-, NeoPixel- und nitbw-Bibliotheks-Blöcken (u. a. OLED, LCD, Servo, Ultraschall, Wägezelle HX711, Beschleunigungssensor GY61, Strom-/Spannungssensor INA219, ADC ADS1015) |
+| **ESP32-Standalone-Blockly (Beta)** | Eigene Blockly-Oberfläche direkt auf dem ESP32 (WLAN-Accesspoint, kein Schulnetz nötig) – über „MicroPython → 📲 iPad-Blockly aufs Board spielen …" auf den Controller übertragen, ideal für iPads ohne NIT_Code-Installation |
+| **Serial Plotter** | Zahlenausgabe eines laufenden Programms live als Graph – ideal für Sensorwerte (Temperatur, Abstand, Helligkeit) und X-Y-Kennlinien (z. B. U-I-Kennlinie). Bei Bedarf über „Ausführen → 📈 Serial Plotter" einblendbar |
+| **CSV-Streudiagramm** | Gespeicherte Messreihen als CSV-Datei auswählen und als Streudiagramm darstellen – über „Visualisieren → 📊 CSV-Streudiagramm …" |
+| **Arbeitsblatt-Vorschau** | In Obsidian erstellte Markdown-Arbeitsblätter (Callouts, HTML-Layout-Vorlagen, Codeblöcke) direkt in NIT_Code korrekt formatiert anzeigen – Codeschnipsel lassen sich mit einem Klick kopieren oder an der Cursorposition in den Editor einfügen |
 | **KI-Codegenerator** | Schülerinnen und Schüler spezifizieren Eingabe/Ablauf/Ausgabe/Variablen, die KI setzt es in Code um (lokal via Ollama) |
 | **Git-Integration** | Repository klonen, Status, Commit, Push, Pull, Branch wechseln und Merge-Konflikte lösen – direkt aus dem Menü „Git" |
 | **Syntax-Highlighting** | Farbige Python-Syntax, Zeilennummern, Klammernabgleich, Auto-Vervollständigung (Jedi) |
+| **Suchen & Ersetzen** | Im Editor über `Strg+F` (Suchen) bzw. `Strg+H` (Suchen und Ersetzen) |
 | **Fehler-Links** | Fehler in rot, klickbar → Sprung zur Fehlerstelle im Editor |
 | **Fehler-Erklärung** | Verständliche deutsche Klartext-Hinweise zu Programmfehlern; auf Wunsch erklärt der KI-Tutor „Infi" den Fehler mit Bezug auf den eigenen Code |
 | **Shell** | Integriertes Terminal für Einzelbefehle |
@@ -188,9 +192,33 @@ Achsen lassen sich daher umstellen – direkt in der Plotter-Leiste (sofort wirk
 als gespeicherter Standard unter **Datei → Einstellungen → Serial Plotter**:
 
 - **Hochachse (Y):** *Automatisch* (gleitend) oder *Feste Grenzen* mit Min/Max.
-- **Rechtsachse (X):** *Gleitend* (zeigt die letzten Werte) oder *Sweep* – ein fester
+- **Rechtsachse (X):** *Gleitend* (zeigt die letzten Werte), *Sweep* – ein fester
   Indexbereich von Min bis Max, der sich einmal füllt und dann stehen bleibt (wie eine
-  Einzelaufnahme).
+  Einzelaufnahme) – oder **X-Y (Kennlinie)**: Eine Größe liefert die X-Werte, alle
+  übrigen werden dagegen aufgetragen, z. B. `print(U, I)` für eine U-I-Kennlinie.
+
+---
+
+## Arbeitsblatt-Vorschau (Obsidian-Markdown)
+
+In Obsidian erstellte Arbeitsblätter lassen sich direkt in NIT_Code korrekt
+formatiert anzeigen – über Rechtsklick auf eine `.md`-Datei im Dateibaum →
+**„Als Arbeitsblatt-Vorschau öffnen"**. Die Vorschau öffnet sich im rechten
+Panel und rendert echtes HTML/CSS (kein reiner Textmodus):
+
+- **Obsidian-Callouts** (`> [!hinweis]`, `> [!tipp]`, `> [!aufgabe]` u. a.,
+  inkl. aufklappbarer `+`/`-`-Callouts) werden farbig dargestellt.
+- **HTML-Layout-Vorlagen** (z. B. Kopfzeile, Grid-Layouts, Aufgabenkästen,
+  Schreib-/Zeichenflächen, Lückentext) werden mit passendem Layout gerendert,
+  nicht nur als Rohtext.
+- **Codeblöcke** erscheinen syntax-hervorgehoben; über die Knöpfe **📋 Kopieren**
+  und **⬇ In Editor einfügen** landet der Code direkt in der Zwischenablage
+  bzw. an der aktuellen Cursorposition im geöffneten Editor-Tab.
+- Die Vorschau bleibt bewusst immer hell („Papier-Look"), unabhängig vom
+  NIT_Code-Theme – wie in Obsidian bzw. beim Ausdruck.
+
+> Setzt PyQt6-WebEngine sowie die Pakete `markdown`, `Pygments` und
+> `obsidian-callouts` voraus (in den Download-Versionen bereits enthalten).
 
 ---
 
@@ -288,6 +316,8 @@ oder direkt:
 | `mpremote` | MicroPython-Controller-Kommunikation |
 | `pyserial` | Serielle Ports erkennen |
 | `requests` | GitHub API / Firmware-Downloads |
+| `PyQt6-WebEngine` | Arbeitsblatt-Vorschau (Obsidian-Markdown als echtes HTML/CSS) |
+| `markdown`, `obsidian-callouts`, `Pygments` | Markdown-Rendering, Obsidian-Callouts, Syntax-Highlighting in der Arbeitsblatt-Vorschau |
 
 ---
 
@@ -339,12 +369,15 @@ NIT_Code/
 │   ├── block_panel.py          # Block-Editor-Fenster (Blockly)
 │   ├── coder_panel.py          # KI-Codegenerator
 │   ├── ais_chat_panel.py       # AIS-Schulchat
+│   ├── worksheet_panel.py      # Arbeitsblatt-Vorschau (Obsidian-Markdown)
+│   ├── worksheet_renderer.py   # Markdown→HTML-Rendering (Callouts, Codeblöcke)
 │   ├── micropython_dialogs.py  # Flash- & Bibliotheks-Dialog
 │   ├── tutor_panel.py          # KI-Tutor „Infi" (Ollama-Chat)
 │   ├── settings_dialog.py      # Einstellungen
 │   ├── config.py               # Konstanten & Themes (hell/dunkel)
 │   └── assets/
 │       └── blockly/            # Blockly offline + NIT-/nitbw-Blöcke
+├── firmware/                   # ESP32-Standalone-Blockly (Beta, eigener AP+Webserver)
 ├── start.py                    # Bootstrap-Skript
 ├── run.sh                      # Linux/macOS Starter
 ├── run.bat                     # Windows Starter
