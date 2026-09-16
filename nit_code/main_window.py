@@ -40,6 +40,7 @@ from .parsons_panel import ParsonsWindow
 from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
+from .worksheet_panel import WorksheetPanel
 from .settings_dialog import SettingsDialog
 from .terminal_panel import ClaudeTerminalPanel, find_claude_binary, pty_available
 from .tutor_panel import TutorPanel
@@ -1000,6 +1001,7 @@ class MainWindow(QMainWindow):
         self._file_panel.setMaximumWidth(10000)
         self._file_panel.file_open_requested.connect(self._open_file_path)
         self._file_panel.save_to_device_requested.connect(self._upload_local_file_to_device)
+        self._file_panel.worksheet_preview_requested.connect(self._open_worksheet_preview)
         self._file_panel.set_root(self._settings_sketchbook)
         self._left_splitter.addWidget(self._file_panel)
 
@@ -1045,12 +1047,16 @@ class MainWindow(QMainWindow):
         self._aischat_panel  = AisChatPanel()
         self._coder_panel    = CoderPanel()
         self._claude_terminal_panel = ClaudeTerminalPanel()
+        self._worksheet_panel = WorksheetPanel()
         self._ai_stack.addWidget(self._tutor_panel)          # Index 0 → Infi/Ollama
         self._ai_stack.addWidget(self._aischat_panel)        # Index 1 → AIS-Chat
         self._ai_stack.addWidget(self._coder_panel)          # Index 2 → Code-Generator
         self._ai_stack.addWidget(self._claude_terminal_panel)  # Index 3 → Claude-Terminal (Easter Egg)
+        self._ai_stack.addWidget(self._worksheet_panel)        # Index 4 → Arbeitsblatt-Vorschau
         self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
         self._coder_panel.open_as_blocks_requested.connect(self._open_blocks_from_code)
+        self._worksheet_panel.insert_into_editor_requested.connect(self._on_worksheet_insert_code)
+        self._worksheet_panel.close_requested.connect(self._close_worksheet_preview)
         self._ai_stack.setVisible(False)
         self._main_splitter.addWidget(self._ai_stack)
 
@@ -1549,6 +1555,33 @@ class MainWindow(QMainWindow):
             self._main_splitter.setSizes([sizes[0], total - sizes[0] - 520, 520])
         self._claude_terminal_panel.start_claude(self._settings_sketchbook)
         self._claude_terminal_panel.focus_terminal()
+
+    def _open_worksheet_preview(self, path: str):
+        """Arbeitsblatt-Vorschau öffnen – unabhängig vom eingestellten
+        KI-Tutor-Modus (Settings bleiben unverändert)."""
+        self._main_splitter.setCollapsible(2, False)
+        self._ai_stack.setMinimumWidth(0)
+        self._ai_stack.setMaximumWidth(16777215)
+        self._ai_stack.setCurrentIndex(4)
+        self._ai_stack.setVisible(True)
+        sizes = self._main_splitter.sizes()
+        if sizes[2] == 0:
+            total = sum(sizes)
+            self._main_splitter.setSizes([sizes[0], total - sizes[0] - 520, 520])
+        self._worksheet_panel.load_file(path)
+
+    def _close_worksheet_preview(self):
+        self._apply_settings()   # zurück zum regulären, Settings-gesteuerten KI-Panel
+
+    def _on_worksheet_insert_code(self, code: str):
+        tab = self._current_tab()
+        if tab is None:
+            self.statusBar().showMessage(
+                "Kein Editor-Tab geöffnet – Code konnte nicht eingefügt werden.", 4000
+            )
+            return
+        tab.editor.insert_at_cursor(code)
+        self._update_tab_title(tab)
 
     def _current_editor_text(self) -> str:
         """Liefert den Code des aktuell aktiven Editor-Tabs (für Infis „Code zeigen")."""
@@ -3353,6 +3386,7 @@ class MainWindow(QMainWindow):
         self._coder_panel.refresh_theme()
         self._aischat_panel.refresh_theme()
         self._claude_terminal_panel.refresh_theme()
+        self._worksheet_panel.refresh_theme()
         for attr in ("_parsons_window", "_csv_window"):
             win = getattr(self, attr, None)
             if win is not None:

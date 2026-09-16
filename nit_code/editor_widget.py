@@ -182,6 +182,30 @@ class CodeEditor(QWidget):
             self.sci.setTextCursor(cursor)
             self.sci.ensureCursorVisible()
 
+    def insert_at_cursor(self, text: str):
+        """Fügt Text an der aktuellen Cursorposition ein (z. B. aus der
+        Arbeitsblatt-Vorschau: „In Editor einfügen")."""
+        if HAS_QSCI:
+            # QsciScintilla.insert() bewegt den Cursor NICHT mit – von Hand
+            # hinter den eingefügten Text setzen, sonst landet ein zweites
+            # Einfügen an derselben Stelle statt danach.
+            line, index = self.sci.getCursorPosition()
+            self.sci.insert(text)
+            if "\n" in text:
+                new_line = line + text.count("\n")
+                new_index = len(text) - text.rfind("\n") - 1
+            else:
+                new_line = line
+                new_index = index + len(text)
+            self.sci.setCursorPosition(new_line, new_index)
+            self.sci.ensureLineVisible(new_line)
+        else:
+            cursor = self.sci.textCursor()
+            cursor.insertText(text)
+            self.sci.setTextCursor(cursor)
+            self.sci.ensureCursorVisible()
+        self.sci.setFocus()
+
     def mark_error_line(self, line: int):
         """Markiert eine Fehlerzeile mit einem roten Punkt im Margin."""
         if HAS_QSCI:

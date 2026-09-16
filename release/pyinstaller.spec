@@ -19,6 +19,10 @@ for _pkg in ("mpremote", "esptool", "serial", "serial.tools"):
     tool_binaries += _b
     tool_hiddenimports += _h
 
+# Pygments lädt Lexer-Module dynamisch per importlib – von PyInstallers
+# statischer Analyse nicht erkennbar (Arbeitsblatt-Vorschau: worksheet_renderer.py).
+tool_hiddenimports += collect_submodules("pygments.lexers")
+
 # In PyInstaller-Specs ist __file__ nicht zuverlässig verfügbar.
 cwd = os.getcwd()
 if os.path.exists(os.path.join(cwd, 'release', 'launcher.py')):

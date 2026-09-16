@@ -52,6 +52,7 @@ class FilePanel(QWidget):
 
     file_open_requested = pyqtSignal(str)   # Pfad zur Datei
     save_to_device_requested = pyqtSignal(str)   # Lokale Datei auf Controller speichern
+    worksheet_preview_requested = pyqtSignal(str)   # .md-Datei -> Arbeitsblatt-Vorschau
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -209,6 +210,11 @@ class FilePanel(QWidget):
         if os.path.isfile(path):
             menu.addAction("Öffnen", lambda: self.file_open_requested.emit(path))
             menu.addAction("Öffnen mit …", lambda: self._open_with(path))
+            if path.lower().endswith(".md"):
+                menu.addAction(
+                    "Als Arbeitsblatt-Vorschau öffnen",
+                    lambda: self.worksheet_preview_requested.emit(path),
+                )
             if self._device_connected:
                 menu.addAction(
                     "Auf dem Device speichern …",
