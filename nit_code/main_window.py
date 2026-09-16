@@ -41,7 +41,7 @@ from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .settings_dialog import SettingsDialog
-from .terminal_panel import ClaudeTerminalPanel, pty_available
+from .terminal_panel import ClaudeTerminalPanel, find_claude_binary, pty_available
 from .tutor_panel import TutorPanel
 from .net_hints import git_network_hint
 
@@ -1529,7 +1529,7 @@ class MainWindow(QMainWindow):
         CLI (jeder SuS-Rechner) soll beim Drücken des Kürzels einfach gar
         nichts tun, als gäbe es das Feature nicht.
         """
-        if not pty_available() or not shutil.which("claude"):
+        if not pty_available() or not find_claude_binary():
             return
         currently_shown = (
             self._ai_stack.isVisible()

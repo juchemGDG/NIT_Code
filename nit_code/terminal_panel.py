@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
 import struct
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 try:
     # Unix-only Standardmodule. Der Import darf auf Windows nicht scheitern,
@@ -50,6 +52,63 @@ from .config import THEME
 def pty_available() -> bool:
     """True, wenn diese Plattform ein Unix-PTY hat (macOS/Linux, nicht Windows)."""
     return sys.platform != "win32"
+
+
+_cached_login_path: str | None = None
+
+
+def resolve_login_shell_path() -> str:
+    """PATH wie in einem frisch geöffneten Terminal – NICHT das knappe PATH,
+    mit dem macOS grafische Apps startet.
+
+    Aus dem Terminal per ./run.sh gestartet erbt der Prozess die volle
+    Shell-PATH (inkl. Homebrew, pyenv, und dem Installationsort der
+    claude-CLI). Ein per Doppelklick/Dock gestartetes .app-Bundle – also
+    genau das Release-Paket – bekommt von launchd dagegen nur ein absolutes
+    Minimal-PATH (``/usr/bin:/bin:/usr/sbin:/sbin``) ohne alle drei. Deshalb
+    findet ``shutil.which("claude")`` die CLI im Dev-Modus, im Release-Bundle
+    aber nicht – obwohl beide Male derselbe Rechner mit derselben Installation
+    gemeint ist.
+
+    Lösung: die Login-Shell selbst nach ihrem PATH fragen (``-l`` lädt
+    .zprofile/.zshrc bzw. .bash_profile, genau wie ein neues Terminal-Fenster
+    es täte). Ergebnis wird gecacht, da das einen kurzlebigen Shell-Start
+    kostet (~100–300 ms).
+    """
+    global _cached_login_path
+    if _cached_login_path is not None:
+        return _cached_login_path
+    shell = os.environ.get("SHELL") or "/bin/zsh"
+    path = ""
+    try:
+        result = subprocess.run(
+            [shell, "-ilc", 'echo -n "$PATH"'],
+            capture_output=True, text=True, timeout=5,
+        )
+        path = result.stdout.strip()
+    except Exception:
+        pass
+    _cached_login_path = path or os.environ.get("PATH", "")
+    return _cached_login_path
+
+
+def find_claude_binary() -> str | None:
+    """Sucht die claude-CLI robust – auch mit dem knappen launchd-PATH eines
+    per Doppelklick gestarteten .app-Bundles (siehe resolve_login_shell_path()).
+    """
+    found = shutil.which("claude")
+    if found:
+        return found
+    home = Path.home()
+    for candidate in (
+        home / ".local" / "bin" / "claude",
+        home / ".claude" / "local" / "claude",
+        Path("/usr/local/bin/claude"),
+        Path("/opt/homebrew/bin/claude"),
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return shutil.which("claude", path=resolve_login_shell_path())
 
 
 def _pick_monospace_font(point_size: int) -> QFont:
@@ -159,6 +218,10 @@ class _PtyProcess(QObject):
             self._set_size(slave_fd, self._rows, self._cols)
             env = os.environ.copy()
             env["TERM"] = "xterm-256color"
+            # Gleicher Grund wie in find_claude_binary(): ohne das erhielte
+            # `claude` selbst nur das knappe launchd-PATH und fände darin
+            # aufgerufene Tools (git, python3, …) im Release-Bundle nicht.
+            env["PATH"] = resolve_login_shell_path()
             self._proc = subprocess.Popen(
                 self._cmd,
                 stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
@@ -490,8 +553,14 @@ class ClaudeTerminalPanel(QWidget):
         """Startet ``claude`` im angegebenen Ordner – falls nicht schon aktiv."""
         if self._terminal.is_running():
             return
+        claude_path = find_claude_binary()
+        if not claude_path:
+            self._header_label.setText("🤖  Claude Code  –  claude-CLI nicht gefunden")
+            return
         self._header_label.setText(f"🤖  Claude Code  –  {folder}")
-        self._terminal.start(["claude"], cwd=folder)
+        # Absoluten Pfad übergeben statt des bloßen Namens "claude": subprocess
+        # löst Kommandos sonst wieder über das eigene (evtl. knappe) PATH auf.
+        self._terminal.start([claude_path], cwd=folder)
         self._terminal.setFocus()
 
     def stop(self):
