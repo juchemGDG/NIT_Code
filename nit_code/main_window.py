@@ -16,8 +16,17 @@ from PyQt6.QtWidgets import (
     QSplitter, QStackedWidget, QTabWidget, QLabel, QStatusBar, QToolBar, QToolButton,
     QComboBox, QFileDialog, QMessageBox, QInputDialog, QMenu,
     QDialog, QPushButton, QTextEdit, QLineEdit, QFormLayout, QGroupBox,
-    QListWidget, QListWidgetItem, QCheckBox,
+    QListWidget, QListWidgetItem, QCheckBox, QPlainTextEdit,
 )
+
+try:   # Webansichten (KI-Fenster, Arbeitsblatt) – optional installiert
+    from PyQt6.QtWebEngineCore import QWebEnginePage
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    _WEBVIEW_TYPES: tuple = (QWebEngineView,)
+    _WebAction = QWebEnginePage.WebAction
+except ImportError:
+    _WEBVIEW_TYPES = ()
+    _WebAction = None
 
 from .config import (
     APP_NAME,
@@ -34,7 +43,7 @@ from .config import (
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel, DeviceListWorker
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
-from .qt_utils import retain_thread, find_logo
+from .qt_utils import retain_thread, find_logo, UI_FONT_PT_DEFAULT
 from .block_panel import BlockEditorWindow
 from .parsons_panel import ParsonsWindow
 from .csv_plot import CsvPlotWindow
@@ -733,6 +742,7 @@ class MainWindow(QMainWindow):
         self._settings_git_executable: str = ""
         self._settings_git_repo: str = ""
         self._settings_theme: str = "classic_light"
+        self._settings_ui_font_pt: int = UI_FONT_PT_DEFAULT
         # Serial-Plotter-Achsen (Standardwerte; im Plotter live übersteuerbar)
         self._settings_plot_y_mode: str = "auto"      # "auto" | "fixed"
         self._settings_plot_y_min: float = 0.0
@@ -1267,20 +1277,46 @@ class MainWindow(QMainWindow):
         if tab and hasattr(tab.editor, "sci"):
             tab.editor.sci.redo()
 
-    def _cut(self):
+    def _focus_target(self):
+        """Widget mit Tastaturfokus – aber nur, wenn es NICHT der Code-Editor ist.
+
+        Die Menü-Kürzel Strg/Cmd+X/C/V gelten fensterweit und würden sonst immer
+        den Editor ansprechen, selbst wenn Ausgabe, Shell, Eingabefelder oder das
+        KI-Fenster (Webansicht) den Fokus haben.
+        """
+        w = QApplication.focusWidget()
+        while w is not None:
+            if isinstance(w, (QTextEdit, QPlainTextEdit, QLineEdit)):
+                return w
+            if _WEBVIEW_TYPES and isinstance(w, _WEBVIEW_TYPES):
+                return w
+            if hasattr(w, "SCI_GETTEXT"):      # QsciScintilla → normaler Editor-Pfad
+                return None
+            w = w.parentWidget()
+        return None
+
+    def _edit_command(self, name: str):
+        """Führt cut/copy/paste im fokussierten Widget aus, sonst im Editor."""
+        target = self._focus_target()
+        if target is not None:
+            if _WEBVIEW_TYPES and isinstance(target, _WEBVIEW_TYPES):
+                action = {"cut": "Cut", "copy": "Copy", "paste": "Paste"}[name]
+                target.page().triggerAction(getattr(_WebAction, action))
+            else:
+                getattr(target, name)()
+            return
         tab = self._current_tab()
         if tab and hasattr(tab.editor, "sci"):
-            tab.editor.sci.cut()
+            getattr(tab.editor.sci, name)()
+
+    def _cut(self):
+        self._edit_command("cut")
 
     def _copy(self):
-        tab = self._current_tab()
-        if tab and hasattr(tab.editor, "sci"):
-            tab.editor.sci.copy()
+        self._edit_command("copy")
 
     def _paste(self):
-        tab = self._current_tab()
-        if tab and hasattr(tab.editor, "sci"):
-            tab.editor.sci.paste()
+        self._edit_command("paste")
 
     def _show_find(self):
         tab = self._current_tab()
@@ -3110,8 +3146,11 @@ class MainWindow(QMainWindow):
             plot_x_mode=self._settings_plot_x_mode,
             plot_x_min=self._settings_plot_x_min,
             plot_x_max=self._settings_plot_x_max,
+            ui_font_pt=self._settings_ui_font_pt,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
+            ui_font_changed = dlg.ui_font_pt != self._settings_ui_font_pt
+            self._settings_ui_font_pt = dlg.ui_font_pt
             self._settings_font_size = dlg.font_size
             self._settings_line_numbers = dlg.line_numbers
             self._settings_word_wrap = dlg.word_wrap
@@ -3143,6 +3182,13 @@ class MainWindow(QMainWindow):
                     self,
                     "Einstellungen",
                     f"Einstellungen konnten nicht angewendet werden:\n{exc}",
+                )
+            if ui_font_changed:
+                QMessageBox.information(
+                    self,
+                    "Einstellungen",
+                    "Die neue Schriftgröße der Oberfläche wird nach einem Neustart "
+                    "von NIT_Code wirksam.",
                 )
 
     def _settings_bool(self, key: str, default: bool) -> bool:
@@ -3223,6 +3269,7 @@ class MainWindow(QMainWindow):
         )
         self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
         self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "classic_light")
+        self._settings_ui_font_pt = self._settings_int("ui/font_pt", self._settings_ui_font_pt)
         # Serial-Plotter-Achsen
         self._settings_plot_y_mode = str(self._settings_store.value("plot/y_mode", self._settings_plot_y_mode) or "auto")
         self._settings_plot_y_min = self._settings_float("plot/y_min", self._settings_plot_y_min)
@@ -3249,6 +3296,7 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("git/executable", self._settings_git_executable)
         self._settings_store.setValue("git/repo_dir", self._settings_git_repo)
         self._settings_store.setValue("ui/theme", self._settings_theme)
+        self._settings_store.setValue("ui/font_pt", self._settings_ui_font_pt)
         self._settings_store.setValue("plot/y_mode", self._settings_plot_y_mode)
         self._settings_store.setValue("plot/y_min", self._settings_plot_y_min)
         self._settings_store.setValue("plot/y_max", self._settings_plot_y_max)

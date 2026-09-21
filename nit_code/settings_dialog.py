@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit, QFileDialog, QWidget, QScrollArea,
 )
 
+from .qt_utils import UI_FONT_PT_DEFAULT, UI_FONT_PT_RANGE
 from .config import (
     THEME, THEMES,
     TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL,
@@ -152,8 +153,10 @@ class SettingsDialog(QDialog):
         plot_x_mode: str = "sliding",
         plot_x_min: int = 0,
         plot_x_max: int = 500,
+        ui_font_pt: int = UI_FONT_PT_DEFAULT,
     ):
         super().__init__(parent)
+        self._initial_ui_font_pt = ui_font_pt
         self.setWindowTitle("Einstellungen")
         self.setModal(True)
         # Etwas breiter und mit Scrollbereich (siehe _build_ui), damit das Fenster
@@ -236,7 +239,7 @@ class SettingsDialog(QDialog):
                        tutor_mode, tutor_url, tutor_model, sketchbook_dir, git_exec, theme,
                        blocks_enabled,
                        plot_y_mode, plot_y_min, plot_y_max,
-                       plot_x_mode, plot_x_min, plot_x_max)
+                       plot_x_mode, plot_x_min, plot_x_max, ui_font_pt)
 
     # ── Hilfsmethode: Abschnittsüberschrift ─────────────────────────────
     @staticmethod
@@ -273,6 +276,7 @@ class SettingsDialog(QDialog):
         plot_x_mode: str = "sliding",
         plot_x_min: int = 0,
         plot_x_max: int = 500,
+        ui_font_pt: int = UI_FONT_PT_DEFAULT,
     ):
         # Äußeres Layout: Scrollbereich (Inhalt) + feste Button-Leiste unten.
         outer = QVBoxLayout(self)
@@ -477,6 +481,18 @@ class SettingsDialog(QDialog):
         tidx = max(0, self._combo_theme.findData(theme))
         self._combo_theme.setCurrentIndex(tidx)
         form_design.addRow("Design:", self._combo_theme)
+
+        self._spin_ui_font = QSpinBox()
+        self._spin_ui_font.setRange(*UI_FONT_PT_RANGE)
+        self._spin_ui_font.setValue(ui_font_pt)
+        self._spin_ui_font.setSuffix(" pt")
+        self._spin_ui_font.setFixedWidth(90)
+        form_design.addRow("Schriftgröße (Oberfläche):", self._spin_ui_font)
+        hint_ui_font = QLabel("Gilt für Menüs, Leisten und Panels (nicht für Editor/Shell). "
+                              "Wirkt nach einem Neustart.")
+        hint_ui_font.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        hint_ui_font.setWordWrap(True)
+        form_design.addRow("", hint_ui_font)
 
         root.addLayout(form_design)
         root.addSpacing(6)
@@ -856,6 +872,10 @@ class SettingsDialog(QDialog):
         self._spin_plot_xmax.setEnabled(x_sweep)
 
     # ── Properties ──────────────────────────────────────────────────────────
+
+    @property
+    def ui_font_pt(self) -> int:
+        return self._spin_ui_font.value()
 
     @property
     def font_size(self) -> int:

@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt, QObject, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from .main_window import MainWindow, build_global_style
-from .qt_utils import find_logo
+from .qt_utils import find_logo, install_ui_scale, UI_FONT_PT_DEFAULT
 
 
 class _ExceptionBridge(QObject):
@@ -232,6 +232,13 @@ def main():
     _install_exception_hook()
     app.setApplicationName("NIT_Code")
     app.setOrganizationName("NIT")
+    # Oberflächen-Schriftgröße (Einstellungen → Design); muss vor dem Bauen
+    # jedes Widgets/Stylesheets aktiv sein.
+    try:
+        from PyQt6.QtCore import QSettings
+        install_ui_scale(int(QSettings().value("ui/font_pt", UI_FONT_PT_DEFAULT)))
+    except (TypeError, ValueError):
+        pass
     app.setStyleSheet(build_global_style())
 
     logo = find_logo()
