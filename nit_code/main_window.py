@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QStackedWidget, QTabWidget, QLabel, QStatusBar, QToolBar, QToolButton,
     QComboBox, QFileDialog, QMessageBox, QInputDialog, QMenu,
     QDialog, QPushButton, QTextEdit, QLineEdit, QFormLayout, QGroupBox,
-    QListWidget, QListWidgetItem, QCheckBox, QPlainTextEdit,
+    QListWidget, QListWidgetItem, QCheckBox, QPlainTextEdit, QSizePolicy,
 )
 
 try:   # Webansichten (KI-Fenster, Arbeitsblatt) – optional installiert
@@ -126,8 +126,8 @@ QMenuBar::item:selected {{
     background: {t['accent']};
     color: white;
 }}
-/* Rechtsbündiger Button in der Menüleiste (Corner-Widget) */
-QPushButton#papMenuButton {{
+/* Rechtsbündiger Knopf am rechten Ende der Toolbar */
+QPushButton#papToolButton {{
     background: transparent;
     color: {t['text']};
     border: 1px solid {t['border']};
@@ -136,7 +136,7 @@ QPushButton#papMenuButton {{
     margin: 2px 8px 2px 0;
     font-weight: bold;
 }}
-QPushButton#papMenuButton:hover {{
+QPushButton#papToolButton:hover {{
     background: {t['accent']};
     border-color: {t['accent']};
     color: white;
@@ -914,18 +914,6 @@ class MainWindow(QMainWindow):
         m_help.addSeparator()
         self._add_action(m_help, f"Über {APP_NAME}", self._show_about)
 
-        # ── PAP-Editor (rechtsbündig) ──
-        # Als Corner-Widget der Menüleiste, damit der Button optisch rechts
-        # außen sitzt und nicht in der Menü-Reihe untergeht.
-        self._btn_pap = QPushButton("PAP-Editor")
-        self._btn_pap.setObjectName("papMenuButton")
-        self._btn_pap.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_pap.setToolTip(
-            "Programmablaufplan zeichnen und als Bild in die Zwischenablage übernehmen"
-        )
-        self._btn_pap.clicked.connect(self._open_pap_editor)
-        mb.setCornerWidget(self._btn_pap, Qt.Corner.TopRightCorner)
-
     def _add_action(self, menu, label: str, slot, shortcut: str | None = None):
         act = QAction(label, self)
         if shortcut:
@@ -1006,6 +994,25 @@ class MainWindow(QMainWindow):
                                     "Controller neu starten")
         self._upload_btn_act.setVisible(False)
         self._reset_btn_act.setVisible(False)
+
+        # ── PAP-Editor (rechts außen) ──
+        # Bewusst in der Toolbar und nicht als Corner-Widget der Menüleiste:
+        # auf macOS wandert die QMenuBar in die native System-Menüleiste, ein
+        # Corner-Widget ist dort gar nicht sichtbar. Der Spacer schiebt den
+        # Knopf an den rechten Rand.
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        spacer.setStyleSheet("background:transparent;")
+        tb.addWidget(spacer)
+
+        self._btn_pap = QPushButton("PAP-Editor")
+        self._btn_pap.setObjectName("papToolButton")
+        self._btn_pap.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_pap.setToolTip(
+            "Programmablaufplan zeichnen und als Bild in die Zwischenablage übernehmen"
+        )
+        self._btn_pap.clicked.connect(self._open_pap_editor)
+        tb.addWidget(self._btn_pap)
 
         # Timer für automatisches Port-Scanning im MicroPython-Modus
         self._port_scan_timer = QTimer(self)
