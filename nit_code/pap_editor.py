@@ -163,9 +163,9 @@ def _host_html() -> str:
 class PapEditorWindow(QMainWindow):
     """Eigenständiges Fenster: Programmablaufplan zeichnen, Ergebnis als PNG kopieren."""
 
-    _HINT = ("Ablaufplan zeichnen und oben im Editor auf "
-             "„In Projekt übernehmen“ klicken – das Diagramm landet dann als "
-             "Bild in der Zwischenablage.")
+    _HINT = ("„In Projekt übernehmen“ legt den Plan in die Zwischenablage – "
+             "für Seiten, die kein Einfügen erlauben (z. B. AIS-Chat), danach "
+             "„Bild speichern“ benutzen.")
 
     def __init__(self, parent=None, sketchbook_dir=None):
         super().__init__(parent)
@@ -174,6 +174,10 @@ class PapEditorWindow(QMainWindow):
         # Callable, damit ein spaeter in den Einstellungen geaenderter
         # Sketchbook-Ordner automatisch mitgenommen wird.
         self._sketchbook_dir = sketchbook_dir
+        # Zuletzt übernommenes PNG: AIS-Chat & Co. nehmen kein Bild aus der
+        # Zwischenablage an, deshalb muss es auch als Datei sicherbar sein.
+        self._last_png: bytes | None = None
+        self._last_png_saved = False
         self._connected = False
         self._render_retry_done = False
         self._build_ui()
@@ -194,6 +198,15 @@ class PapEditorWindow(QMainWindow):
         self._act_reload.setToolTip("Editor-Seite neu laden (verwirft den Ablaufplan)")
         self._act_reload.triggered.connect(self._reload)
         tb.addAction(self._act_reload)
+
+        self._act_save_png = QAction("💾  Bild speichern …", self)
+        self._act_save_png.setToolTip(
+            "Das übernommene Diagramm als PNG-Datei speichern "
+            "(für Seiten, die kein Einfügen aus der Zwischenablage erlauben)"
+        )
+        self._act_save_png.setEnabled(False)
+        self._act_save_png.triggered.connect(self._save_last_png)
+        tb.addAction(self._act_save_png)
         tb.addSeparator()
 
         self._status = QLabel("Editor wird geladen …")
@@ -284,6 +297,25 @@ class PapEditorWindow(QMainWindow):
         super().hideEvent(ev)
 
     def closeEvent(self, ev):
+        # Ein übernommenes Bild liegt nur in der Zwischenablage – die überlebt
+        # zwar das Schließen, geht aber beim nächsten Kopieren verloren.
+        if self._last_png and not self._last_png_saved:
+            antwort = QMessageBox.question(
+                self, "PAP-Editor",
+                "Das übernommene Diagramm liegt bisher nur in der Zwischenablage.\n\n"
+                "Soll es zusätzlich als PNG-Datei gespeichert werden?",
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
+            )
+            if antwort == QMessageBox.StandardButton.Cancel:
+                ev.ignore()
+                return
+            if antwort == QMessageBox.StandardButton.Save and not self._save_last_png():
+                # Speichern abgebrochen → Fenster offen lassen, nichts verlieren.
+                ev.ignore()
+                return
         self._poll.stop()
         super().closeEvent(ev)
 
@@ -337,9 +369,12 @@ class PapEditorWindow(QMainWindow):
             self._set_status("Auf die Zwischenablage konnte nicht zugegriffen werden.", kind="error")
             return
         clipboard.setMimeData(mime)
+        self._last_png = raw
+        self._last_png_saved = False
+        self._act_save_png.setEnabled(True)
         self._set_status(
             f"✓ Als PNG in der Zwischenablage ({img.width()}×{img.height()} px) – "
-            "mit Strg+V / Cmd+V einfügen.",
+            "mit Strg+V / Cmd+V einfügen oder „Bild speichern“.",
             kind="success",
         )
 
@@ -370,6 +405,24 @@ class PapEditorWindow(QMainWindow):
             self._set_status("Es kamen keine Daten zum Speichern an.", kind="error")
             return
 
+        self._write_file(name, raw)
+
+    def _save_last_png(self) -> bool:
+        """Speichert das zuletzt übernommene Diagramm als PNG-Datei.
+
+        Nötig, weil manche Ziele (z. B. der AIS-Chat) kein Bild aus der
+        Zwischenablage annehmen und eine Datei zum Hochladen brauchen.
+        """
+        if not self._last_png:
+            self._set_status("Es wurde noch kein Diagramm übernommen.", kind="error")
+            return False
+        if self._write_file("diagramm.png", self._last_png):
+            self._last_png_saved = True
+            return True
+        return False
+
+    def _write_file(self, name: str, raw: bytes) -> bool:
+        """Speichern-Dialog (vorbelegt im Sketchbook-Ordner) und Datei schreiben."""
         suffix = Path(name).suffix.lower()
         beschreibung = {
             ".json": "PAP-Diagramm",
@@ -385,15 +438,16 @@ class PapEditorWindow(QMainWindow):
         )
         if not path:
             self._set_status("Speichern abgebrochen.")
-            return
+            return False
         if suffix and not path.lower().endswith(suffix):
             path += suffix
         try:
             Path(path).write_bytes(raw)
         except OSError as e:
             self._set_status(f"Speichern fehlgeschlagen: {e}", kind="error")
-            return
+            return False
         self._set_status(f"✓ Gespeichert: {path}", kind="success")
+        return True
 
     # ── Darstellung ──────────────────────────────────────────────────────────
     def _set_status(self, text: str, kind: str = "info"):

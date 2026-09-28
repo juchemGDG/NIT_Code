@@ -234,6 +234,13 @@ Anweisung, Entscheidung, Schleife, Funktion) zusammengesetzt.
   in die Zwischenablage** – von dort mit `Strg+V` / `Cmd+V` direkt in ein
   Arbeitsblatt, nach Word, LibreOffice oder in eine Dokumentation einfügen.
 - Das Bild wird in doppelter Auflösung erzeugt, bleibt also auch im Ausdruck scharf.
+- **💾 Bild speichern** legt das übernommene Diagramm als PNG-Datei ab – nötig für
+  Seiten, die kein Einfügen aus der Zwischenablage erlauben und eine Datei zum
+  Hochladen brauchen (z. B. der AIS-Chat). Wird das Fenster geschlossen, ohne dass
+  ein übernommenes Bild gespeichert wurde, fragt NIT_Code noch einmal nach.
+- **Speichern** (als `.json`, später weiterbearbeitbar) und die Exporte
+  (**PNG/JPG/SVG**) der Editor-Seite funktionieren ebenfalls; sie öffnen einen
+  Speichern-Dialog, der im eingestellten **Sketchbook-Ordner** startet.
 - Das Fenster merkt sich den gezeichneten Plan, solange NIT_Code läuft: nach dem
   Schließen lässt es sich erneut öffnen und der Plan weiterbearbeiten.
 
