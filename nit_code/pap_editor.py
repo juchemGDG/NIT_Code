@@ -29,10 +29,14 @@ solange das Fenster offen ist) und legt es in die Zwischenablage.
 """
 import base64
 import json
+import os
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QByteArray, QMimeData, QTimer, QUrl
 from PyQt6.QtGui import QAction, QGuiApplication, QImage
-from PyQt6.QtWidgets import QLabel, QMainWindow, QMessageBox, QToolBar, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFileDialog, QLabel, QMainWindow, QMessageBox, QToolBar, QVBoxLayout, QWidget,
+)
 
 try:
     from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
@@ -69,12 +73,12 @@ _HOST_HTML = r"""<!DOCTYPE html>
 
   // Puffer für die Python-Seite; __nitPapTake() holt ihn ab und leert ihn.
   var out = null;
-  function reset() { out = { ready: false, png: null, error: null, exit: false }; }
+  function reset() { out = { ready: false, png: null, download: null, error: null, exit: false }; }
   reset();
 
   window.__nitPapTake = function () {
     var o = out;
-    if (!o.ready && !o.png && !o.error && !o.exit) return null;
+    if (!o.ready && !o.png && !o.download && !o.error && !o.exit) return null;
     reset();
     return JSON.stringify(o);
   };
@@ -116,13 +120,28 @@ _HOST_HTML = r"""<!DOCTYPE html>
       // Pflicht-Handshake: erst dadurch kennt der Editor unsere Origin und
       // kann das Diagramm später überhaupt zurückschicken.
       frame.contentWindow.postMessage(
-        { target: 'pap-editor', action: 'load', diagram: null, title: 'NIT_Code' },
+        { target: 'pap-editor', action: 'load', diagram: null, title: 'NIT_Code',
+          downloads: true },
         ORIGIN
       );
       out.ready = true;
     } else if (m.event === 'save') {
       if (m.svg) svgToPng(m.svg);
       else out.error = 'Der Ablaufplan ist noch leer – bitte erst Bausteine einfügen.';
+    } else if (m.event === 'download') {
+      // "Speichern" und die Exporte (PNG/JPG/SVG) laufen im iframe nicht als
+      // Browser-Download; die Seite reicht die fertige Datei stattdessen an
+      // uns durch (wir haben das per downloads:true angefordert).
+      if (!m.blob) { out.error = 'Es kamen keine Daten zum Speichern an.'; return; }
+      (function (name, mime) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var s = String(reader.result), i = s.indexOf(',');
+          out.download = { name: name, mime: mime, b64: i >= 0 ? s.slice(i + 1) : '' };
+        };
+        reader.onerror = function () { out.error = 'Die Datei konnte nicht gelesen werden.'; };
+        reader.readAsDataURL(m.blob);
+      })(m.name || 'diagramm', m.mime || '');
     } else if (m.event === 'exit') {
       out.exit = true;
     }
@@ -148,10 +167,13 @@ class PapEditorWindow(QMainWindow):
              "„In Projekt übernehmen“ klicken – das Diagramm landet dann als "
              "Bild in der Zwischenablage.")
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, sketchbook_dir=None):
         super().__init__(parent)
         self.setWindowTitle("NIT PAP-Editor")
         self.resize(1100, 760)
+        # Callable, damit ein spaeter in den Einstellungen geaenderter
+        # Sketchbook-Ordner automatisch mitgenommen wird.
+        self._sketchbook_dir = sketchbook_dir
         self._connected = False
         self._render_retry_done = False
         self._build_ui()
@@ -286,6 +308,8 @@ class PapEditorWindow(QMainWindow):
             self._set_status(str(data["error"]), kind="error")
         if data.get("png"):
             self._copy_png(str(data["png"]))
+        if data.get("download"):
+            self._save_download(data["download"])
         if data.get("exit"):
             self.close()
 
@@ -318,6 +342,58 @@ class PapEditorWindow(QMainWindow):
             "mit Strg+V / Cmd+V einfügen.",
             kind="success",
         )
+
+    def _start_dir(self) -> str:
+        """Startordner des Speichern-Dialogs: der Sketchbook-Ordner."""
+        try:
+            folder = self._sketchbook_dir() if callable(self._sketchbook_dir) else None
+        except Exception:
+            folder = None
+        if folder and os.path.isdir(folder):
+            return folder
+        return str(Path.home())
+
+    def _save_download(self, item: dict):
+        """Speichert eine Datei, die der Editor an uns durchgereicht hat.
+
+        Im iframe scheitern Browser-Downloads; die Seite schickt "Speichern"
+        und die Exporte deshalb als download-Event an uns (angefordert per
+        downloads:true in der load-Nachricht).
+        """
+        name = str(item.get("name") or "diagramm")
+        try:
+            raw = base64.b64decode(str(item.get("b64") or ""), validate=True)
+        except Exception:
+            self._set_status("Die Datei konnte nicht dekodiert werden.", kind="error")
+            return
+        if not raw:
+            self._set_status("Es kamen keine Daten zum Speichern an.", kind="error")
+            return
+
+        suffix = Path(name).suffix.lower()
+        beschreibung = {
+            ".json": "PAP-Diagramm",
+            ".png": "PNG-Bild",
+            ".jpg": "JPEG-Bild",
+            ".jpeg": "JPEG-Bild",
+            ".svg": "SVG-Grafik",
+        }.get(suffix, "Datei")
+        pattern = f"{beschreibung} (*{suffix});;Alle Dateien (*)" if suffix else "Alle Dateien (*)"
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Ablaufplan speichern", os.path.join(self._start_dir(), name), pattern
+        )
+        if not path:
+            self._set_status("Speichern abgebrochen.")
+            return
+        if suffix and not path.lower().endswith(suffix):
+            path += suffix
+        try:
+            Path(path).write_bytes(raw)
+        except OSError as e:
+            self._set_status(f"Speichern fehlgeschlagen: {e}", kind="error")
+            return
+        self._set_status(f"✓ Gespeichert: {path}", kind="success")
 
     # ── Darstellung ──────────────────────────────────────────────────────────
     def _set_status(self, text: str, kind: str = "info"):

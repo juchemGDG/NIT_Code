@@ -1435,7 +1435,9 @@ class MainWindow(QMainWindow):
         """
         win = getattr(self, "_pap_window", None)
         if win is None:
-            win = PapEditorWindow(self)
+            # Als Callable, damit ein spaeter geaenderter Sketchbook-Ordner
+            # beim Speichern automatisch greift.
+            win = PapEditorWindow(self, sketchbook_dir=lambda: self._settings_sketchbook)
             self._pap_window = win
         win.show()
         win.raise_()
