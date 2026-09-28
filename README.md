@@ -18,6 +18,7 @@ GitHub-Repository: https://github.com/juchemGDG/NIT_Code
 | **ESP32-Standalone-Blockly (Beta)** | Eigene Blockly-Oberfläche direkt auf dem ESP32 (WLAN-Accesspoint, kein Schulnetz nötig) – über „MicroPython → 📲 iPad-Blockly aufs Board spielen …" auf den Controller übertragen, ideal für iPads ohne NIT_Code-Installation |
 | **Serial Plotter** | Zahlenausgabe eines laufenden Programms live als Graph – ideal für Sensorwerte (Temperatur, Abstand, Helligkeit) und X-Y-Kennlinien (z. B. U-I-Kennlinie). Bei Bedarf über „Ausführen → 📈 Serial Plotter" einblendbar |
 | **CSV-Streudiagramm** | Gespeicherte Messreihen als CSV-Datei auswählen und als Streudiagramm darstellen – über „Visualisieren → 📊 CSV-Streudiagramm …" |
+| **PAP-Editor** | Programmablaufpläne zeichnen – über den Knopf **PAP-Editor** rechts in der Menüleiste. Der fertige Plan landet mit „In Projekt übernehmen" als Bild in der Zwischenablage und kann direkt in Arbeitsblätter, Word oder LibreOffice eingefügt werden |
 | **Arbeitsblatt-Vorschau** | In Obsidian erstellte Markdown-Arbeitsblätter (Callouts, HTML-Layout-Vorlagen, Codeblöcke) direkt in NIT_Code korrekt formatiert anzeigen – Codeschnipsel lassen sich mit einem Klick kopieren oder an der Cursorposition in den Editor einfügen |
 | **KI-Codegenerator** | Schülerinnen und Schüler spezifizieren Eingabe/Ablauf/Ausgabe/Variablen, die KI setzt es in Code um (lokal via Ollama) |
 | **Git-Integration** | Repository klonen, Status, Commit, Push, Pull, Branch wechseln und Merge-Konflikte lösen – direkt aus dem Menü „Git" |
@@ -219,6 +220,25 @@ Panel und rendert echtes HTML/CSS (kein reiner Textmodus):
 
 > Setzt PyQt6-WebEngine sowie die Pakete `markdown`, `Pygments` und
 > `obsidian-callouts` voraus (in den Download-Versionen bereits enthalten).
+
+---
+
+## PAP-Editor (Programmablaufpläne)
+
+Über den Knopf **PAP-Editor** rechts in der Menüleiste öffnet sich ein eigenes
+Fenster mit dem Editor von [pap.mint-checker.de](https://pap.mint-checker.de).
+Dort wird der Programmablaufplan mit den üblichen Bausteinen (Start/Stop,
+Anweisung, Entscheidung, Schleife, Funktion) zusammengesetzt.
+
+- Ein Klick auf **„In Projekt übernehmen"** legt den fertigen Plan als **PNG-Bild
+  in die Zwischenablage** – von dort mit `Strg+V` / `Cmd+V` direkt in ein
+  Arbeitsblatt, nach Word, LibreOffice oder in eine Dokumentation einfügen.
+- Das Bild wird in doppelter Auflösung erzeugt, bleibt also auch im Ausdruck scharf.
+- Das Fenster merkt sich den gezeichneten Plan, solange NIT_Code läuft: nach dem
+  Schließen lässt es sich erneut öffnen und der Plan weiterbearbeiten.
+
+> Benötigt eine Internetverbindung und PyQt6-WebEngine (in den Download-Versionen
+> bereits enthalten).
 
 ---
 

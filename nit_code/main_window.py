@@ -50,6 +50,7 @@ from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .worksheet_panel import WorksheetPanel
+from .pap_editor import PapEditorWindow
 from .settings_dialog import SettingsDialog
 from .terminal_panel import ClaudeTerminalPanel, find_claude_binary, pty_available
 from .tutor_panel import TutorPanel
@@ -123,6 +124,21 @@ QMenuBar::item {{
 }}
 QMenuBar::item:selected {{
     background: {t['accent']};
+    color: white;
+}}
+/* Rechtsbündiger Button in der Menüleiste (Corner-Widget) */
+QPushButton#papMenuButton {{
+    background: transparent;
+    color: {t['text']};
+    border: 1px solid {t['border']};
+    border-radius: 4px;
+    padding: 3px 12px;
+    margin: 2px 8px 2px 0;
+    font-weight: bold;
+}}
+QPushButton#papMenuButton:hover {{
+    background: {t['accent']};
+    border-color: {t['accent']};
     color: white;
 }}
 QMenu {{
@@ -898,6 +914,18 @@ class MainWindow(QMainWindow):
         m_help.addSeparator()
         self._add_action(m_help, f"Über {APP_NAME}", self._show_about)
 
+        # ── PAP-Editor (rechtsbündig) ──
+        # Als Corner-Widget der Menüleiste, damit der Button optisch rechts
+        # außen sitzt und nicht in der Menü-Reihe untergeht.
+        self._btn_pap = QPushButton("PAP-Editor")
+        self._btn_pap.setObjectName("papMenuButton")
+        self._btn_pap.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_pap.setToolTip(
+            "Programmablaufplan zeichnen und als Bild in die Zwischenablage übernehmen"
+        )
+        self._btn_pap.clicked.connect(self._open_pap_editor)
+        mb.setCornerWidget(self._btn_pap, Qt.Corner.TopRightCorner)
+
     def _add_action(self, menu, label: str, slot, shortcut: str | None = None):
         act = QAction(label, self)
         if shortcut:
@@ -1387,6 +1415,21 @@ class MainWindow(QMainWindow):
             win = BlockEditorWindow(self)
             win.code_generated.connect(self._insert_block_code)
             self._block_window = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    # ── PAP-Editor ────────────────────────────────────────────────────────
+    def _open_pap_editor(self):
+        """Öffnet den PAP-Editor im Extrafenster (einmalig, dann nach vorne holen).
+
+        Das Fenster bleibt beim Schließen erhalten, damit ein gezeichneter
+        Ablaufplan beim nächsten Öffnen noch da ist.
+        """
+        win = getattr(self, "_pap_window", None)
+        if win is None:
+            win = PapEditorWindow(self)
+            self._pap_window = win
         win.show()
         win.raise_()
         win.activateWindow()
@@ -3435,7 +3478,7 @@ class MainWindow(QMainWindow):
         self._aischat_panel.refresh_theme()
         self._claude_terminal_panel.refresh_theme()
         self._worksheet_panel.refresh_theme()
-        for attr in ("_parsons_window", "_csv_window"):
+        for attr in ("_parsons_window", "_csv_window", "_pap_window"):
             win = getattr(self, attr, None)
             if win is not None:
                 win.apply_theme()

@@ -395,6 +395,13 @@ def _user_config_dir() -> Path:
 # AIS-Chat (schulischer Web-Chatbot)
 AIS_CHAT_URL = "https://app.ais-chat.schule"
 
+# PAP-Editor (Programmablaufpläne zeichnen). Die Seite kennt einen Embed-Modus
+# (?embed=1), der nur aktiv wird, wenn sie in einem iframe steckt – siehe
+# pap_editor.py. PAP_EDITOR_ORIGIN wird als Base-URL der Host-Seite und als
+# targetOrigin der postMessage-Aufrufe benutzt.
+PAP_EDITOR_ORIGIN = "https://pap.mint-checker.de"
+PAP_EDITOR_URL = PAP_EDITOR_ORIGIN + "/?embed=1"
+
 
 def is_ollama_available() -> bool:
     """True wenn das ollama-Kommando im PATH gefunden wird."""
