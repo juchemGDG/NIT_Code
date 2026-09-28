@@ -13,6 +13,17 @@ on:
       - "requirements.txt"
       - "start.py"
 
+# Tag-Builds laden ihre Pakete direkt an das GitHub-Release (als Entwurf) und
+# kommen damit ohne Actions-Artefakte aus. Der Umweg über upload-artifact +
+# download-artifact hatte den Artefakt-Speicher des Kontos vollgeschrieben
+# ("Artifact storage quota has been hit"), wodurch der komplette Release-Build
+# scheiterte. Der finalize-Job veröffentlicht das Release erst, wenn alle
+# Plattform-Builds erfolgreich waren – ein halbfertiges Release wird also nie
+# sichtbar. Artefakte gibt es nur noch bei Nicht-Tag-Builds (zum Testen), mit
+# einem Tag Aufbewahrung.
+permissions:
+  contents: write
+
 jobs:
   build-linux:
     strategy:
@@ -38,11 +49,20 @@ jobs:
         env:
           INCLUDE_RUNTIME: "1"
 
-      - name: Upload Linux artifact
+      - name: Upload Linux package to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: bash release/scripts/upload_release_assets.sh release/downloads/linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifact (Testbuild)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: nit-code-linux-${{ matrix.arch }}
           path: release/downloads/linux/*
+          retention-days: 1
 
   build-macos:
     # Feste Runner-Version statt macos-latest, damit Build-Umgebungen stabil bleiben.
@@ -61,11 +81,20 @@ jobs:
         env:
           INCLUDE_RUNTIME: "1"
 
-      - name: Upload macOS artifact
+      - name: Upload macOS package to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: bash release/scripts/upload_release_assets.sh release/downloads/macos
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifact (Testbuild)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: nit-code-macos
           path: release/downloads/macos/*
+          retention-days: 1
 
   build-windows:
     runs-on: windows-latest
@@ -82,40 +111,33 @@ jobs:
         shell: pwsh
         run: ./release/scripts/build_windows.ps1 -IncludeRuntime
 
-      - name: Upload Windows artifact
+      - name: Upload Windows package to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: bash release/scripts/upload_release_assets.sh release/downloads/windows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifact (Testbuild)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: nit-code-windows
           path: release/downloads/windows/*
+          retention-days: 1
 
   publish-github-release:
+    # Veröffentlicht den Release-Entwurf, sobald alle Plattformen erfolgreich
+    # gebaut und hochgeladen haben.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: nit-code-linux-*
-          merge-multiple: true
-          path: release-assets
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: nit-code-macos
-          path: release-assets
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: nit-code-windows
-          path: release-assets
-
-      - name: Create GitHub Release with assets
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            release-assets/*
+      - name: Release veröffentlichen
+        run: bash release/scripts/publish_release.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

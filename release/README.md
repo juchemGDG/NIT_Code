@@ -26,6 +26,12 @@ Beispiel: Version `1.3.2`. Im Terminal des Codespace (Ordner `/workspaces/NIT_Co
 Der Tag-Push startet GitHub Actions. Fortschritt: GitHub -> Reiter **Actions**.
 Das fertige Release mit allen Download-Paketen erscheint unter GitHub -> **Releases**.
 
+Ablauf im Hintergrund: Jeder Plattform-Build haengt seine Pakete direkt an ein
+**Entwurfs-Release**; erst wenn Linux, macOS und Windows fertig sind, wird es
+automatisch veroeffentlicht. Ein halbfertiges Release wird also nie sichtbar.
+Schlaegt ein Build fehl, bleibt der Entwurf liegen -- nach dem Fix denselben
+Workflow erneut starten, der Entwurf wird weiterbenutzt.
+
 Hinweise:
 - Tag-Name (`v1.3.2`) und `APP_VERSION` (`1.3.2`) muessen uebereinstimmen.
 - Builds laufen in der Cloud, nicht im Codespace -- der darf danach geschlossen werden.
