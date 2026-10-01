@@ -268,6 +268,12 @@ Temperatur + Luftdruck + Feuchte BME280 (I2C):
   temperatur, druck, feuchtigkeit = sensor.read_all()
   sensor.calculate_altitude()
 
+Temperatur + Luftdruck BMP280 (I2C, OHNE Feuchte – mit Feuchte: nitbw_bme280):
+  from nitbw_bmp280 import BMP280
+  sensor = BMP280(i2c, addr=0x76)
+  temperatur, druck = sensor.read_all()
+  sensor.calculate_altitude()
+
 Pulssensor (analoger ADC-Pin):
   from nitbw_puls import Pulssensor
   sensor = Pulssensor(adc_pin=34)
@@ -279,6 +285,12 @@ Farbsensor TCS3200:
   sensor = TCS3200(out=27, s2=14, s3=12, s0=26, s1=25)
   sensor.messen_rohwerte(messungen=8)   # dict: 'rot','gruen','blau','klar'
   sensor.dominante_farbe(messungen=8)
+
+Lichtsensor BH1750 (I2C, Lux):
+  from nitbw_bh1750 import BH1750
+  sensor = BH1750(i2c, addr=BH1750.ADDR_LOW)
+  sensor.read_lux() / sensor.read_averaged(n=5, pause_ms=10)
+  sensor.is_dark(schwelle=10.0)
 
 TOF-Abstandssensor VL53L0X / VL6180X (I2C):
   from nitbw_tof import TOF
@@ -366,6 +378,13 @@ Strom-/Spannungssensor INA219 (I2C):
   ina219.read_current_ma()         # mA
   ina219.read_power_mw()           # mW
 
+Stromsensor ACS758 (analoger Hall-Sensor, KEIN I2C; VIOUT NIEMALS direkt an den ESP32
+– IMMER ueber Spannungsteiler z. B. 10k/10k an den ADC-Pin):
+  from nitbw_acs758 import ACS758
+  sensor = ACS758(pin=34, variante='50B', vcc=5.0, teiler=2.0)
+  sensor.nullpunkt_kalibrieren(n=200)   # stromlos, vor der ersten Messung
+  sensor.messen_a() / sensor.messen_ma()
+
 Analog-Digital-Wandler ADS1015 (I2C, 4 Kanaele A0-A3, 12 Bit):
   from nitbw_ads1015 import ADS1015
   ads1015 = ADS1015(i2c, addr=0x48, pga=ADS1015.PGA_4_096V)
@@ -395,6 +414,17 @@ Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
   model.train_logreg() / model.predict_logreg(features)
   model.add_sample(features, label) / model.split_data(anteil_test=0.2, seed=42)
   model.save_model('modell.json', model_type='knn') / model.load_model('modell.json')
+
+Regler P/I/D/PI/PD/PID/Zweipunkt (ReglerLab-kompatibel, reine Berechnung – KEINE
+Hardware, bekommt nur Sollwert und Istwert):
+  from nitbw_pid import PIDRegler, Takt
+  regler = PIDRegler(kpr=1.0, tn=1.0, tv=0.2, ymin=0, ymax=1, ts=0.05)   # Grenzen+ts empfohlen
+  takt = Takt(0.05)             # haelt die Abtastzeit der Schleife ein
+  y = regler.berechnen(sollwert, istwert)   # Stellgroesse, e = sollwert - istwert
+  takt.warten()
+  # weitere Klassen mit gleicher API: PRegler, IRegler, DRegler, PIRegler, PDRegler,
+  # Zweipunktregler(ymax=1.0, ymin=0.0, xsd=0.2)
+  regler.reset()                # Integral/D-Filter zuruecksetzen
 
 NeoPixel WS2812B (direkt MicroPython – es gibt KEINE nitbw_neopixel-Bibliothek,
 immer das eingebaute Modul "neopixel" verwenden):
