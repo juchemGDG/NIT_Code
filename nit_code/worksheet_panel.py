@@ -38,6 +38,7 @@ function nitCopyBlock(id, btn) {{
 # sollen 1:1 wie in Obsidian aussehen – die Vorschau bleibt deshalb immer
 # hell, auch wenn NIT_Code im Dunkelmodus läuft.
 _BASE_CSS = """
+img { max-width: 100%; height: auto; }
 :root {
   --ab-linie:   #999;
   --ab-grau:    #f5f5f5;

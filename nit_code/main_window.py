@@ -50,6 +50,7 @@ from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .worksheet_panel import WorksheetPanel
+from .help_dialog import HelpDialog, guide_path
 from .pap_editor import PapEditorWindow
 from .settings_dialog import SettingsDialog
 from .terminal_panel import ClaudeTerminalPanel, find_claude_binary, pty_available
@@ -908,6 +909,8 @@ class MainWindow(QMainWindow):
 
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
+        self._add_action(m_help, "📖  Kurzanleitung", self._show_quickstart, "F1")
+        m_help.addSeparator()
         self._add_action(m_help, "🤖  NiT_Coder (ais.chat) …", self._show_ais_prompt)
         m_help.addSeparator()
         self._add_action(m_help, "🐞  Fehler melden …", self._report_bug)
@@ -3164,6 +3167,21 @@ class MainWindow(QMainWindow):
         """Zeigt die Vorlage, um den NiT_Coder als Dialogpartner auf ais.chat anzulegen."""
         from .ais_prompt_dialog import AisChatPromptDialog
         AisChatPromptDialog(parent=self).exec()
+
+    def _show_quickstart(self):
+        """Kurzanleitung (mitgelieferte .md) in einem eigenen Fenster anzeigen."""
+        dlg = getattr(self, "_help_dialog", None)
+        if dlg is None:
+            guide = guide_path()
+            if guide is None:
+                QMessageBox.warning(self, "Kurzanleitung", "Die Kurzanleitung wurde nicht gefunden.")
+                return
+            dlg = HelpDialog(guide, self)
+            dlg.panel.insert_into_editor_requested.connect(self._on_worksheet_insert_code)
+            self._help_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _show_about(self):
         QMessageBox.about(
