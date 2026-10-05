@@ -6,6 +6,9 @@
 ; Kompiliert wird ueber release\scripts\build_windows.ps1, das die Versionsnummer
 ; aus nit_code/config.py liest und hier als /DAppVersion uebergibt.
 
+#ifndef AppVersionNumeric
+  #define AppVersionNumeric "0.0.0.0"
+#endif
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -21,7 +24,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#AppVersionNumeric}
 
 ; --- Per-User-Installation ohne Admin-Rechte (wie Thonny) ---
 PrivilegesRequired=lowest

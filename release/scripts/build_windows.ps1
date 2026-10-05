@@ -76,7 +76,10 @@ if (-not $Iscc) {
 if (-not $Iscc) {
     Write-Warning "Inno Setup (ISCC.exe) nicht gefunden - Setup.exe wird uebersprungen. Nur das ZIP wurde erstellt."
 } else {
-    & $Iscc "/DAppVersion=$Version" (Join-Path $ReleaseDir "installer.iss")
+    # VersionInfoVersion verlangt vier Zahlen (x.y.z.w): "1.10.0-beta.3" -> "1.10.0.0"
+    $NumericVersion = ($Version -split '-')[0]
+    while (($NumericVersion -split '\.').Count -lt 4) { $NumericVersion += ".0" }
+    & $Iscc "/DAppVersion=$Version" "/DAppVersionNumeric=$NumericVersion" (Join-Path $ReleaseDir "installer.iss")
     if ($LASTEXITCODE -ne 0) {
         throw "Inno Setup Compiler ist mit Fehlercode $LASTEXITCODE fehlgeschlagen."
     }
