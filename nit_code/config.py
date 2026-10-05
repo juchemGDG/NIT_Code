@@ -274,7 +274,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.9.8"
+APP_VERSION = "1.10.0-beta.1"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"
@@ -410,23 +410,44 @@ def is_ollama_available() -> bool:
 
 # ── Themes ───────────────────────────────────────────────────────────────────
 
-_DARK_THEME: dict[str, str] = {
-    "bg_dark":       "#1e1e2e",
-    "bg_mid":        "#252535",
-    "bg_panel":      "#2a2a3e",
-    "bg_editor":     "#1a1a2a",
-    "accent":        "#7c6af7",
-    "accent_hover":  "#9d8fff",
-    "text":          "#cdd6f4",
-    "text_dim":      "#6c7086",
-    "success":       "#a6e3a1",
-    "error":         "#f38ba8",
-    "warning":       "#fab387",
-    "info":          "#89dceb",
-    "selection":     "#3d3d5c",
-    "border":        "#313244",
-    "terminal_bg":   "#11111b",
-    "terminal_text": "#cdd6f4",
+_LIGHT_MODERN_THEME: dict[str, str] = {   # an pap./reglerlab.mint-checker.de angelehnt (Slate + Blau)
+    "bg_dark":       "#f8fafc",
+    "bg_mid":        "#f1f5f9",
+    "bg_panel":      "#ffffff",
+    "bg_editor":     "#ffffff",
+    "accent":        "#2563eb",
+    "accent_hover":  "#4f46e5",            # Schlüsselwörter: Indigo
+    "text":          "#0f172a",
+    "text_dim":      "#64748b",
+    "success":       "#047857",            # Strings: Grün
+    "error":         "#dc2626",
+    "warning":       "#c2410c",            # Zahlen: Orange
+    "info":          "#0369a1",            # Klassen/Funktionen: Blau
+    "selection":     "#e0ebff",
+    "border":        "#e2e8f0",
+    "scroll":        "#cbd5e1",
+    "terminal_bg":   "#ffffff",
+    "terminal_text": "#0f172a",
+}
+
+_DARK_THEME: dict[str, str] = {           # Slate-Dunkel wie die MINT-Checker-Seiten
+    "bg_dark":       "#0f172a",
+    "bg_mid":        "#1e293b",
+    "bg_panel":      "#1e293b",
+    "bg_editor":     "#0f172a",
+    "accent":        "#3b82f6",
+    "accent_hover":  "#818cf8",
+    "text":          "#e2e8f0",
+    "text_dim":      "#94a3b8",
+    "success":       "#86efac",
+    "error":         "#f87171",
+    "warning":       "#fbbf24",
+    "info":          "#67e8f9",
+    "selection":     "#273449",
+    "border":        "#334155",
+    "scroll":        "#475569",
+    "terminal_bg":   "#0b1120",
+    "terminal_text": "#e2e8f0",
 }
 
 _LIGHT_THEME: dict[str, str] = {          # Eclipse-klassisch
@@ -444,16 +465,18 @@ _LIGHT_THEME: dict[str, str] = {          # Eclipse-klassisch
     "info":          "#0000c0",            # Klassen/Funktionen: Dunkelblau
     "selection":     "#cce0f5",
     "border":        "#c8c8c8",
+    "scroll":        "#b8b8b8",
     "terminal_bg":   "#ffffff",
     "terminal_text": "#1a1a1a",
 }
 
 THEMES: dict[str, dict[str, str]] = {
+    "modern_light":  _LIGHT_MODERN_THEME,
     "modern_dark":   _DARK_THEME,
     "classic_light": _LIGHT_THEME,
 }
 
-THEME: dict[str, str] = dict(_LIGHT_THEME)  # aktives Theme (veränderlich), Standard: hell
+THEME: dict[str, str] = dict(_LIGHT_MODERN_THEME)  # aktives Theme (veränderlich), Standard: modern hell
 
 
 def set_theme(name: str) -> None:

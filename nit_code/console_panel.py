@@ -502,7 +502,7 @@ class ShellWidget(QWidget):
     def _btn_style(self):
         return (
             f"QPushButton {{ background:{THEME['bg_panel']}; color:{THEME['text']};"
-            f" border:1px solid {THEME['border']}; border-radius:4px; padding:3px 8px; }}"
+            f" border:1px solid {THEME['border']}; border-radius:6px; padding:4px 10px; }}"
             f"QPushButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
         )
 
@@ -728,16 +728,26 @@ class ConsolePanel(QWidget):
                 border: none;
                 background: {THEME['terminal_bg']};
             }}
+            QTabBar {{
+                background: {THEME['bg_dark']};
+            }}
             QTabBar::tab {{
-                background: {THEME['bg_panel']};
+                background: transparent;
                 color: {THEME['text_dim']};
-                padding: 5px 14px;
+                padding: 6px 16px;
+                margin: 3px 2px 0 2px;
                 border: none;
-                border-right: 1px solid {THEME['border']};
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }}
+            QTabBar::tab:hover:!selected {{
+                background: {THEME['selection']};
+                color: {THEME['text']};
             }}
             QTabBar::tab:selected {{
                 background: {THEME['terminal_bg']};
                 color: {THEME['text']};
+                font-weight: bold;
                 border-bottom: 2px solid {THEME['accent']};
             }}
             """

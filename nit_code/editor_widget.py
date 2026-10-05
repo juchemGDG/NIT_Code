@@ -76,7 +76,7 @@ class CodeEditor(QWidget):
         # Zeilennummern
         sci.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
         sci.setMarginWidth(0, "0000")
-        sci.setMarginsBackgroundColor(_hex(t["bg_panel"]))
+        sci.setMarginsBackgroundColor(_hex(t["bg_mid"]))
         sci.setMarginsForegroundColor(_hex(t["text_dim"]))
 
         # Einrückungsführungslinien
@@ -151,6 +151,9 @@ class CodeEditor(QWidget):
 
         self.sci.setLexer(lexer)
         self._lexer = lexer
+        # Der Lexer setzt den Zeilennummernrand zurück – Farben danach erneut setzen.
+        self.sci.setMarginsBackgroundColor(_hex(t["bg_mid"]))
+        self.sci.setMarginsForegroundColor(_hex(t["text_dim"]))
 
     # ------------------------------------------------------------------
     # Öffentliche API
@@ -375,7 +378,7 @@ class CodeEditor(QWidget):
         t = THEME
         self.sci.setPaper(_hex(t["bg_editor"]))
         self.sci.setColor(_hex(t["text"]))
-        self.sci.setMarginsBackgroundColor(_hex(t["bg_panel"]))
+        self.sci.setMarginsBackgroundColor(_hex(t["bg_mid"]))
         self.sci.setMarginsForegroundColor(_hex(t["text_dim"]))
         self.sci.setCaretLineBackgroundColor(_hex(t["selection"]))
         self.sci.setCaretForegroundColor(_hex(t["accent"]))

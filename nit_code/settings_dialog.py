@@ -476,6 +476,7 @@ class SettingsDialog(QDialog):
 
         self._combo_theme = QComboBox()
         self._combo_theme.setMaxVisibleItems(6)
+        self._combo_theme.addItem("Modernes Hell-Design", "modern_light")
         self._combo_theme.addItem("Modernes Dunkel-Design", "modern_dark")
         self._combo_theme.addItem("Klassisches Hell-Design (Eclipse)", "classic_light")
         tidx = max(0, self._combo_theme.findData(theme))

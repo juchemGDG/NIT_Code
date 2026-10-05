@@ -107,35 +107,45 @@ def _git_network_env() -> dict | None:
 # ──────────────────────────────────────────────────────────────────────────────
 def build_global_style() -> str:
     t = THEME
+    scroll = t.get("scroll", t["border"])
     return f"""
 QMainWindow, QWidget {{
     background: {t['bg_dark']};
     color: {t['text']};
-    font-family: system-ui, -apple-system, 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
+    font-family: Helvetica, Arial, system-ui, -apple-system, 'Segoe UI', 'Ubuntu', sans-serif;
     font-size: 13px;
+}}
+QToolTip {{
+    background: {t['text']};
+    color: {t['bg_dark']};
+    border: none;
+    border-radius: 6px;
+    padding: 4px 8px;
 }}
 QMenuBar {{
     background: {t['bg_panel']};
     color: {t['text']};
     border-bottom: 1px solid {t['border']};
-    padding: 2px 0;
+    padding: 3px 8px;
 }}
 QMenuBar::item {{
-    padding: 4px 12px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    margin: 0 1px;
+    border-radius: 6px;
+    background: transparent;
 }}
 QMenuBar::item:selected {{
-    background: {t['accent']};
-    color: white;
+    background: {t['selection']};
+    color: {t['accent']};
 }}
 /* Rechtsbündiger Knopf am rechten Ende der Toolbar */
 QPushButton#papToolButton {{
     background: transparent;
     color: {t['text']};
     border: 1px solid {t['border']};
-    border-radius: 4px;
-    padding: 3px 12px;
-    margin: 2px 8px 2px 0;
+    border-radius: 8px;
+    padding: 5px 14px;
+    margin: 2px 4px 2px 0;
     font-weight: bold;
 }}
 QPushButton#papToolButton:hover {{
@@ -147,40 +157,49 @@ QMenu {{
     background: {t['bg_panel']};
     color: {t['text']};
     border: 1px solid {t['border']};
-    border-radius: 6px;
-    padding: 4px;
+    border-radius: 10px;
+    padding: 6px;
 }}
 QMenu::item {{
-    padding: 5px 20px 5px 12px;
-    border-radius: 3px;
+    padding: 6px 22px 6px 14px;
+    border-radius: 6px;
 }}
 QMenu::item:selected {{
-    background: {t['accent']};
-    color: white;
+    background: {t['selection']};
+    color: {t['accent']};
+}}
+QMenu::item:disabled {{
+    color: {t['text_dim']};
 }}
 QMenu::separator {{
     height: 1px;
     background: {t['border']};
-    margin: 3px 6px;
+    margin: 4px 8px;
 }}
 QTabWidget::pane {{
     border: none;
     background: {t['bg_editor']};
 }}
+QTabBar {{
+    background: {t['bg_dark']};
+}}
 QTabBar::tab {{
-    background: {t['bg_panel']};
+    background: transparent;
     color: {t['text_dim']};
-    padding: 6px 14px 6px 14px;
+    padding: 8px 16px;
+    margin: 4px 2px 0 2px;
     border: none;
-    border-right: 1px solid {t['border']};
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
     min-width: 80px;
 }}
 QTabBar::tab:selected {{
     background: {t['bg_editor']};
     color: {t['text']};
-    border-top: 2px solid {t['accent']};
+    font-weight: bold;
+    border-bottom: 2px solid {t['accent']};
 }}
-QTabBar::tab:hover {{
+QTabBar::tab:hover:!selected {{
     background: {t['selection']};
     color: {t['text']};
 }}
@@ -189,69 +208,128 @@ QTabBar::close-button {{
     width: 14px;
     height: 14px;
     margin-left: 4px;
-    border-radius: 3px;
+    border-radius: 7px;
 }}
 QTabBar::close-button:hover {{
-    background: {t['accent']};
+    background: {t['border']};
 }}
 QSplitter::handle {{
     background: {t['border']};
+}}
+QSplitter::handle:hover {{
+    background: {t['accent']};
 }}
 QToolBar {{
     background: {t['bg_panel']};
     border: none;
     border-bottom: 1px solid {t['border']};
-    spacing: 4px;
-    padding: 2px 6px;
+    spacing: 6px;
+    padding: 6px 10px;
+}}
+QToolBar::separator {{
+    background: {t['border']};
+    width: 1px;
+    margin: 4px 6px;
 }}
 QToolButton {{
     background: transparent;
     color: {t['text']};
-    border: none;
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
 }}
 QToolButton:hover {{
     background: {t['selection']};
     color: {t['accent']};
 }}
-QToolButton:pressed {{
+QToolButton:pressed, QToolButton:checked {{
+    background: {t['selection']};
+    border-color: {t['accent']};
+    color: {t['accent']};
+}}
+/* Primäraktion „Starten“ – wie der Anmelden-Knopf der MINT-Checker-Seiten */
+QToolButton#runButton {{
     background: {t['accent']};
     color: white;
+    font-weight: bold;
+    padding: 6px 16px;
+}}
+QToolButton#runButton:hover {{
+    background: {t['accent_hover']};
+    color: white;
+}}
+QToolButton#stopButton {{
+    border: 1px solid {t['border']};
+}}
+QToolButton#stopButton:hover {{
+    background: {t['error']};
+    border-color: {t['error']};
+    color: white;
+}}
+QComboBox {{
+    background: {t['bg_dark']};
+    color: {t['text']};
+    border: 1px solid {t['border']};
+    border-radius: 8px;
+    padding: 5px 10px;
+}}
+QComboBox:hover {{
+    border-color: {t['accent']};
+}}
+QComboBox QAbstractItemView {{
+    background: {t['bg_panel']};
+    color: {t['text']};
+    border: 1px solid {t['border']};
+    selection-background-color: {t['selection']};
+    selection-color: {t['accent']};
+    outline: none;
 }}
 QStatusBar {{
     background: {t['bg_panel']};
     color: {t['text_dim']};
     border-top: 1px solid {t['border']};
     font-size: 11px;
-    padding: 0 8px;
+    padding: 2px 8px;
+}}
+QStatusBar::item {{
+    border: none;
 }}
 QScrollBar:vertical {{
-    background: {t['bg_dark']};
-    width: 8px;
-    border-radius: 4px;
+    background: transparent;
+    width: 10px;
+    margin: 2px;
 }}
 QScrollBar::handle:vertical {{
-    background: {t['border']};
-    border-radius: 4px;
-    min-height: 20px;
+    background: {scroll};
+    border-radius: 3px;
+    min-height: 28px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: {t['accent']};
+    background: {t['text_dim']};
 }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
     height: 0;
+    background: transparent;
 }}
 QScrollBar:horizontal {{
-    background: {t['bg_dark']};
-    height: 8px;
-    border-radius: 4px;
+    background: transparent;
+    height: 10px;
+    margin: 2px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {t['border']};
-    border-radius: 4px;
-    min-width: 20px;
+    background: {scroll};
+    border-radius: 3px;
+    min-width: 28px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {t['text_dim']};
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    width: 0;
+    background: transparent;
 }}
 """
 
@@ -759,7 +837,7 @@ class MainWindow(QMainWindow):
         self._settings_sketchbook: str = str(Path.home())
         self._settings_git_executable: str = ""
         self._settings_git_repo: str = ""
-        self._settings_theme: str = "classic_light"
+        self._settings_theme: str = "modern_light"
         self._settings_ui_font_pt: int = UI_FONT_PT_DEFAULT
         # Serial-Plotter-Achsen (Standardwerte; im Plotter live übersteuerbar)
         self._settings_plot_y_mode: str = "auto"      # "auto" | "fixed"
@@ -940,24 +1018,22 @@ class MainWindow(QMainWindow):
             tb.addAction(act)
             return act
 
-        tbtn("▶  Starten", self._run_program, "Programm ausführen (F5)")
-        tbtn("■  Stoppen", self._stop_program, "Ausführung stoppen (F6)")
+        run_act = tbtn("▶  Starten", self._run_program, "Programm ausführen (F5)")
+        stop_act = tbtn("■  Stoppen", self._stop_program, "Ausführung stoppen (F6)")
+        tb.widgetForAction(run_act).setObjectName("runButton")
+        tb.widgetForAction(stop_act).setObjectName("stopButton")
         tb.addAction(self._act_plotter)   # checkbarer Plotter-Umschalter (in _setup_menubar erstellt)
         tb.addSeparator()
 
         # Modus-Auswahl
         self._mode_lbl = QLabel("  Modus: ")
-        self._mode_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
+        self._mode_lbl.setStyleSheet(f"background:transparent; color:{THEME['text_dim']};")
         tb.addWidget(self._mode_lbl)
 
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("🐍  Python (lokal)", "python")
         self._mode_combo.addItem("⚡  MicroPython", "micropython")
-        self._mode_combo.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f" border:1px solid {THEME['border']}; border-radius:4px;"
-            f" padding:3px 6px; min-width:160px;"
-        )
+        self._mode_combo.setMinimumWidth(160)
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         tb.addWidget(self._mode_combo)
 
@@ -965,15 +1041,11 @@ class MainWindow(QMainWindow):
 
         # Geräte-Auswahl (nur im MicroPython-Modus sichtbar)
         self._port_lbl = QLabel("  Gerät: ")
-        self._port_lbl.setStyleSheet(f"color:{THEME['text_dim']};")
+        self._port_lbl.setStyleSheet(f"background:transparent; color:{THEME['text_dim']};")
         self._port_lbl_act = tb.addWidget(self._port_lbl)
 
         self._port_combo = QComboBox()
-        self._port_combo.setStyleSheet(
-            f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f" border:1px solid {THEME['border']}; border-radius:4px;"
-            f" padding:3px 6px; min-width:200px;"
-        )
+        self._port_combo.setMinimumWidth(200)
         self._port_combo.currentIndexChanged.connect(self._on_port_selected)
         self._port_combo_act = tb.addWidget(self._port_combo)
 
@@ -1035,11 +1107,11 @@ class MainWindow(QMainWindow):
 
         # Haupt-Splitter: Links (Dateien) | Rechts (Editor + Konsole)
         self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._main_splitter.setHandleWidth(2)
+        self._main_splitter.setHandleWidth(1)
 
         # Linker Bereich: vertikaler Splitter (lokale Dateien + Controller-Dateien)
         self._left_splitter = QSplitter(Qt.Orientation.Vertical)
-        self._left_splitter.setHandleWidth(2)
+        self._left_splitter.setHandleWidth(1)
         # Breit genug, damit der Aktualisieren-Button (↻) der Controller-
         # Dateiansicht von Anfang an sichtbar ist.
         self._left_splitter.setMinimumWidth(210)
@@ -1066,7 +1138,7 @@ class MainWindow(QMainWindow):
 
         # Rechter Bereich: vertikaler Splitter (Editor oben, Konsole unten)
         self._right_splitter = QSplitter(Qt.Orientation.Vertical)
-        self._right_splitter.setHandleWidth(2)
+        self._right_splitter.setHandleWidth(1)
 
         # Editor-Tabs
         self._tab_widget = QTabWidget()
@@ -1134,19 +1206,20 @@ class MainWindow(QMainWindow):
         sb = self.statusBar()
         self._status_mode = QLabel("Python (lokal)")
         self._status_mode.setStyleSheet(
-            f"color:{THEME['accent']}; font-weight:bold; padding:0 8px;"
+            f"background:transparent; color:{THEME['accent']}; font-weight:bold; padding:0 8px;"
         )
         sb.addPermanentWidget(self._status_mode)
 
         self._status_git = QLabel("Git: —")
-        self._status_git.setStyleSheet(f"color:{THEME['text_dim']}; padding:0 8px;")
+        self._status_git.setStyleSheet(f"background:transparent; color:{THEME['text_dim']}; padding:0 8px;")
         sb.addPermanentWidget(self._status_git)
 
         self._status_board = QLabel("")
-        self._status_board.setStyleSheet(f"color:{THEME['text_dim']}; padding:0 8px;")
+        self._status_board.setStyleSheet(f"background:transparent; color:{THEME['text_dim']}; padding:0 8px;")
         sb.addPermanentWidget(self._status_board)
 
         self._status_file = QLabel("Bereit")
+        self._status_file.setStyleSheet("background:transparent; padding:0 6px;")
         sb.addWidget(self._status_file)
 
     # ──────────────────────────────────────────────────────────────────────
@@ -3351,7 +3424,13 @@ class MainWindow(QMainWindow):
             self._settings_store.value("git/executable", self._settings_git_executable) or ""
         )
         self._settings_git_repo = str(self._settings_store.value("git/repo_dir", self._settings_git_repo) or "")
-        self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "classic_light")
+        self._settings_theme = str(self._settings_store.value("ui/theme", self._settings_theme) or "modern_light")
+        # Einmalige Migration: das bisherige Standard-Design (Eclipse) wird beim
+        # ersten Start mit dem neuen Layout auf das moderne Hell-Design gesetzt.
+        if not self._settings_store.value("ui/layout_v2", False, type=bool):
+            if self._settings_theme == "classic_light":
+                self._settings_theme = "modern_light"
+            self._settings_store.setValue("ui/layout_v2", True)
         self._settings_ui_font_pt = self._settings_int("ui/font_pt", self._settings_ui_font_pt)
         # Serial-Plotter-Achsen
         self._settings_plot_y_mode = str(self._settings_store.value("plot/y_mode", self._settings_plot_y_mode) or "auto")
@@ -3478,24 +3557,16 @@ class MainWindow(QMainWindow):
     def _update_widget_styles(self):
         """Inline-Stylesheets von Toolbar-Widgets und Statusleiste nach Theme-Wechsel neu setzen."""
         t = THEME
-        combo_style = (
-            f"background:{t['bg_dark']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; border-radius:4px; padding:3px 6px;"
-        )
-        if hasattr(self, "_mode_combo"):
-            self._mode_combo.setStyleSheet(combo_style + " min-width:160px;")
-        if hasattr(self, "_port_combo"):
-            self._port_combo.setStyleSheet(combo_style + " min-width:200px;")
         if hasattr(self, "_mode_lbl"):
-            self._mode_lbl.setStyleSheet(f"color:{t['text_dim']};")
+            self._mode_lbl.setStyleSheet(f"background:transparent; color:{t['text_dim']};")
         if hasattr(self, "_port_lbl"):
-            self._port_lbl.setStyleSheet(f"color:{t['text_dim']};")
+            self._port_lbl.setStyleSheet(f"background:transparent; color:{t['text_dim']};")
         if hasattr(self, "_status_mode"):
-            self._status_mode.setStyleSheet(f"color:{t['accent']}; font-weight:bold; padding:0 8px;")
+            self._status_mode.setStyleSheet(f"background:transparent; color:{t['accent']}; font-weight:bold; padding:0 8px;")
         if hasattr(self, "_status_git"):
-            self._status_git.setStyleSheet(f"color:{t['text_dim']}; padding:0 8px;")
+            self._status_git.setStyleSheet(f"background:transparent; color:{t['text_dim']}; padding:0 8px;")
         if hasattr(self, "_status_board"):
-            self._status_board.setStyleSheet(f"color:{t['text_dim']}; padding:0 8px;")
+            self._status_board.setStyleSheet(f"background:transparent; color:{t['text_dim']}; padding:0 8px;")
 
     def _apply_settings(self):
         """Einstellungen auf alle offenen Tabs + Konsole anwenden."""

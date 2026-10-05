@@ -12,5 +12,11 @@ echo "Assets am Release $TAG:"
 gh release view "$TAG" --repo "$REPO" --json assets \
    --jq '.assets[] | "  \(.name)  \(.size) Bytes"'
 
-gh release edit "$TAG" --repo "$REPO" --draft=false --latest
+# Tags mit Bindestrich (z. B. v1.10.0-beta.1) sind Vorabversionen: als
+# "Pre-release" veroeffentlichen und NICHT als neuestes Release markieren.
+if [[ "$TAG" == *-* ]]; then
+  gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease --latest=false
+else
+  gh release edit "$TAG" --repo "$REPO" --draft=false --latest
+fi
 echo "Release $TAG veroeffentlicht."

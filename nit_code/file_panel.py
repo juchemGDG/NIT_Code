@@ -126,7 +126,7 @@ class FilePanel(QWidget):
     def refresh_theme(self):
         self._header.setStyleSheet(f"background:{THEME['bg_panel']};")
         self._title_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px;"
+            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px; background:transparent;"
         )
         self._btn_open.setStyleSheet(
             f"QPushButton {{ background:transparent; color:{THEME['accent']};"
@@ -147,12 +147,18 @@ class FilePanel(QWidget):
                 outline: none;
                 font-size: 12px;
             }}
+            QTreeView::item {{
+                padding: 4px 2px;
+                margin: 0 6px;
+                border-radius: 6px;
+            }}
             QTreeView::item:hover {{
                 background: {THEME['selection']};
             }}
             QTreeView::item:selected {{
-                background: {THEME['accent']};
-                color: white;
+                background: {THEME['selection']};
+                color: {THEME['accent']};
+                font-weight: bold;
             }}
             QTreeView::branch {{
                 background: {THEME['bg_dark']};
@@ -455,7 +461,7 @@ class DeviceFilePanel(QWidget):
     def refresh_theme(self):
         self._dev_header.setStyleSheet(f"background:{THEME['bg_panel']};")
         self._dev_title_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px;"
+            f"color:{THEME['text_dim']}; font-size:11px; font-weight:bold; letter-spacing:1px; background:transparent;"
         )
         self._btn_refresh.setStyleSheet(
             f"QPushButton {{ background:transparent; color:{THEME['accent']};"
