@@ -274,7 +274,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.10.0-beta.1"
+APP_VERSION = "1.10.0-beta.2"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"
@@ -446,6 +446,7 @@ _DARK_THEME: dict[str, str] = {           # Slate-Dunkel wie die MINT-Checker-Se
     "selection":     "#273449",
     "border":        "#334155",
     "scroll":        "#475569",
+    "sidebar":       "#0b1120",
     "terminal_bg":   "#0b1120",
     "terminal_text": "#e2e8f0",
 }

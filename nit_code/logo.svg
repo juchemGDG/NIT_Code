@@ -1,0 +1,30 @@
+<svg width="1024" height="1024" viewBox="96 96 832 832" xmlns="http://www.w3.org/2000/svg">
+  <!-- NIT_Code-Logo: Mikrocontroller-Chip mit Code-Klammern, im selben Stil wie
+       das PAP-Editor-Logo (pap.mint-checker.de). Quelle für nit_code/logo.png. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="96" y="96" width="832" height="832" rx="186" fill="url(#bg)"/>
+
+  <!-- Pins -->
+  <g stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M432 272 V340 M512 272 V340 M592 272 V340"/>
+    <path d="M432 684 V752 M512 684 V752 M592 684 V752"/>
+    <path d="M272 432 H340 M272 512 H340 M272 592 H340"/>
+    <path d="M684 432 H752 M684 512 H752 M684 592 H752"/>
+  </g>
+
+  <!-- Chip-Gehäuse -->
+  <rect x="320" y="320" width="384" height="384" rx="64" fill="#FFFFFF"/>
+
+  <!-- </> -->
+  <g stroke="#2563EB" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M436 446 L378 512 L436 578"/>
+    <path d="M588 446 L646 512 L588 578"/>
+  </g>
+  <path d="M529 438 L495 586" stroke="#4F46E5" stroke-width="34" stroke-linecap="round" fill="none"/>
+</svg>

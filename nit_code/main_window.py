@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse, quote as urlquote
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings, QSize
 from PyQt6.QtGui import (
     QAction, QFont, QIcon, QKeySequence, QColor, QPalette, QShortcut,
 )
@@ -44,6 +44,7 @@ from .config import (
 from .editor_widget import CodeEditor
 from .file_panel import FilePanel, DeviceFilePanel, DeviceListWorker
 from .console_panel import ConsolePanel, ProcessRunner, MicroPythonRunner
+from .icons import make_icon
 from .qt_utils import retain_thread, find_logo, UI_FONT_PT_DEFAULT
 from .block_panel import BlockEditorWindow
 from .parsons_panel import ParsonsWindow
@@ -266,6 +267,23 @@ QToolButton#stopButton:hover {{
     background: {t['error']};
     border-color: {t['error']};
     color: white;
+}}
+/* Seitenleiste: wie die dunkle Sidebar der MINT-Checker-Seiten */
+QWidget#activityBar {{
+    background: {t.get('sidebar', '#0f172a')};
+    border-right: 1px solid {t['border']};
+}}
+QToolButton#activityButton {{
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    padding: 0;
+}}
+QToolButton#activityButton:hover {{
+    background: #1e293b;
+}}
+QToolButton#activityButton:checked {{
+    background: {t['accent']};
 }}
 QComboBox {{
     background: {t['bg_dark']};
@@ -1011,17 +1029,25 @@ class MainWindow(QMainWindow):
         tb = self.addToolBar("Hauptleiste")
         tb.setMovable(False)
 
-        def tbtn(label, slot, tooltip=""):
+        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        tb.setIconSize(QSize(18, 18))
+        self._toolbar_icons: list[tuple[QAction, str, bool]] = []   # (Aktion, Icon, weiß?)
+
+        def tbtn(label, slot, tooltip="", icon=None, on_accent=False):
             act = QAction(label, self)
             act.setToolTip(tooltip)
             act.triggered.connect(slot)
             tb.addAction(act)
+            if icon:
+                self._toolbar_icons.append((act, icon, on_accent))
             return act
 
-        run_act = tbtn("▶  Starten", self._run_program, "Programm ausführen (F5)")
-        stop_act = tbtn("■  Stoppen", self._stop_program, "Ausführung stoppen (F6)")
+        run_act = tbtn("Starten", self._run_program, "Programm ausführen (F5)", "play", True)
+        stop_act = tbtn("Stoppen", self._stop_program, "Ausführung stoppen (F6)", "stop")
         tb.widgetForAction(run_act).setObjectName("runButton")
         tb.widgetForAction(stop_act).setObjectName("stopButton")
+        self._act_plotter.setText("Serial Plotter")
+        self._toolbar_icons.append((self._act_plotter, "plotter", False))
         tb.addAction(self._act_plotter)   # checkbarer Plotter-Umschalter (in _setup_menubar erstellt)
         tb.addSeparator()
 
@@ -1049,51 +1075,115 @@ class MainWindow(QMainWindow):
         self._port_combo.currentIndexChanged.connect(self._on_port_selected)
         self._port_combo_act = tb.addWidget(self._port_combo)
 
-        self._port_refresh_act = tbtn("↻", self._refresh_ports, "Geräte aktualisieren")
-        # Widget für den ↻-Button suchen und vergrößern
-        for w in tb.findChildren(QToolButton):
-            if w.text() == "↻":
-                w.setStyleSheet(
-                    f"QToolButton {{ font-size:18px; padding:2px 6px; "
-                    f"background:transparent; color:{THEME['text']}; border:none; border-radius:4px; }}"
-                    f"QToolButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
-                )
-                break
+        self._port_refresh_act = tbtn("", self._refresh_ports, "Geräte aktualisieren", "refresh")
         self._port_lbl_act.setVisible(False)
         self._port_combo_act.setVisible(False)
         self._port_refresh_act.setVisible(False)
 
         tb.addSeparator()
-        self._upload_btn_act = tbtn("↑  Hochladen", self._upload_to_device,
-                                     "Code auf Controller übertragen (F7)")
-        self._reset_btn_act = tbtn("🔄  Neustart", self._reset_controller,
-                                    "Controller neu starten")
+        self._upload_btn_act = tbtn("Hochladen", self._upload_to_device,
+                                     "Code auf Controller übertragen (F7)", "upload")
+        self._reset_btn_act = tbtn("Neustart", self._reset_controller,
+                                    "Controller neu starten", "reset")
         self._upload_btn_act.setVisible(False)
         self._reset_btn_act.setVisible(False)
 
-        # ── PAP-Editor (rechts außen) ──
-        # Bewusst in der Toolbar und nicht als Corner-Widget der Menüleiste:
-        # auf macOS wandert die QMenuBar in die native System-Menüleiste, ein
-        # Corner-Widget ist dort gar nicht sichtbar. Der Spacer schiebt den
-        # Knopf an den rechten Rand.
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        spacer.setStyleSheet("background:transparent;")
-        tb.addWidget(spacer)
-
-        self._btn_pap = QPushButton("PAP-Editor")
-        self._btn_pap.setObjectName("papToolButton")
-        self._btn_pap.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_pap.setToolTip(
-            "Programmablaufplan zeichnen und als Bild in die Zwischenablage übernehmen"
-        )
-        self._btn_pap.clicked.connect(self._open_pap_editor)
-        tb.addWidget(self._btn_pap)
+        self._apply_toolbar_icons()
 
         # Timer für automatisches Port-Scanning im MicroPython-Modus
         self._port_scan_timer = QTimer(self)
         self._port_scan_timer.setInterval(3000)
         self._port_scan_timer.timeout.connect(self._refresh_ports)
+
+    def _apply_toolbar_icons(self):
+        """Toolbar-Icons in den Farben des aktiven Themes (neu) rendern."""
+        for act, name, on_accent in getattr(self, "_toolbar_icons", []):
+            act.setIcon(make_icon(name, "#ffffff" if on_accent else THEME["text"],
+                                  disabled_color=THEME["text_dim"]))
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Seitenleiste (Activity-Bar) – Schnellzugriff wie die Sidebar der MINT-Checker-Seiten
+    # ──────────────────────────────────────────────────────────────────────
+    def _build_activity_bar(self) -> QWidget:
+        bar = QWidget()
+        bar.setObjectName("activityBar")
+        bar.setFixedWidth(56)
+        lay = QVBoxLayout(bar)
+        lay.setContentsMargins(6, 10, 6, 10)
+        lay.setSpacing(6)
+        self._activity_buttons: dict[str, QToolButton] = {}
+
+        def add(key, icon, tip, slot, checkable=False, bottom=False):
+            btn = QToolButton()
+            btn.setObjectName("activityButton")
+            btn.setToolTip(tip)
+            btn.setCheckable(checkable)
+            btn.setIconSize(QSize(22, 22))
+            btn.setFixedSize(44, 44)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setProperty("icon_name", icon)
+            btn.clicked.connect(slot)
+            self._activity_buttons[key] = btn
+            lay.addWidget(btn)
+            return btn
+
+        add("files", "files", "Dateien ein-/ausblenden", self._toggle_file_panel, True)
+        add("ai", "ai", "KI-Assistent ein-/ausblenden", self._toggle_ai_panel, True)
+        add("blocks", "blocks", "Block-Editor öffnen …", self._open_block_editor)
+        add("plotter", "plotter", "Serial Plotter ein-/ausblenden",
+            lambda: self._act_plotter.setChecked(not self._act_plotter.isChecked()), True)
+        add("pap", "flow", "PAP-Editor – Programmablaufplan zeichnen", self._open_pap_editor)
+        lay.addStretch(1)
+        add("help", "help", "Kurzanleitung (F1)", self._show_quickstart)
+        add("settings", "settings", "Einstellungen (Strg+,)", self._open_settings)
+
+        self._act_plotter.toggled.connect(
+            lambda on: self._activity_buttons["plotter"].setChecked(on)
+        )
+        self._refresh_activity_icons()
+        return bar
+
+    def _refresh_activity_icons(self):
+        """Icons der Seitenleiste neu einfärben (ruhig, aktiv und deaktiviert)."""
+        for btn in getattr(self, "_activity_buttons", {}).values():
+            name = btn.property("icon_name")
+            icon = QIcon()
+            icon.addPixmap(make_icon(name, "#94a3b8", 22).pixmap(22, 22), QIcon.Mode.Normal, QIcon.State.Off)
+            icon.addPixmap(make_icon(name, "#ffffff", 22).pixmap(22, 22), QIcon.Mode.Normal, QIcon.State.On)
+            icon.addPixmap(make_icon(name, "#ffffff", 22).pixmap(22, 22), QIcon.Mode.Active, QIcon.State.Off)
+            icon.addPixmap(make_icon(name, "#ffffff", 22).pixmap(22, 22), QIcon.Mode.Active, QIcon.State.On)
+            btn.setIcon(icon)
+
+    def _sync_activity_bar(self):
+        """Hält die Schalter der Seitenleiste mit dem tatsächlichen Zustand synchron."""
+        if not hasattr(self, "_activity_buttons"):
+            return
+        self._activity_buttons["files"].setChecked(not self._left_splitter.isHidden())
+        self._activity_buttons["ai"].setChecked(not self._ai_stack.isHidden())
+        self._activity_buttons["plotter"].setChecked(self._act_plotter.isChecked())
+        if hasattr(self, "_m_blocks"):
+            self._activity_buttons["blocks"].setVisible(self._m_blocks.menuAction().isVisible())
+
+    def _toggle_file_panel(self):
+        self._left_splitter.setVisible(self._left_splitter.isHidden())
+        self._sync_activity_bar()
+
+    def _toggle_ai_panel(self):
+        if not self._ai_stack.isHidden():
+            self._ai_stack.setVisible(False)
+        elif self._settings_tutor_mode == "none":
+            QMessageBox.information(
+                self, "KI-Assistent",
+                "Es ist kein KI-Assistent aktiv.\n"
+                "Wähle unter Datei → Einstellungen → KI-Tutor einen Assistenten aus.",
+            )
+        else:
+            self._ai_stack.setVisible(True)
+            sizes = self._main_splitter.sizes()
+            if len(sizes) == 3 and sizes[2] == 0:
+                total = sum(sizes)
+                self._main_splitter.setSizes([sizes[0], max(200, total - sizes[0] - 360), 360])
+        self._sync_activity_bar()
 
     # ──────────────────────────────────────────────────────────────────────
     # Zentralbereich
@@ -1197,6 +1287,7 @@ class MainWindow(QMainWindow):
         self._main_splitter.setStretchFactor(1, 1)  # Editor: nimmt Extra-Platz
         self._main_splitter.setStretchFactor(2, 0)  # KI-Panel: feste Breite
 
+        root_layout.addWidget(self._build_activity_bar())
         root_layout.addWidget(self._main_splitter)
 
     # ──────────────────────────────────────────────────────────────────────
@@ -3574,6 +3665,8 @@ class MainWindow(QMainWindow):
         set_theme(self._settings_theme)
         self.setStyleSheet(build_global_style())
         self._update_widget_styles()
+        self._apply_toolbar_icons()
+        self._refresh_activity_icons()
 
         for tab in self._tabs:
             tab.editor.set_font_size(self._settings_font_size)
@@ -3666,6 +3759,7 @@ class MainWindow(QMainWindow):
                 max(0, total - sizes[0] - desired),
                 desired,
             ])
+        self._sync_activity_bar()
 
     def _autosave_all(self):
         """Alle geänderten, bereits gespeicherten Tabs automatisch speichern."""
