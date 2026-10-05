@@ -46,6 +46,7 @@ except Exception:
     HAS_WEBENGINE = False
 
 from .config import PAP_EDITOR_ORIGIN, PAP_EDITOR_URL, THEME
+from .pap_import import PAP_MIME
 
 # Auflösung des erzeugten PNG (2× = scharf genug für Arbeitsblätter/Word)
 _PNG_SCALE = 2
@@ -70,10 +71,11 @@ _HOST_HTML = r"""<!DOCTYPE html>
   var ORIGIN = '__PAP_ORIGIN__';
   var SCALE  = __PNG_SCALE__;
   var frame  = document.getElementById('pap');
+  var pendingDiagram = null;   // Diagrammdaten des letzten „save“, wandern zusammen mit dem PNG zurück
 
   // Puffer für die Python-Seite; __nitPapTake() holt ihn ab und leert ihn.
   var out = null;
-  function reset() { out = { ready: false, png: null, download: null, error: null, exit: false }; }
+  function reset() { out = { ready: false, png: null, diagram: null, download: null, error: null, exit: false }; }
   reset();
 
   window.__nitPapTake = function () {
@@ -99,6 +101,7 @@ _HOST_HTML = r"""<!DOCTYPE html>
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         out.png = canvas.toDataURL('image/png');
+        out.diagram = pendingDiagram;
       } catch (e) {
         out.error = 'Das Diagramm konnte nicht in ein PNG umgewandelt werden (' + e.message + ').';
       }
@@ -126,6 +129,7 @@ _HOST_HTML = r"""<!DOCTYPE html>
       );
       out.ready = true;
     } else if (m.event === 'save') {
+      pendingDiagram = (m.diagram === undefined) ? null : m.diagram;
       if (m.svg) svgToPng(m.svg);
       else out.error = 'Der Ablaufplan ist noch leer – bitte erst Bausteine einfügen.';
     } else if (m.event === 'download') {
@@ -339,13 +343,13 @@ class PapEditorWindow(QMainWindow):
         if data.get("error"):
             self._set_status(str(data["error"]), kind="error")
         if data.get("png"):
-            self._copy_png(str(data["png"]))
+            self._copy_png(str(data["png"]), data.get("diagram"))
         if data.get("download"):
             self._save_download(data["download"])
         if data.get("exit"):
             self.close()
 
-    def _copy_png(self, data_url: str):
+    def _copy_png(self, data_url: str, diagram=None):
         prefix = "data:image/png;base64,"
         if not data_url.startswith(prefix):
             self._set_status("Unerwartetes Bildformat vom Editor erhalten.", kind="error")
@@ -364,6 +368,11 @@ class PapEditorWindow(QMainWindow):
         mime = QMimeData()
         mime.setImageData(img)
         mime.setData("image/png", QByteArray(raw))
+        # Diagrammdaten mitgeben: Der Code-Generator liest daraus den Ablauf
+        # verlustfrei, ohne das Bild erkennen zu müssen.
+        if diagram:
+            payload = diagram if isinstance(diagram, str) else json.dumps(diagram, ensure_ascii=False)
+            mime.setData(PAP_MIME, QByteArray(payload.encode("utf-8")))
         clipboard = QGuiApplication.clipboard()
         if clipboard is None:
             self._set_status("Auf die Zwischenablage konnte nicht zugegriffen werden.", kind="error")
@@ -374,7 +383,8 @@ class PapEditorWindow(QMainWindow):
         self._act_save_png.setEnabled(True)
         self._set_status(
             f"✓ Als PNG in der Zwischenablage ({img.width()}×{img.height()} px) – "
-            "mit Strg+V / Cmd+V einfügen oder „Bild speichern“.",
+            "mit Strg+V / Cmd+V einfügen oder „Bild speichern“. "
+            "Der Code-Generator kann den Ablauf direkt daraus importieren.",
             kind="success",
         )
 

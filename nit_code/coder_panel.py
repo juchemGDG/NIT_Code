@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QScrollArea, QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QTextEdit, QPushButton, QFrame, QLayout, QSizePolicy,
+    QMenu, QFileDialog, QMessageBox, QApplication,
 )
 
 try:
@@ -17,6 +18,7 @@ except ImportError:
 
 from .config import THEME, TUTOR_DEFAULT_URL, TUTOR_DEFAULT_MODEL, asset_path as _asset_path
 from .ollama_client import OllamaStreamWorker
+from .pap_import import PAP_MIME, pap_to_mermaid, parse_pap
 from .qt_utils import retain_thread
 
 
@@ -717,6 +719,18 @@ class MermaidPreview(QWidget):
 
 
 # ── CoderPanel ────────────────────────────────────────────────────────────────
+class _AblaufEdit(QTextEdit):
+    """Ablauf-Feld: Einfügen (Strg+V) eines PAP aus dem PAP-Editor wird erkannt."""
+
+    pap_pasted = pyqtSignal(str)
+
+    def insertFromMimeData(self, source):
+        if source.hasFormat(PAP_MIME):
+            self.pap_pasted.emit(bytes(source.data(PAP_MIME)).decode("utf-8", "replace"))
+            return
+        super().insertFromMimeData(source)
+
+
 class CoderPanel(QWidget):
     """Seitliches Panel: Schüler spezifizieren vollständig – Bot generiert Code."""
 
@@ -808,6 +822,16 @@ class CoderPanel(QWidget):
         ablauf_header.addWidget(self._ablauf_lbl)
         ablauf_header.addStretch()
 
+        self._btn_pap = QPushButton("📥 PAP importieren")
+        self._btn_pap.setStyleSheet(_BTN_INACTIVE)
+        self._btn_pap.setToolTip(
+            "Programmablaufplan aus dem PAP-Editor übernehmen (Zwischenablage oder .json-Datei)")
+        pap_menu = QMenu(self._btn_pap)
+        pap_menu.addAction("Aus der Zwischenablage", self._import_pap_clipboard)
+        pap_menu.addAction("Aus PAP-Datei (.json) …", self._import_pap_file)
+        self._btn_pap.setMenu(pap_menu)
+        ablauf_header.addWidget(self._btn_pap)
+
         self._btn_freitext = QPushButton("📝 Freitext")
         self._btn_freitext.setStyleSheet(_BTN_ACTIVE)
         self._btn_freitext.clicked.connect(lambda: self._set_ablauf_mode("freitext"))
@@ -821,7 +845,8 @@ class CoderPanel(QWidget):
         ablauf_layout.addLayout(ablauf_header)
 
         # Ablauf-Textfeld
-        self._ablauf_edit = QTextEdit()
+        self._ablauf_edit = _AblaufEdit()
+        self._ablauf_edit.pap_pasted.connect(self._import_pap_text)
         self._ablauf_edit.setPlaceholderText(_ABLAUF_FREITEXT_PLACEHOLDER)
         self._ablauf_edit.setMinimumHeight(120)
         self._ablauf_edit.setMaximumHeight(200)
@@ -1068,6 +1093,7 @@ class CoderPanel(QWidget):
             f"padding:3px 8px; font-size:11px;"
         )
         btn_signal = _btn_signal_style()
+        self._btn_pap.setStyleSheet(btn_inactive)
         if self._ablauf_mode == "freitext":
             self._btn_freitext.setStyleSheet(btn_active)
             self._btn_mermaid.setStyleSheet(btn_inactive)
@@ -1096,6 +1122,66 @@ class CoderPanel(QWidget):
             self._mermaid_row.setVisible(True)
             self._mermaid_preview.setVisible(True)
             self._render_mermaid_preview()
+
+    # ── PAP-Import (aus dem PAP-Editor) ───────────────────────────────────────
+    def _import_pap_clipboard(self):
+        md = QApplication.clipboard().mimeData()
+        if md is None:
+            return
+        if md.hasFormat(PAP_MIME):
+            self._import_pap_text(bytes(md.data(PAP_MIME)).decode("utf-8", "replace"))
+        elif md.hasText() and parse_pap(md.text()):
+            self._import_pap_text(md.text())
+        elif md.hasImage():
+            QMessageBox.information(
+                self, "PAP importieren",
+                "In der Zwischenablage liegt nur ein Bild ohne Diagrammdaten.\n\n"
+                "Im PAP-Editor „In Projekt übernehmen“ klicken – dann enthält die "
+                "Zwischenablage auch die Diagrammdaten. Alternativ die gespeicherte "
+                "PAP-Datei (.json) über „Aus PAP-Datei …“ laden.")
+        else:
+            QMessageBox.information(
+                self, "PAP importieren",
+                "In der Zwischenablage liegt kein PAP. Zuerst im PAP-Editor "
+                "„In Projekt übernehmen“ klicken.")
+
+    def _import_pap_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "PAP-Datei laden", "", "PAP-Diagramm (*.json);;Alle Dateien (*)")
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            QMessageBox.warning(self, "PAP importieren", f"Datei nicht lesbar:\n{e}")
+            return
+        self._import_pap_text(text)
+
+    def _import_pap_text(self, text: str):
+        diagram = parse_pap(text)
+        if diagram is None:
+            QMessageBox.warning(
+                self, "PAP importieren",
+                "Das ist kein PAP-Diagramm aus dem PAP-Editor (JSON mit „nodes“ und „arrows“).")
+            return
+        if not diagram["nodes"]:
+            QMessageBox.information(self, "PAP importieren", "Der Ablaufplan ist noch leer.")
+            return
+        if self._ablauf_edit.toPlainText().strip():
+            antwort = QMessageBox.question(
+                self, "PAP importieren",
+                "Der bisherige Text im Feld ABLAUF wird durch den PAP ersetzt. Fortfahren?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if antwort != QMessageBox.StandardButton.Yes:
+                return
+        self._set_ablauf_mode("mermaid")
+        self._ablauf_edit.setPlainText(pap_to_mermaid(diagram))
+        self._render_mermaid_preview()
+        self._append_bot(
+            f"📥 PAP importiert ({len(diagram['nodes'])} Bausteine) – der Ablauf steht "
+            "jetzt als Mermaid-Diagramm im Feld ABLAUF. Ergänze noch Eingabe, Ausgabe "
+            "und Variablen und sende die Spezifikation.")
 
     # ── Signalwort-Baustein einfügen ──────────────────────────────────────────
     def _insert_signal_snippet(self, snippet: str):
