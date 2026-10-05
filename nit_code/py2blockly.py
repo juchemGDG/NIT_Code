@@ -366,8 +366,19 @@ _LIB_KIND = {
     "KY023": "joy", "RTC": "rtc", "Compass": "compass", "AS7262": "as7262",
     "MPU6050": "mpu", "ESPNow": "espnow", "MQTTClient": "mqtt", "MLearn": "mlearn",
     "MP3TF16P": "mp3", "GY61": "gy61", "INA219": "ina", "ADS1015": "ads",
-    "HX711AD": "hx",
+    "HX711AD": "hx", "ACS758": "acs", "BH1750": "bh", "BMP280": "bmp",
+    "PRegler": "pid", "PIRegler": "pid", "PDRegler": "pid", "PIDRegler": "pid",
+    "Zweipunktregler": "zweipunkt", "Takt": "takt",
 }
+
+# Neue Bibliotheken werden „streng“ zurückübersetzt: Hat ein Aufruf Argumente,
+# die der Block nicht abbildet (z. B. ``read_averaged(n=5, pause_ms=50)``), bleibt
+# er eine Roh-Zeile – sonst würde die Rückübersetzung still die Bedeutung ändern.
+_STRICT_KINDS = {"acs", "bh", "bmp", "pid", "zweipunkt", "takt"}
+_I2C_KINDS = {"bh", "bmp"}      # erstes Positional-Argument ist das i2c-Objekt
+
+_ACS_VARIANTEN = {"50B", "50U", "100B", "100U", "150B", "150U", "200B", "200U"}
+_REGLER_TYPEN = {"PRegler", "PIRegler", "PDRegler", "PIDRegler"}
 
 # ADS1015-Klassenkonstanten, die als Dropdown-Werte in den Blöcken stehen.
 _ADS_PGA = {"PGA_6_144V", "PGA_4_096V", "PGA_2_048V", "PGA_1_024V", "PGA_0_512V", "PGA_0_256V"}
@@ -412,6 +423,15 @@ def _conv(node, conv):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
             return hex(node.value)
         return _src(node) or None
+    if conv == "acs_var":      # ACS758-Variante ('50B', …) nur, wenn es sie wirklich gibt
+        return node.value if (isinstance(node, ast.Constant) and node.value in _ACS_VARIANTEN) else None
+    if conv in ("bh_addr", "bmp_addr"):    # I2C-Adresse → Dropdown-Wert ('0x23' / '0x5C' / '0x76' / '0x77')
+        names = {"bh_addr": {0x23: "0x23", 0x5C: "0x5C"}, "bmp_addr": {0x76: "0x76", 0x77: "0x77"}}[conv]
+        if isinstance(node, ast.Constant) and isinstance(node.value, int):
+            return names.get(node.value)
+        if conv == "bh_addr":
+            return {"BH1750.ADDR_LOW": "0x23", "BH1750.ADDR_HIGH": "0x5C"}.get(_src(node))
+        return None
     if conv == "chan":         # ADS1015-Kanalnummer 0–3 → Dropdown-Wert (String)
         if isinstance(node, ast.Constant) and node.value in (0, 1, 2, 3):
             return str(node.value)
@@ -451,6 +471,9 @@ def _extract(src, call):
     if tag == "arg":            # positional ODER Schlüsselwort: ('arg', pos, kwname, conv)
         node = _arg_node(call, src[1], src[2])
         return _conv(node, src[3]) if node is not None else _MISSING
+    if tag == "cls":            # Klassenname des Aufrufs (z. B. PIDRegler → Dropdown „Typ“)
+        name = call.func.id if isinstance(call.func, ast.Name) else None
+        return name if name in _REGLER_TYPEN else None
     if tag == "pin":            # Pin-Nummer aus Pin(N) an Position i
         i = src[1]
         return _pin_num(call.args[i]) if i < len(call.args) else _MISSING
@@ -494,6 +517,17 @@ _LIB_INIT = {
                          ("MAXA", ("arg", 3, "max_expected_current", "raw"))]),
     "ads": ("ads_init", [("ADDR", ("arg", 1, "addr", "hexint")), ("PGA", ("arg", 2, "pga", "ads_pga"))]),
     "hx": ("hx_init", [("DT", ("arg", 0, "dt_pin", "int")), ("SCK", ("arg", 1, "sck_pin", "int"))]),
+    "acs": ("acs_init", [("PIN", ("arg", 0, "pin", "int")), ("VAR", ("arg", 1, "variante", "acs_var")),
+                         ("VCC", ("arg", 2, "vcc", "raw")), ("TEILER", ("arg", 3, "teiler", "raw"))]),
+    "bh": ("bh_init", [("ADDR", ("arg", 1, "addr", "bh_addr"))]),
+    "bmp": ("bmp_init", [("ADDR", ("arg", 1, "addr", "bmp_addr"))]),
+    # Nur das erste Argument (kpr) darf positional stehen – danach ist die Reihenfolge je Reglertyp verschieden.
+    "pid": ("pid_init", [("TYP", ("cls",)), ("KPR", ("arg", 0, "kpr", "raw")), ("TN", ("kw", "tn", "raw")),
+                         ("TV", ("kw", "tv", "raw")), ("YMIN", ("kw", "ymin", "raw")),
+                         ("YMAX", ("kw", "ymax", "raw")), ("TS", ("kw", "ts", "raw"))]),
+    "zweipunkt": ("pid_zweipunkt_init", [("YMAX", ("arg", 0, "ymax", "raw")), ("YMIN", ("arg", 1, "ymin", "raw")),
+                                         ("XSD", ("arg", 2, "xsd", "raw"))]),
+    "takt": ("takt_init", [("TS", ("arg", 0, "ts", "raw"))]),
 }
 
 # Methoden: kind -> { methode: (block_type, is_value, [(field, source)], [(input, pos_idx)]) }
@@ -634,6 +668,43 @@ _LIB_METHODS = {
         "messen_wert": ("hx_wert", True, [], []),
         "messen_roh": ("hx_roh", True, [], []),
     },
+    "acs": {
+        "nullpunkt_kalibrieren": ("acs_null", False, [], []),
+        "kalibrieren": ("acs_kalib", False, [("REF", ("arg", 0, "referenz_strom_a", "raw"))], []),
+        "messen_a": ("acs_a", True, [], []),
+        "messen_ma": ("acs_ma", True, [], []),
+        "lesen_spannung": ("acs_spannung", True, [], []),
+        "messen_effektivwert_ma": ("acs_rms", True, [("DAUER", ("arg", 0, "dauer_ms", "int"))], []),
+        "ist_stromfluss": ("acs_fluss", True, [("SCHWELLE", ("arg", 0, "schwelle_ma", "raw"))], []),
+        "richtung": ("acs_richtung", True, [], []),
+    },
+    "bh": {
+        "read_lux": ("bh_lux", True, [], []),
+        "read_averaged": ("bh_lux_mittel", True, [("N", ("arg", 0, "n", "int"))], []),
+        "is_dark": ("bh_dunkel", True, [("SCHWELLE", ("arg", 0, "schwelle", "raw"))], []),
+        "kalibrieren": ("bh_kalib", False, [], []),
+        "transmission": ("bh_trans", True, [("N", ("arg", 0, "n", "int"))], []),
+        "extinktion": ("bh_extinktion", True, [("N", ("arg", 0, "n", "int"))], []),
+    },
+    "bmp": {
+        "read_temperature": ("bmp_temp", True, [], []),
+        "read_pressure": ("bmp_druck", True, [], []),
+        "calculate_altitude": ("bmp_hoehe", True, [], []),
+        "calibrate_altitude": ("bmp_hoehe_kalib", False, [("H", ("arg", 0, "known_altitude", "raw"))], []),
+        "set_sea_level_pressure": ("bmp_meeresdruck", False, [("P", ("arg", 0, "pressure", "raw"))], []),
+    },
+    "pid": {
+        "berechnen": ("pid_berechnen", True, [], [("SOLL", 0, "soll"), ("IST", 1, "ist")]),
+        "reset": ("pid_reset", False, [], []),
+    },
+    "zweipunkt": {
+        "berechnen": ("pid_berechnen", True, [], [("SOLL", 0, "soll"), ("IST", 1, "ist")]),
+        "reset": ("pid_reset", False, [], []),
+    },
+    "takt": {
+        "warten": ("takt_warten", False, [], []),
+        "zeit": ("takt_zeit", True, [], []),
+    },
 }
 
 _NITON_NOTES = {"c", "d", "e", "f", "g", "a", "h", "c2"}
@@ -652,6 +723,7 @@ _LIB_INST = {
     "as7262": "spektral", "mpu": "mpu", "espnow": "espnow",
     "mqtt": "mqtt_client", "mlearn": "model", "wlan": "wlan",
     "gy61": "gy61", "ina": "ina219", "ads": "ads1015", "hx": "waage",
+    "acs": "acs758", "bh": "bh1750", "bmp": "bmp280", "pid": "regler", "zweipunkt": "regler", "takt": "takt",
 }
 
 # Mehrfach-Zuweisungs-Methoden: Die Mess-Blöcke erzeugen FESTE Zielnamen
@@ -695,15 +767,45 @@ def _lib_init_block(kind, call, st=None):
         return None
     btype, fspec = spec
     fields = {}
+    strict = kind in _STRICT_KINDS
+    if strict and _unconsumed(call, [src for _, src in fspec], kind in _I2C_KINDS):
+        return None
     for fname, src in fspec:
         v = _extract(src, call)
+        if strict and v is None:
+            return None     # Wert nicht darstellbar → Roh-Code statt stiller Änderung
         if v is not None and v is not _MISSING:
             fields[fname] = v
     return _blk(btype, fields=fields or None)
 
 
-def _apply_method(spec, call, st):
+def _unconsumed(call, srcs, skip_first=False):
+    """True, wenn der Aufruf Argumente hat, die keine der Quellen ``srcs`` abdeckt."""
+    pos, names = set(), set()
+    if skip_first:
+        pos.add(0)
+    for src in srcs:
+        tag = src[0]
+        if tag == "pos":
+            pos.add(src[1])
+        elif tag == "arg":
+            if src[1] is not None:
+                pos.add(src[1])
+            if src[2]:
+                names.add(src[2])
+        elif tag == "kw":
+            names.add(src[1])
+    if any(i not in pos for i in range(len(call.args))):
+        return True
+    return any(k.arg not in names for k in call.keywords)
+
+
+def _apply_method(spec, call, st, strict=False):
     btype, is_val, fspec, ispec = spec
+    if strict:
+        srcs = [src for _, src in fspec] + [("arg", i[1], i[2] if len(i) > 2 else None, None) for i in ispec]
+        if _unconsumed(call, srcs):
+            return None
     fields = {}
     for fname, src in fspec:
         v = _extract(src, call)
@@ -736,7 +838,7 @@ def _lib_method_stmt(kind, method, call, st):
         return _DROP if call.args and _lit_bit(call.args[0]) == "1" else None
     spec = _LIB_METHODS.get(kind, {}).get(method)
     if spec and spec[1] is False:
-        return _apply_method(spec, call, st)
+        return _apply_method(spec, call, st, strict=kind in _STRICT_KINDS)
     return None
 
 
@@ -744,7 +846,7 @@ def _lib_method_expr(kind, method, call, st):
     """Bibliotheks-Methode als Ausdruck (Wert) → Block oder None."""
     spec = _LIB_METHODS.get(kind, {}).get(method)
     if spec and spec[1] is True:
-        return _apply_method(spec, call, st)
+        return _apply_method(spec, call, st, strict=kind in _STRICT_KINDS)
     return None
 
 

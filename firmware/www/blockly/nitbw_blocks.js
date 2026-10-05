@@ -246,6 +246,101 @@
   B({ type: 'hx_roh', parts: ['Waage Rohwert'], out: 'Number', code: 'waage.messen_roh()',
       tip: 'Roher 24-Bit-Wert des HX711 (signed).' });
 
+  // ════════════════════════ ACS758 (Stromsensor, analog) ══════════════
+  var ACS_VAR = [['50 A bidirektional (50B)', '50B'], ['50 A unidirektional (50U)', '50U'],
+                 ['100 A bidirektional (100B)', '100B'], ['100 A unidirektional (100U)', '100U'],
+                 ['150 A bidirektional (150B)', '150B'], ['150 A unidirektional (150U)', '150U'],
+                 ['200 A bidirektional (200B)', '200B'], ['200 A unidirektional (200U)', '200U']];
+  B({ type: 'acs_init', parts: ['Stromsensor (ACS758) Pin', { f: 'PIN', d: 34, lo: 0, hi: 40 }, 'Typ', { sel: 'VAR', o: ACS_VAR },
+                                'Vcc (V)', { txt: 'VCC', d: '5.0' }, 'Teiler', { txt: 'TEILER', d: '2.0' }],
+      defs: [['from_nitbw_acs758', 'from nitbw_acs758 import ACS758'],
+             ['inst_acs758', "acs758 = ACS758(pin=%PIN%, variante='%VAR%', vcc=%VCC%, teiler=%TEILER%)"]],
+      tip: 'Hall-Stromsensor ACS758 an einem ADC-Pin. VIOUT NIEMALS direkt an den ESP32 – immer über einen '
+        + 'Spannungsteiler (z. B. 10k/10k = Teiler 2.0).' });
+  B({ type: 'acs_null', parts: ['ACS758 Nullpunkt kalibrieren (stromlos!)'], code: 'acs758.nullpunkt_kalibrieren()',
+      tip: 'Einmalig vor der ersten Messung, solange kein Strom fließt.' });
+  B({ type: 'acs_kalib', parts: ['ACS758 kalibrieren mit Referenzstrom (A)', { txt: 'REF', d: '1.0' }], code: 'acs758.kalibrieren(%REF%)',
+      tip: 'Nach der Nullpunkt-Kalibrierung: bekannten Strom (z. B. per Multimeter gemessen) fließen lassen.' });
+  B({ type: 'acs_a', parts: ['Strom (A) ACS758'], out: 'Number', code: 'acs758.messen_a()',
+      tip: 'Negativ bei umgekehrter Stromrichtung.' });
+  B({ type: 'acs_ma', parts: ['Strom (mA) ACS758'], out: 'Number', code: 'acs758.messen_ma()' });
+  B({ type: 'acs_spannung', parts: ['Ausgangsspannung (V) ACS758'], out: 'Number', code: 'acs758.lesen_spannung()',
+      tip: 'Spannung an VIOUT (Spannungsteiler ist herausgerechnet).' });
+  B({ type: 'acs_rms', parts: ['Effektivwert (mA) ACS758 über', { f: 'DAUER', d: 200, lo: 20, hi: 5000 }, 'ms'],
+      out: 'Number', code: 'acs758.messen_effektivwert_ma(dauer_ms=%DAUER%)',
+      tip: 'Für Wechselstrom: bei 50 Hz ein Vielfaches von 20 ms wählen.' });
+  B({ type: 'acs_fluss', parts: ['fließt Strom? ACS758 Schwelle (mA)', { txt: 'SCHWELLE', d: '200' }],
+      out: 'Boolean', code: 'acs758.ist_stromfluss(schwelle_ma=%SCHWELLE%)' });
+  B({ type: 'acs_richtung', parts: ['Stromrichtung ACS758 (1 / -1 / 0)'], out: 'Number', code: 'acs758.richtung()',
+      tip: '1 = vorwärts, -1 = rückwärts, 0 = kein Stromfluss.' });
+
+  // ════════════════════════ BH1750 (Licht / Fotometer, I2C) ═══════════
+  B({ type: 'bh_init', parts: ['Lichtsensor (BH1750) Adresse', { sel: 'ADDR', o: [['0x23 (ADDR offen/GND)', '0x23'], ['0x5C (ADDR an VCC)', '0x5C']] }],
+      defs: [['from_nitbw_bh1750', 'from nitbw_bh1750 import BH1750']].concat(I2C_DEFS).concat([
+        ['inst_bh1750', 'bh1750 = BH1750(i2c, addr=%ADDR%)']]),
+      tip: 'Beleuchtungsstärke-Sensor BH1750 (GY-302) am I2C-Bus.' });
+  B({ type: 'bh_lux', parts: ['Helligkeit (lx) BH1750'], out: 'Number', code: 'bh1750.read_lux()' });
+  B({ type: 'bh_lux_mittel', parts: ['Helligkeit (lx) gemittelt aus', { f: 'N', d: 5, lo: 1, hi: 100 }, 'Messungen'],
+      out: 'Number', code: 'bh1750.read_averaged(n=%N%)', tip: 'Mittelwert gegen flackerndes Licht.' });
+  B({ type: 'bh_dunkel', parts: ['ist es dunkel? BH1750 Schwelle (lx)', { txt: 'SCHWELLE', d: '10' }],
+      out: 'Boolean', code: 'bh1750.is_dark(schwelle=%SCHWELLE%)' });
+  B({ type: 'bh_kalib', parts: ['Fotometer: Referenz messen (Leerwert I0)'], code: 'bh1750.kalibrieren()',
+      tip: 'Einmal mit Referenzflüssigkeit (z. B. Wasser) bzw. freiem Strahlengang, bevor Transmission/Extinktion gemessen werden.' });
+  B({ type: 'bh_trans', parts: ['Transmission (%) aus', { f: 'N', d: 5, lo: 1, hi: 100 }, 'Messungen'],
+      out: 'Number', code: 'bh1750.transmission(n=%N%)', tip: 'Setzt voraus, dass die Referenz gemessen wurde.' });
+  B({ type: 'bh_extinktion', parts: ['Extinktion aus', { f: 'N', d: 5, lo: 1, hi: 100 }, 'Messungen'],
+      out: 'Number', code: 'bh1750.extinktion(n=%N%)', tip: 'E = -log10(T). Setzt voraus, dass die Referenz gemessen wurde.' });
+
+  // ════════════════════════ BMP280 (Temperatur + Luftdruck, I2C) ══════
+  B({ type: 'bmp_init', parts: ['BMP280 Adresse', { sel: 'ADDR', o: [['0x76', '0x76'], ['0x77', '0x77']] }],
+      defs: [['from_nitbw_bmp280', 'from nitbw_bmp280 import BMP280']].concat(I2C_DEFS).concat([
+        ['inst_bmp280', 'bmp280 = BMP280(i2c, addr=%ADDR%)']]),
+      tip: 'Temperatur- und Luftdrucksensor BMP280 (ohne Feuchte) am I2C-Bus.' });
+  B({ type: 'bmp_temp', parts: ['Temperatur (°C) BMP280'], out: 'Number', code: 'bmp280.read_temperature()' });
+  B({ type: 'bmp_druck', parts: ['Luftdruck (hPa) BMP280'], out: 'Number', code: 'bmp280.read_pressure()' });
+  B({ type: 'bmp_hoehe', parts: ['Höhe (m) BMP280'], out: 'Number', code: 'bmp280.calculate_altitude()',
+      tip: 'Höhe über dem Meeresspiegel aus dem Luftdruck (barometrische Höhenformel).' });
+  B({ type: 'bmp_hoehe_kalib', parts: ['BMP280 Höhe kalibrieren: aktuelle Höhe (m)', { txt: 'H', d: '0' }],
+      code: 'bmp280.calibrate_altitude(%H%)',
+      tip: 'Bekannte Höhe angeben (z. B. Stockwerk) – daraus wird der Meeresspiegeldruck bestimmt.' });
+  B({ type: 'bmp_meeresdruck', parts: ['BMP280 Meeresspiegeldruck (hPa)', { txt: 'P', d: '1013.25' }],
+      code: 'bmp280.set_sea_level_pressure(%P%)' });
+
+  // ════════════════════════ Regler (nitbw_pid, ReglerLab-kompatibel) ══
+  var REGLER_TYP = [['P-Regler', 'PRegler'], ['PI-Regler', 'PIRegler'], ['PD-Regler', 'PDRegler'], ['PID-Regler', 'PIDRegler']];
+  function reglerInst(b) {
+    var t = b.getFieldValue('TYP'), g = function (n) { return b.getFieldValue(n); };
+    var a = ['kpr=' + g('KPR')];
+    if (t === 'PIRegler' || t === 'PIDRegler') a.push('tn=' + g('TN'));
+    if (t === 'PDRegler' || t === 'PIDRegler') a.push('tv=' + g('TV'));
+    a.push('ymin=' + g('YMIN'), 'ymax=' + g('YMAX'), 'ts=' + g('TS'));
+    return 'regler = ' + t + '(' + a.join(', ') + ')';
+  }
+  B({ type: 'pid_init', parts: ['Regler Typ', { sel: 'TYP', o: REGLER_TYP }, 'K_PR', { txt: 'KPR', d: '1.0' },
+                                'T_N (s)', { txt: 'TN', d: '1.0' }, 'T_V (s)', { txt: 'TV', d: '0.2' },
+                                'Stellgröße von', { txt: 'YMIN', d: '0' }, 'bis', { txt: 'YMAX', d: '1' },
+                                'Abtastzeit (s)', { txt: 'TS', d: '0.05' }],
+      defs: [['from_nitbw_pid', function (b) { return 'from nitbw_pid import ' + b.getFieldValue('TYP'); }],
+             ['inst_regler', reglerInst]],
+      tip: 'Regler wie in ReglerLab: rechnet nur (keine Hardware). Je nach Typ werden T_N / T_V verwendet. '
+        + 'Grenzen der Stellgröße und feste Abtastzeit sind empfohlen (None = unbegrenzt).' });
+  B({ type: 'pid_zweipunkt_init', parts: ['Zweipunktregler oben', { txt: 'YMAX', d: '1' }, 'unten', { txt: 'YMIN', d: '0' },
+                                          'Schaltdifferenz', { txt: 'XSD', d: '0.2' }],
+      defs: [['from_nitbw_pid', 'from nitbw_pid import Zweipunktregler'],
+             ['inst_regler', 'regler = Zweipunktregler(ymax=%YMAX%, ymin=%YMIN%, xsd=%XSD%)']],
+      tip: 'Schaltet zwischen oberem und unterem Stellwert (mit Hysterese).' });
+  B({ type: 'pid_berechnen', parts: ['Regler: Stellgröße für Sollwert', { v: 'SOLL' }, 'Istwert', { v: 'IST' }],
+      out: 'Number', code: 'regler.berechnen(%SOLL%, %IST%)',
+      tip: 'Berechnet die Stellgröße y aus der Regeldifferenz e = Sollwert − Istwert.' });
+  B({ type: 'pid_reset', parts: ['Regler zurücksetzen'], code: 'regler.reset()',
+      tip: 'Setzt Integral- und D-Anteil zurück.' });
+  B({ type: 'takt_init', parts: ['Takt Abtastzeit (s)', { txt: 'TS', d: '0.05' }],
+      defs: [['from_nitbw_pid_takt', 'from nitbw_pid import Takt'], ['inst_takt', 'takt = Takt(%TS%)']],
+      tip: 'Hält eine feste Abtastzeit in der Regelschleife ein.' });
+  B({ type: 'takt_warten', parts: ['Takt: bis zum nächsten Takt warten'], code: 'takt.warten()',
+      tip: 'Am Ende jedes Schleifendurchlaufs aufrufen.' });
+  B({ type: 'takt_zeit', parts: ['Zeit seit Start (s) Takt'], out: 'Number', code: 'takt.zeit()' });
+
   // ════════════════════════ Ultraschall HC-SR04 ═══════════════════════
   B({ type: 'us_init', parts: ['Ultraschall Trigger Pin', { f: 'TRIG', d: 5, lo: 0, hi: 40 }, 'Echo Pin', { f: 'ECHO', d: 18, lo: 0, hi: 40 }],
       defs: [['from_nitbw_ultraschall', 'from nitbw_ultraschall import Ultraschall'],

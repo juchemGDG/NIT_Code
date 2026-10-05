@@ -289,11 +289,15 @@ Temperatur + Luftdruck + Feuchte BME280 (I2C):
   temperatur, druck, feuchtigkeit = sensor.read_all()
   sensor.calculate_altitude()
 
-Temperatur + Luftdruck BMP280 (I2C, OHNE Feuchte – mit Feuchte: nitbw_bme280):
+Temperatur + Luftdruck BMP280 (I2C, OHNE Feuchte – mit Feuchte: nitbw_bme280; Variable IMMER bmp280):
   from nitbw_bmp280 import BMP280
-  sensor = BMP280(i2c, addr=0x76)
-  temperatur, druck = sensor.read_all()
-  sensor.calculate_altitude()
+  bmp280 = BMP280(i2c, addr=0x76)          # Adresse 0x76 oder 0x77
+  bmp280.read_temperature()                # Grad C
+  bmp280.read_pressure()                   # hPa
+  temperatur, druck = bmp280.read_all()    # beides in einem Durchgang
+  bmp280.calculate_altitude()              # Hoehe in m (barometrische Hoehenformel)
+  bmp280.calibrate_altitude(known_altitude=0)   # bekannte Hoehe -> Meeresspiegeldruck
+  bmp280.set_sea_level_pressure(1013.25)
 
 Pulssensor (analoger ADC-Pin):
   from nitbw_puls import Pulssensor
@@ -307,11 +311,15 @@ Farbsensor TCS3200:
   sensor.messen_rohwerte(messungen=8)   # dict: 'rot','gruen','blau','klar'
   sensor.dominante_farbe(messungen=8)
 
-Lichtsensor BH1750 (I2C, Lux):
+Lichtsensor BH1750 (I2C, Lux; auch Fotometer; Variable IMMER bh1750):
   from nitbw_bh1750 import BH1750
-  sensor = BH1750(i2c, addr=BH1750.ADDR_LOW)
-  sensor.read_lux() / sensor.read_averaged(n=5, pause_ms=10)
-  sensor.is_dark(schwelle=10.0)
+  bh1750 = BH1750(i2c, addr=0x23)          # 0x23 (ADDR offen/GND) oder 0x5C (ADDR an VCC)
+  bh1750.read_lux() / bh1750.read_averaged(n=5, pause_ms=10)
+  bh1750.is_dark(schwelle=10.0)
+  # Fotometer (Transmission/Extinktion relativ zu einer Referenzmessung):
+  bh1750.kalibrieren()                     # einmal mit Referenz (z. B. Wasser) / freiem Strahlengang
+  bh1750.transmission(n=5)                 # in Prozent
+  bh1750.extinktion(n=5)                   # E = -log10(T)
 
 TOF-Abstandssensor VL53L0X / VL6180X (I2C):
   from nitbw_tof import TOF
@@ -402,9 +410,13 @@ Strom-/Spannungssensor INA219 (I2C):
 Stromsensor ACS758 (analoger Hall-Sensor, KEIN I2C; VIOUT NIEMALS direkt an den ESP32
 – IMMER ueber Spannungsteiler z. B. 10k/10k an den ADC-Pin):
   from nitbw_acs758 import ACS758
-  sensor = ACS758(pin=34, variante='50B', vcc=5.0, teiler=2.0)
-  sensor.nullpunkt_kalibrieren(n=200)   # stromlos, vor der ersten Messung
-  sensor.messen_a() / sensor.messen_ma()
+  acs758 = ACS758(pin=34, variante='50B', vcc=5.0, teiler=2.0)   # Variable IMMER acs758
+  acs758.nullpunkt_kalibrieren()        # stromlos, vor der ersten Messung
+  acs758.kalibrieren(referenz_strom_a=1.0)   # optional: Empfindlichkeit mit bekanntem Strom
+  acs758.messen_a() / acs758.messen_ma()     # negativ bei umgekehrter Richtung
+  acs758.lesen_spannung()                    # Spannung an VIOUT in V
+  acs758.messen_effektivwert_ma(dauer_ms=200)   # Wechselstrom (RMS); 50 Hz: Vielfaches von 20 ms
+  acs758.ist_stromfluss(schwelle_ma=200) / acs758.richtung()   # richtung: 1, -1 oder 0
 
 Analog-Digital-Wandler ADS1015 (I2C, 4 Kanaele A0-A3, 12 Bit):
   from nitbw_ads1015 import ADS1015
@@ -439,13 +451,15 @@ Maschinelles Lernen (kNN / Entscheidungsbaum / Random Forest / Neuronales Netz):
 Regler P/I/D/PI/PD/PID/Zweipunkt (ReglerLab-kompatibel, reine Berechnung – KEINE
 Hardware, bekommt nur Sollwert und Istwert):
   from nitbw_pid import PIDRegler, Takt
-  regler = PIDRegler(kpr=1.0, tn=1.0, tv=0.2, ymin=0, ymax=1, ts=0.05)   # Grenzen+ts empfohlen
-  takt = Takt(0.05)             # haelt die Abtastzeit der Schleife ein
+  regler = PIDRegler(kpr=1.0, tn=1.0, tv=0.2, ymin=0, ymax=1, ts=0.05)   # Variable IMMER regler;
+                                # Grenzen+ts empfohlen, Parameter als Schluesselwoerter angeben
+  takt = Takt(0.05)             # Variable IMMER takt; haelt die Abtastzeit der Schleife ein
   y = regler.berechnen(sollwert, istwert)   # Stellgroesse, e = sollwert - istwert
   takt.warten()
   # weitere Klassen mit gleicher API: PRegler, IRegler, DRegler, PIRegler, PDRegler,
   # Zweipunktregler(ymax=1.0, ymin=0.0, xsd=0.2)
   regler.reset()                # Integral/D-Filter zuruecksetzen
+  takt.zeit()                   # Zeit seit Start in s
 
 NeoPixel WS2812B (direkt MicroPython – es gibt KEINE nitbw_neopixel-Bibliothek,
 immer das eingebaute Modul "neopixel" verwenden):

@@ -387,6 +387,43 @@
         <block type="hx_wert"></block>
         <block type="hx_roh"></block>
       </category>
+      <category name="Strom (ACS758)" colour="290">
+        <block type="acs_init"></block>
+        <block type="acs_null"></block>
+        <block type="acs_kalib"></block>
+        <block type="acs_a"></block>
+        <block type="acs_ma"></block>
+        <block type="acs_spannung"></block>
+        <block type="acs_rms"></block>
+        <block type="acs_fluss"></block>
+        <block type="acs_richtung"></block>
+      </category>
+      <category name="Licht / Fotometer (BH1750)" colour="290">
+        <block type="bh_init"></block>
+        <block type="bh_lux"></block>
+        <block type="bh_lux_mittel"></block>
+        <block type="bh_dunkel"></block>
+        <block type="bh_kalib"></block>
+        <block type="bh_trans"></block>
+        <block type="bh_extinktion"></block>
+      </category>
+      <category name="Luftdruck (BMP280)" colour="290">
+        <block type="bmp_init"></block>
+        <block type="bmp_temp"></block>
+        <block type="bmp_druck"></block>
+        <block type="bmp_hoehe"></block>
+        <block type="bmp_hoehe_kalib"></block>
+        <block type="bmp_meeresdruck"></block>
+      </category>
+      <category name="Regler (PID)" colour="290">
+        <block type="pid_init"></block>
+        <block type="pid_zweipunkt_init"></block>
+        <block type="takt_init"></block>
+        <block type="pid_berechnen"><value name="SOLL"><shadow type="math_number"><field name="NUM">50</field></shadow></value><value name="IST"><shadow type="math_number"><field name="NUM">0</field></shadow></value></block>
+        <block type="pid_reset"></block>
+        <block type="takt_warten"></block>
+        <block type="takt_zeit"></block>
+      </category>
       <category name="Funk (ESP-NOW / MQTT)" colour="290">
         <block type="espnow_init"></block>
         <block type="espnow_peer"></block>
