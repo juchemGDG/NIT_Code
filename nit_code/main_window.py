@@ -1046,9 +1046,6 @@ class MainWindow(QMainWindow):
         stop_act = tbtn("Stoppen", self._stop_program, "Ausführung stoppen (F6)", "stop")
         tb.widgetForAction(run_act).setObjectName("runButton")
         tb.widgetForAction(stop_act).setObjectName("stopButton")
-        self._act_plotter.setText("Serial Plotter")
-        self._toolbar_icons.append((self._act_plotter, "plotter", False))
-        tb.addAction(self._act_plotter)   # checkbarer Plotter-Umschalter (in _setup_menubar erstellt)
         tb.addSeparator()
 
         # Modus-Auswahl
@@ -1112,6 +1109,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(6, 10, 6, 10)
         lay.setSpacing(6)
         self._activity_buttons: dict[str, QToolButton] = {}
+        self._files_width = 230
 
         def add(key, icon, tip, slot, checkable=False, bottom=False):
             btn = QToolButton()
@@ -1165,7 +1163,17 @@ class MainWindow(QMainWindow):
             self._activity_buttons["blocks"].setVisible(self._m_blocks.menuAction().isVisible())
 
     def _toggle_file_panel(self):
-        self._left_splitter.setVisible(self._left_splitter.isHidden())
+        if self._left_splitter.isHidden():
+            self._left_splitter.setVisible(True)
+            # Der Splitter merkt sich für ausgeblendete Bereiche Breite 0 –
+            # beim Einblenden die frühere Breite (mind. 230 px) wiederherstellen.
+            sizes = self._main_splitter.sizes()
+            width = max(self._files_width, 230)
+            if len(sizes) == 3 and sizes[0] < 100:
+                self._main_splitter.setSizes([width, max(0, sizes[1] - (width - sizes[0])), sizes[2]])
+        else:
+            self._files_width = self._main_splitter.sizes()[0]
+            self._left_splitter.setVisible(False)
         self._sync_activity_bar()
 
     def _toggle_ai_panel(self):
