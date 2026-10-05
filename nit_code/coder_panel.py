@@ -274,8 +274,10 @@ Schrittmotor NEMA17 mit A4988/DRV8825 (StepperDir):
 Schrittmotor 28BYJ-48 mit ULN2003 (StepperULN):
   from nitbw_stepper import StepperULN, VOR, ZURUECK
   motor = StepperULN(in1=14, in2=27, in3=26, in4=25,
-                     schritte_pro_umdrehung=2048, geschwindigkeit=200)   # 28BYJ-48: max. ~200 sps
-  motor.schritte(n, VOR) / motor.umdrehungen(n, VOR) / motor.aus()
+                     schritte_pro_umdrehung=4096, geschwindigkeit=200)
+  # Halbschrittbetrieb: 4096 Schritte = 1 Umdrehung (praxisnah oft ~4076); sinnvoll 50-500 sps
+  motor.schritte(n, VOR) / motor.winkel(grad, VOR) / motor.umdrehungen(n, VOR)
+  motor.geschwindigkeit(sps) / motor.lese_position() / motor.aus()
 
 Temperatur DS18B20 (OneWire):
   from machine import Pin
@@ -321,12 +323,16 @@ Lichtsensor BH1750 (I2C, Lux; auch Fotometer; Variable IMMER bh1750):
   bh1750.transmission(n=5)                 # in Prozent
   bh1750.extinktion(n=5)                   # E = -log10(T)
 
-TOF-Abstandssensor VL53L0X / VL6180X (I2C):
+TOF-Abstandssensor VL53L0X / VL6180X (I2C; Variable IMMER tof):
   from nitbw_tof import TOF
-  sensor = TOF(i2c)                        # erkennt den Sensortyp automatisch
-  sensor = TOF(i2c, sensor_typ='vl6180x')  # explizit: 'vl53l0x' (bis 2 m) oder 'vl6180x' (Kurzdistanz bis 20 cm)
-  sensor.messen_mm() / sensor.messen_cm()
-  sensor.lese_sensor_typ()                 # 'vl53l0x' oder 'vl6180x'
+  tof = TOF(i2c)                        # erkennt den Sensortyp automatisch
+  tof = TOF(i2c, sensor_typ='vl6180x')  # explizit: 'vl53l0x' (bis 2 m) oder 'vl6180x' (Kurzdistanz bis 20 cm)
+  tof.messen_mm() / tof.messen_cm()
+  tof.lese_sensor_typ()                 # 'vl53l0x' oder 'vl6180x'
+  tof.messen_median(n=5)                # Median in mm (robust gegen Ausreisser), -1 = ungueltig
+  tof.ist_naeher_als(100)               # True, wenn Objekt naeher als 100 mm
+  tof.kalibriere_offset(referenz_mm=100)   # Sensor auf Ziel mit bekanntem Abstand richten
+  tof.set_offset_mm(-70) / tof.lese_offset_mm()   # fester Korrekturwert in mm
 
 Joystick KY-023:
   from nitbw_ky023 import KY023

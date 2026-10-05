@@ -368,11 +368,20 @@
   B({ type: 'stepperdir_aus', parts: ['Motor aus'], code: 'motor.aus()' });
 
   // ════════════════════════ Schrittmotor 28BYJ-48 (ULN2003) ═══════════
-  B({ type: 'stepperuln_init', parts: ['Schrittmotor (ULN2003) IN1', { f: 'I1', d: 19, lo: 0, hi: 40 }, 'IN2', { f: 'I2', d: 18, lo: 0, hi: 40 }, 'IN3', { f: 'I3', d: 5, lo: 0, hi: 40 }, 'IN4', { f: 'I4', d: 17, lo: 0, hi: 40 }],
+  B({ type: 'stepperuln_init', parts: ['Schrittmotor (ULN2003) IN1', { f: 'I1', d: 19, lo: 0, hi: 40 }, 'IN2', { f: 'I2', d: 18, lo: 0, hi: 40 }, 'IN3', { f: 'I3', d: 5, lo: 0, hi: 40 }, 'IN4', { f: 'I4', d: 17, lo: 0, hi: 40 },
+                                       'Schritte pro Umdrehung', { f: 'SPU', d: 4096, lo: 100, hi: 100000 }, 'Tempo (Schritte/s)', { f: 'GESCHW', d: 200, lo: 1, hi: 900 }],
       defs: [['from_nitbw_stepper2', 'from nitbw_stepper import StepperULN, VOR, ZURUECK'],
-             ['inst_motor', 'motor = StepperULN(in1=%I1%, in2=%I2%, in3=%I3%, in4=%I4%, schritte_pro_umdrehung=2048, geschwindigkeit=200)']],
-      tip: 'Schrittmotor 28BYJ-48 mit ULN2003.' });
+             ['inst_motor', 'motor = StepperULN(in1=%I1%, in2=%I2%, in3=%I3%, in4=%I4%, schritte_pro_umdrehung=%SPU%, geschwindigkeit=%GESCHW%)']],
+      tip: 'Schrittmotor 28BYJ-48 mit ULN2003 im Halbschrittbetrieb: 4096 Schritte pro Umdrehung '
+        + '(praxisnah oft ~4076). Sinnvolles Tempo: 50 bis 500 Schritte/s.' });
   B({ type: 'stepperuln_umdr', parts: ['Motor Umdrehungen', { v: 'N', c: 'Number' }, { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.umdrehungen(%N%, %RICHT%)' });
+  B({ type: 'stepperuln_schritte', parts: ['Motor Schritte', { v: 'N', c: 'Number' }, { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.schritte(%N%, %RICHT%)' });
+  B({ type: 'stepperuln_winkel', parts: ['Motor Winkel', { v: 'GRAD', c: 'Number' }, 'Grad', { sel: 'RICHT', o: [['vorwärts', 'VOR'], ['zurück', 'ZURUECK']] }], code: 'motor.winkel(%GRAD%, %RICHT%)' });
+  B({ type: 'stepperuln_geschw', parts: ['Motor Tempo setzen (Schritte/s)', { f: 'SPS', d: 200, lo: 1, hi: 900 }], code: 'motor.geschwindigkeit(%SPS%)',
+      tip: 'Beim 28BYJ-48 sind 50 bis 500 Schritte/s sinnvoll (hängt von Last und Spannung ab).' });
+  B({ type: 'stepperuln_aus', parts: ['Motor aus'], code: 'motor.aus()', tip: 'Schaltet alle Spulen stromlos (kein Haltemoment).' });
+  B({ type: 'stepperuln_pos', parts: ['Motor Position (Schritte)'], out: 'Number', code: 'motor.lese_position()',
+      tip: 'Absolute Schrittposition seit dem Einrichten (vorwärts +1, rückwärts −1).' });
 
   // ════════════════════════ Temperatur DS18B20 ════════════════════════
   B({ type: 'ds18b20_init', parts: ['DS18B20 an Pin', { f: 'PIN', d: 4, lo: 0, hi: 40 }],
@@ -427,6 +436,16 @@
         + 'VL6180X (Kurzdistanz bis ca. 20 cm). "automatisch" erkennt den Sensortyp selbst.' });
   B({ type: 'tof_mm', parts: ['Abstand TOF in mm'], out: 'Number', code: 'tof.messen_mm()' });
   B({ type: 'tof_cm', parts: ['Abstand TOF in cm'], out: 'Number', code: 'tof.messen_cm()' });
+  B({ type: 'tof_median', parts: ['Abstand TOF Median (mm) aus', { f: 'N', d: 5, lo: 3, hi: 100 }, 'Messungen'],
+      out: 'Number', code: 'tof.messen_median(n=%N%)', tip: 'Robust gegen Ausreißer; −1, wenn keine gültige Messung.' });
+  B({ type: 'tof_naeher', parts: ['Objekt näher als (mm)', { f: 'MM', d: 100, lo: 1, hi: 2000 }, '?'],
+      out: 'Boolean', code: 'tof.ist_naeher_als(%MM%)' });
+  B({ type: 'tof_offset_set', parts: ['TOF Offset setzen (mm)', { f: 'MM', d: 0, lo: -2000, hi: 2000 }], code: 'tof.set_offset_mm(%MM%)',
+      tip: 'Fester Korrekturwert: positiv erhöht, negativ verringert den Messwert.' });
+  B({ type: 'tof_offset_get', parts: ['TOF Offset (mm)'], out: 'Number', code: 'tof.lese_offset_mm()' });
+  B({ type: 'tof_kalib', parts: ['TOF Offset kalibrieren: Referenzabstand (mm)', { f: 'REF', d: 100, lo: 1, hi: 2000 }],
+      code: 'tof.kalibriere_offset(%REF%)',
+      tip: 'Sensor auf ein Ziel mit bekanntem Abstand richten – der Offset wird aus 15 Messungen (Median) berechnet.' });
 
   // ════════════════════════ Joystick KY-023 ═══════════════════════════
   B({ type: 'joy_init', parts: ['Joystick VRx', { f: 'VRX', d: 34, lo: 0, hi: 40 }, 'VRy', { f: 'VRY', d: 35, lo: 0, hi: 40 }, 'SW', { f: 'SW', d: 32, lo: 0, hi: 40 }],

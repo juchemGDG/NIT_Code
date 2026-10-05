@@ -400,6 +400,8 @@ def _conv(node, conv):
         return None
     if conv == "int":
         return node.value if isinstance(node, ast.Constant) and isinstance(node.value, int) else None
+    if conv == "sint":         # Ganzzahl, auch negativ (-70)
+        return _lit_int(node)
     if conv == "str":
         return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
     if conv == "bstr":
@@ -492,7 +494,9 @@ _LIB_INIT = {
     "stepperdir": ("stepperdir_init", [("STEP", ("kw", "step_pin", "int")),
                                        ("DIR", ("kw", "dir_pin", "int")), ("EN", ("kw", "enable_pin", "int"))]),
     "stepperuln": ("stepperuln_init", [("I1", ("arg", 0, "in1", "int")), ("I2", ("arg", 1, "in2", "int")),
-                                       ("I3", ("arg", 2, "in3", "int")), ("I4", ("arg", 3, "in4", "int"))]),
+                                       ("I3", ("arg", 2, "in3", "int")), ("I4", ("arg", 3, "in4", "int")),
+                                       ("SPU", ("arg", 4, "schritte_pro_umdrehung", "int")),
+                                       ("GESCHW", ("arg", 5, "geschwindigkeit", "int"))]),
     "ds18b20": ("ds18b20_init", [("PIN", ("pin", 0))]),
     "dht": ("dht_init", [("PIN", ("pin", 0))]),
     "bme280": ("bme280_init", []),
@@ -570,13 +574,24 @@ _LIB_METHODS = {
     },
     "stepperuln": {
         "umdrehungen": ("stepperuln_umdr", False, [("RICHT", ("pos", 1, "richt"))], [("N", 0)]),
+        # Letztes Element True = „streng“ (nicht abgebildete Argumente → Roh-Zeile)
+        "schritte": ("stepperuln_schritte", False, [("RICHT", ("arg", 1, "richtung", "richt"))], [("N", 0, "n")], True),
+        "winkel": ("stepperuln_winkel", False, [("RICHT", ("arg", 1, "richtung", "richt"))], [("GRAD", 0, "grad")], True),
+        "geschwindigkeit": ("stepperuln_geschw", False, [("SPS", ("arg", 0, "sps", "int"))], [], True),
+        "aus": ("stepperuln_aus", False, [], [], True),
+        "lese_position": ("stepperuln_pos", True, [], [], True),
     },
     "ds18b20": {"messen": ("ds18b20_messen", True, [], [])},
     "dht": {"measure": ("dht_measure", False, [], []), "temperature": ("dht_temp", True, [], []),
             "humidity": ("dht_hum", True, [], [])},
     "puls": {"lesen_roh_mittelwert": ("puls_lesen", True, [], [])},
     "tcs": {"dominante_farbe": ("tcs_farbe", True, [], [])},
-    "tof": {"messen_mm": ("tof_mm", True, [], []), "messen_cm": ("tof_cm", True, [], [])},
+    "tof": {"messen_mm": ("tof_mm", True, [], []), "messen_cm": ("tof_cm", True, [], []),
+            "messen_median": ("tof_median", True, [("N", ("arg", 0, "n", "int"))], [], True),
+            "ist_naeher_als": ("tof_naeher", True, [("MM", ("arg", 0, "mm", "int"))], [], True),
+            "set_offset_mm": ("tof_offset_set", False, [("MM", ("arg", 0, "offset_mm", "sint"))], [], True),
+            "lese_offset_mm": ("tof_offset_get", True, [], [], True),
+            "kalibriere_offset": ("tof_kalib", False, [("REF", ("arg", 0, "referenz_mm", "int"))], [], True)},
     "rtc": {"toString": ("rtc_string", True, [("FORMAT", ("pos", 0, "str"))], [])},
     "compass": {"read_heading": ("compass_heading", True, [], [])},
     "as7262": {"messen_roh": ("as7262_messen", True, [], [])},
@@ -801,7 +816,8 @@ def _unconsumed(call, srcs, skip_first=False):
 
 
 def _apply_method(spec, call, st, strict=False):
-    btype, is_val, fspec, ispec = spec
+    btype, is_val, fspec, ispec = spec[:4]
+    strict = strict or (len(spec) > 4 and bool(spec[4]))
     if strict:
         srcs = [src for _, src in fspec] + [("arg", i[1], i[2] if len(i) > 2 else None, None) for i in ispec]
         if _unconsumed(call, srcs):
