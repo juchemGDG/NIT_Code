@@ -1,5 +1,6 @@
 """Haupt-Fenster von NIT_Code."""
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1268,7 +1269,8 @@ class MainWindow(QMainWindow):
             self,
             "Speichern als",
             start_dir,
-            "Python-Dateien (*.py);;Alle Dateien (*)",
+            "Python-Dateien (*.py);;Textdateien (*.txt);;"
+            "JSON-Dateien (*.json);;CSV-Dateien (*.csv);;Alle Dateien (*)",
         )
         dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         dlg.setFileMode(QFileDialog.FileMode.AnyFile)
@@ -1279,6 +1281,17 @@ class MainWindow(QMainWindow):
 
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selectedFiles():
             path = dlg.selectedFiles()[0]
+            # Der nicht-native Dialog hängt die Endung des gewählten Filters
+            # nicht selbst an – ohne Endung im Namen ergänzen wir sie hier.
+            m = re.search(r"\(\*(\.\w+)", dlg.selectedNameFilter())
+            if m and not os.path.splitext(path)[1]:
+                path += m.group(1)
+                if os.path.exists(path) and QMessageBox.question(
+                    self, "Überschreiben?",
+                    f'"{os.path.basename(path)}" existiert bereits. Ersetzen?',
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                ) != QMessageBox.StandardButton.Yes:
+                    return
             tab.filepath = path
             tab.editor.set_filepath(path)
             self._do_save(tab, path)
