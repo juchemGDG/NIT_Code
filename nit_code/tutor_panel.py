@@ -209,21 +209,21 @@ class TutorPanel(QWidget):
         self._input_area.setStyleSheet(f"background:{THEME['bg_panel']};")
         self._input.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px;"
             f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif;"
             f"font-size:12px;"
         )
         self._clear_btn.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px 10px;"
         )
         self._code_btn.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px 10px;"
         )
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:5px 18px;"
+            f"border:none; border-radius:8px; padding:5px 18px;"
         )
 
     # ── Strg+Enter senden ───────────────────────────────────────────────────
@@ -288,7 +288,7 @@ class TutorPanel(QWidget):
         display = (
             f"<b style='color:{THEME['info']}'>Du:</b> {esc(frage)}"
             f"<pre style='background:{THEME['bg_panel']}; border:1px solid {THEME['border']};"
-            f"border-radius:4px; padding:6px; white-space:pre-wrap;'>{esc(code)}</pre>"
+            f"border-radius:8px; padding:6px; white-space:pre-wrap;'>{esc(code)}</pre>"
         )
         self._send_text(content, display_html=display)
 

@@ -5,7 +5,7 @@ import re
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QWidget, QScrollArea, QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QTextEdit, QPushButton, QFrame, QLayout, QSizePolicy,
 )
 
@@ -587,17 +587,17 @@ _MERMAID_SNIPPETS = [
 
 _BTN_ACTIVE = (
     f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-    f"border:none; border-radius:4px; padding:3px 8px; font-size:11px;"
+    f"border:none; border-radius:8px; padding:3px 8px; font-size:11px;"
 )
 _BTN_INACTIVE = (
     f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-    f"border:1px solid {THEME['border']}; border-radius:4px;"
+    f"border:1px solid {THEME['border']}; border-radius:8px;"
     f"padding:3px 8px; font-size:11px;"
 )
 _BTN_SIGNAL = (
     f"background:{THEME['bg_mid'] if 'bg_mid' in THEME else THEME['bg_dark']};"
     f"color:{THEME['info']};"
-    f"border:1px solid {THEME['border']}; border-radius:4px;"
+    f"border:1px solid {THEME['border']}; border-radius:8px;"
     f"padding:4px 9px; font-size:11px;"
 )
 
@@ -607,7 +607,7 @@ def _btn_signal_style() -> str:
     return (
         f"QPushButton {{ background:{THEME.get('bg_mid', THEME['bg_dark'])};"
         f" color:{THEME['info']}; border:1px solid {THEME['border']};"
-        f" border-radius:4px; padding:4px 9px; font-size:11px; }}"
+        f" border-radius:8px; padding:4px 9px; font-size:11px; }}"
         f"QPushButton:hover {{ background:{THEME['selection']}; }}"
     )
 
@@ -790,7 +790,7 @@ class CoderPanel(QWidget):
         self._spec_edit.setMaximumHeight(180)
         self._spec_edit.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px;"
             f"font-family:'JetBrains Mono','Fira Code','Consolas',monospace;"
             f"font-size:11px;"
         )
@@ -827,7 +827,7 @@ class CoderPanel(QWidget):
         self._ablauf_edit.setMaximumHeight(200)
         self._ablauf_edit.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px;"
             f"font-family:'JetBrains Mono','Fira Code','Consolas',monospace;"
             f"font-size:11px;"
         )
@@ -894,13 +894,21 @@ class CoderPanel(QWidget):
         self._send_spec_btn = QPushButton("📤  Spezifikation senden")
         self._send_spec_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:5px 12px; font-size:12px;"
+            f"border:none; border-radius:8px; padding:5px 12px; font-size:12px;"
         )
         self._send_spec_btn.clicked.connect(self._send_spec)
         sb_layout.addWidget(self._send_spec_btn)
 
         sw_layout.addWidget(self._spec_body)
-        root.addWidget(self._spec_wrapper)
+        # Auf niedrigen Bildschirmen scrollt der Spezifikationsbereich, statt
+        # dass sich Eingabefelder und Schnellbuttons überlappen.
+        self._spec_scroll = QScrollArea()
+        self._spec_scroll.setWidgetResizable(True)
+        self._spec_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._spec_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._spec_scroll.setMinimumHeight(120)
+        self._spec_scroll.setWidget(self._spec_wrapper)
+        root.addWidget(self._spec_scroll)
 
         self._sep1 = QFrame()
         self._sep1.setFrameShape(QFrame.Shape.HLine)
@@ -1004,7 +1012,7 @@ class CoderPanel(QWidget):
         )
         self._spec_edit.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px;"
             f"font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:11px;"
         )
         self._ablauf_lbl.setStyleSheet(
@@ -1012,12 +1020,12 @@ class CoderPanel(QWidget):
         )
         self._ablauf_edit.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px;"
             f"font-family:'JetBrains Mono','Fira Code','Consolas',monospace; font-size:11px;"
         )
         self._send_spec_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:5px 12px; font-size:12px;"
+            f"border:none; border-radius:8px; padding:5px 12px; font-size:12px;"
         )
         self._sep1.setStyleSheet(f"background:{THEME['border']}; margin:0;")
         self._chat_view.setStyleSheet(
@@ -1029,16 +1037,16 @@ class CoderPanel(QWidget):
         self._input_area.setStyleSheet(f"background:{THEME['bg_panel']};")
         self._input.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px;"
             f"font-family:system-ui,-apple-system,'Segoe UI','Ubuntu',sans-serif; font-size:12px;"
         )
         self._clear_btn.setStyleSheet(
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px; padding:4px 10px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px; padding:4px 10px;"
         )
         _action_btn_style = (
             f"QPushButton {{ background:transparent; color:{THEME['accent']};"
-            f" border:1px solid {THEME['accent']}; border-radius:4px;"
+            f" border:1px solid {THEME['accent']}; border-radius:8px;"
             f" font-weight:bold; padding:5px 22px; }}"
             f"QPushButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
             f"QPushButton:disabled {{ background:transparent;"
@@ -1048,15 +1056,15 @@ class CoderPanel(QWidget):
         self._blocks_btn.setStyleSheet(_action_btn_style)
         self._send_btn.setStyleSheet(
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:5px 18px;"
+            f"border:none; border-radius:8px; padding:5px 18px;"
         )
         btn_active = (
             f"background:{THEME['accent']}; color:#fff; font-weight:bold;"
-            f"border:none; border-radius:4px; padding:3px 8px; font-size:11px;"
+            f"border:none; border-radius:8px; padding:3px 8px; font-size:11px;"
         )
         btn_inactive = (
             f"background:{THEME['bg_dark']}; color:{THEME['text_dim']};"
-            f"border:1px solid {THEME['border']}; border-radius:4px;"
+            f"border:1px solid {THEME['border']}; border-radius:8px;"
             f"padding:3px 8px; font-size:11px;"
         )
         btn_signal = _btn_signal_style()

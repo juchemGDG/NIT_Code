@@ -54,7 +54,7 @@ body {
 }
 a { color: #3b6ea5; }
 h1, h2, h3, h4 { color: #1a1a1a; border-bottom: 1px solid var(--ab-rand); padding-bottom: 4px; }
-code { background: var(--ab-grau); padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+code { background: var(--ab-grau); padding: 2px 5px; border-radius:8px; font-family: monospace; }
 table { border-collapse: collapse; }
 th, td { border: 1px solid var(--ab-rand); padding: 4px 8px; }
 
@@ -126,7 +126,7 @@ _ARBEITSBLATT_PALETTE_CSS = """
 .ab-merksatz, .merksatz, .ab-hinweis, .hinweis, .ab-material, .material,
 .ab-sicherheit, .sicherheit, .ab-tipp, .tipp, .ab-aufgabenbox, .aufgabe,
 .ab-loesung {
-  padding: 10px 14px; margin: 14px 0; border-radius: 4px; border-left: 4px solid;
+  padding: 10px 14px; margin: 14px 0; border-radius:8px; border-left: 4px solid;
   font-size: 0.95em;
 }
 .ab-loesung::before {
@@ -179,7 +179,7 @@ _ARBEITSBLATT_STRUCTURE_CSS = """
 .ab-bild-links { grid-template-columns: 1fr 3fr; }
 .ab-bild-rechts { grid-template-columns: 3fr 1fr; }
 .ab-bild-rechts img { order: 2; }
-.ab-bild-links img, .ab-bild-rechts img { width: 100%; height: auto; display: block; border-radius: 3px; }
+.ab-bild-links img, .ab-bild-rechts img { width: 100%; height: auto; display: block; border-radius:8px; }
 .ab-bild-links.v1-2 { grid-template-columns: 1fr 2fr; }
 .ab-bild-links.v1-4 { grid-template-columns: 1fr 4fr; }
 .ab-bild-links.v2-3 { grid-template-columns: 2fr 3fr; }
@@ -196,7 +196,7 @@ _ARBEITSBLATT_STRUCTURE_CSS = """
 }
 .ab-punkte {
   font-weight: 400; font-size: 0.82em; color: var(--ab-muted);
-  border: 1px solid var(--ab-rand); border-radius: 3px; padding: 1px 7px;
+  border: 1px solid var(--ab-rand); border-radius:8px; padding: 1px 7px;
 }
 body.arbeitsblatt { counter-reset: ab-nr; }
 .ab-aufgabe.auto { counter-increment: ab-nr; }
@@ -209,7 +209,7 @@ body.arbeitsblatt { counter-reset: ab-nr; }
 .ab-wf th:not(:first-child), .ab-wf td:not(:first-child) { width: 62px; text-align: center; }
 
 /* --- Schreib- und Zeichenflächen --- */
-.ab-feldbox { border: 1px solid var(--ab-linie); border-radius: 3px; min-height: 28mm; margin: 10px 0; }
+.ab-feldbox { border: 1px solid var(--ab-linie); border-radius:8px; min-height: 28mm; margin: 10px 0; }
 .ab-feldbox.klein { min-height: 16mm; }
 .ab-feldbox.gross { min-height: 55mm; }
 .ab-linien {
@@ -236,7 +236,7 @@ body.arbeitsblatt { counter-reset: ab-nr; }
 .ab-luecke.kurz { min-width: 45px; }
 .ab-luecke.lang { min-width: 170px; }
 .ab-wortspeicher {
-  border: 1px dashed var(--ab-linie); border-radius: 3px; padding: 8px 12px;
+  border: 1px dashed var(--ab-linie); border-radius:8px; padding: 8px 12px;
   margin: 12px 0; font-size: 0.92em; text-align: center; background: var(--ab-grau);
 }
 .ab-wortspeicher::before { content: "Wortspeicher: "; font-weight: 600; color: var(--ab-muted); }
@@ -246,7 +246,7 @@ body.arbeitsblatt { counter-reset: ab-nr; }
   margin-right: 5px; vertical-align: middle;
 }
 .ab-zuordnung { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 60px; margin: 14px 0; }
-.ab-zuordnung > div { border: 1px solid var(--ab-rand); border-radius: 3px; padding: 6px 10px; font-size: 0.92em; }
+.ab-zuordnung > div { border: 1px solid var(--ab-rand); border-radius:8px; padding: 6px 10px; font-size: 0.92em; }
 .ab-bewertung { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.85em; }
 .ab-bewertung th, .ab-bewertung td { border: 1px solid var(--ab-linie); padding: 5px 8px; text-align: center; }
 .ab-bewertung th { background: var(--ab-grau); }
@@ -283,7 +283,7 @@ body.arbeitsblatt ol ol ol > li::before, .ab-aufgaben ol ol ol > li::before {
 .grid2 { grid-template-columns: repeat(2, 1fr); }
 .grid3 { grid-template-columns: repeat(3, 1fr); }
 .grid4 { grid-template-columns: repeat(4, 1fr); }
-.grid2 img, .grid3 img, .grid4 img { width: 100%; height: auto; display: block; border-radius: 4px; }
+.grid2 img, .grid3 img, .grid4 img { width: 100%; height: auto; display: block; border-radius:8px; }
 .gleich-hoch img { height: 150px; object-fit: cover; }
 .grid2 > div > p, .grid3 > div > p, .grid4 > div > p { margin-top: 0.4em; font-size: 0.9em; line-height: 1.4; }
 @media screen and (max-width: 700px) {
@@ -292,7 +292,7 @@ body.arbeitsblatt ol ol ol > li::before, .ab-aufgaben ol ol ol > li::before {
 }
 
 /* --- Bild über die volle Breite --- */
-.bild, .bild img { width: 100%; height: auto; display: block; margin: 1.5em 0; border-radius: 4px; }
+.bild, .bild img { width: 100%; height: auto; display: block; margin: 1.5em 0; border-radius:8px; }
 figure.bild { margin: 1.5em 0; }
 figure.bild figcaption { font-size: 0.85em; font-style: italic; text-align: center; color: var(--ab-muted); margin-top: 0.5em; }
 .bild-breit img { width: 110%; max-width: none; margin-left: -5%; height: auto; display: block; }
@@ -301,7 +301,7 @@ figure.bild figcaption { font-size: 0.85em; font-style: italic; text-align: cent
 .bild-text, .text-bild { display: grid; gap: 20px; align-items: center; margin: 1.5em 0; }
 .bild-text { grid-template-columns: 1fr 2fr; }
 .text-bild { grid-template-columns: 2fr 1fr; }
-.bild-text img, .text-bild img { width: 100%; height: auto; border-radius: 4px; }
+.bild-text img, .text-bild img { width: 100%; height: auto; border-radius:8px; }
 @media screen and (max-width: 700px) {
   .bild-text, .text-bild { grid-template-columns: 1fr; }
 }

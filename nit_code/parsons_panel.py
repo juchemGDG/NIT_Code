@@ -124,7 +124,7 @@ class PuzzleAuthorDialog(QDialog):
         self.setStyleSheet(f"background:{t['bg_dark']}; color:{t['text']};")
         field = (
             f"background:{t['bg_editor']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; border-radius:4px;"
+            f" border:1px solid {t['border']}; border-radius:8px;"
         )
         for w in (self._title, self._desc, self._preview, self._distractors):
             w.setStyleSheet(field)
@@ -398,7 +398,7 @@ class ParsonsWindow(QMainWindow):
             lw.setStyleSheet(list_style)
         btn = (
             f"QPushButton {{ background:{t['bg_dark']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; border-radius:4px; padding:3px 10px; }}"
+            f" border:1px solid {t['border']}; border-radius:8px; padding:3px 10px; }}"
             f"QPushButton:hover {{ background:{t['accent']}; color:#fff; }}"
         )
         for b in (self._indent_btn, self._dedent_btn):

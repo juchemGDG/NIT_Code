@@ -69,7 +69,7 @@ class PredictionDialog(QDialog):
         self.setStyleSheet(f"background:{t['bg_dark']}; color:{t['text']};")
         self._edit.setStyleSheet(
             f"background:{t['bg_editor']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; border-radius:4px;"
+            f" border:1px solid {t['border']}; border-radius:8px;"
         )
         info.setStyleSheet(f"color:{t['text']};")
         self._edit.setFocus()
@@ -122,7 +122,7 @@ class ResultDialog(QDialog):
         box.setPlainText(text)
         box.setStyleSheet(
             f"background:{THEME['bg_editor']}; color:{THEME['text']};"
-            f" border:1px solid {THEME['border']}; border-radius:4px;"
+            f" border:1px solid {THEME['border']}; border-radius:8px;"
         )
         v.addWidget(box, 1)
         return w

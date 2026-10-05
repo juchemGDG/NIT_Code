@@ -573,14 +573,14 @@ class SerialPlot(QWidget):
     def refresh_theme(self):
         btn_style = (
             f"QPushButton {{ background:{THEME['bg_panel']}; color:{THEME['text']};"
-            f" border:1px solid {THEME['border']}; border-radius:4px; padding:3px 10px; }}"
+            f" border:1px solid {THEME['border']}; border-radius:8px; padding:3px 10px; }}"
             f"QPushButton:hover {{ background:{THEME['accent']}; color:#fff; }}"
         )
         self._clear_btn.setStyleSheet(btn_style)
         ctrl_style = (
             f"QComboBox, QSpinBox, QDoubleSpinBox {{ background:{THEME['bg_dark']};"
             f" color:{THEME['text']}; border:1px solid {THEME['border']};"
-            f" border-radius:4px; padding:2px 4px; }}"
+            f" border-radius:8px; padding:2px 4px; }}"
             # combobox-popup:0 erzwingt das Qt-eigene Popup (statt eines nativen,"
             # das den Text abschnitt) – so wird die Breite der Einträge respektiert.
             f"QComboBox {{ combobox-popup: 0; }}"
