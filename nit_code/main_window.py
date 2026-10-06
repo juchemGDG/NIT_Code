@@ -48,12 +48,12 @@ from .icons import make_icon
 from .qt_utils import retain_thread, find_logo, UI_FONT_PT_DEFAULT
 from .block_panel import BlockEditorWindow
 from .parsons_panel import ParsonsWindow
-from .csv_plot import CsvPlotWindow
 from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .worksheet_panel import WorksheetPanel
 from .help_dialog import HelpDialog, guide_path
 from .pap_editor import IbdEditorWindow, PapEditorWindow
+from .statplot_window import StatPlotWindow
 from .settings_dialog import SettingsDialog
 from .terminal_panel import ClaudeTerminalPanel, find_claude_binary, pty_available
 from .tutor_panel import TutorPanel
@@ -1658,10 +1658,10 @@ class MainWindow(QMainWindow):
         win.activateWindow()
 
     def _open_csv_plot(self):
-        """Öffnet die Datenauswertung (CSV); die Datei lädt man im Fenster selbst."""
+        """Öffnet die Datenauswertung (StatPlot); die Datei lädt man im Fenster selbst."""
         win = getattr(self, "_csv_window", None)
         if win is None:
-            win = CsvPlotWindow(self, start_dir=lambda: self._settings_sketchbook)
+            win = StatPlotWindow(self, sketchbook_dir=lambda: self._settings_sketchbook)
             win.set_code_sink(self._open_code_in_new_tab)
             self._csv_window = win
         win.show()

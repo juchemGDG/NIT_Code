@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StatPlot – Daten darstellen und auswerten</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <!-- Cache-Buster: bei jedem Deploy hochzählen, sonst liefern Browser/Hosting alte Dateien aus -->
+  <link rel="stylesheet" href="statplot.css?v=1">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ═══════ SIDEBAR ═══════ -->
+  <aside id="sidebar">
+    <div id="sidebar-scroll">
+      <div id="sidebar-header">
+        <span id="sidebar-title">StatPlot</span>
+        <span id="sidebar-subtitle">CSV-Daten darstellen, beschreiben und testen</span>
+      </div>
+
+      <div class="section-label">DATEI</div>
+      <div class="side-block">
+        <button id="card-open" class="palette-card" type="button">
+          <svg class="card-icon" viewBox="0 0 24 24" data-icon="open"></svg>
+          <span class="palette-text"><span class="palette-name">CSV öffnen …</span><span class="palette-hint">Messreihe oder Umfrage laden</span></span>
+        </button>
+        <div id="file-label" class="muted side-note">Noch keine Datei geladen</div>
+      </div>
+
+      <div class="section-label">DIAGRAMM</div>
+      <div id="chart-types"></div>
+      <div id="type-hint" class="muted side-note"></div>
+
+      <div class="section-label">EINSTELLUNGEN</div>
+      <div id="settings">
+        <label class="field" id="f-x"><span class="field-label">X-Achse</span><select id="sel-x"></select></label>
+        <label class="field" id="f-y"><span class="field-label" id="lbl-y">Y-Achse</span><select id="sel-y"></select></label>
+        <label class="field" id="f-value"><span class="field-label">Wert</span><select id="sel-value"></select></label>
+        <label class="field" id="f-agg"><span class="field-label">zusammengefasst als</span><select id="sel-agg"></select></label>
+        <label class="field" id="f-cat"><span class="field-label" id="lbl-cat">Kategorie</span><select id="sel-cat"></select></label>
+        <label class="field" id="f-width"><span class="field-label">Klassenbreite</span>
+          <input id="inp-width" type="text" inputmode="decimal" placeholder="automatisch" autocomplete="off"></label>
+        <label class="check" id="f-rel"><input type="checkbox" id="chk-rel"> relative Häufigkeit</label>
+        <label class="check" id="f-reg" title="Lineare Regression (Methode der kleinsten Quadrate) mit Geradengleichung und Bestimmtheitsmaß R²"><input type="checkbox" id="chk-reg"> Ausgleichsgerade</label>
+        <label class="check" id="f-out" title="Antennen höchstens 1,5 Quartilsabstände lang, weiter entfernte Werte als Kreise – sonst reichen die Antennen bis Minimum/Maximum"><input type="checkbox" id="chk-out"> Ausreißer (1,5·IQR)</label>
+        <label class="check" id="f-boxlabel" title="Minimum, Quartile, Median, Maximum und Mittelwert x̄ (◆) direkt am Boxplot anzeigen"><input type="checkbox" id="chk-boxlabel"> Werte beschriften</label>
+      </div>
+    </div>
+    <button id="btn-help-side" class="btn-help-side" type="button">Hilfe &amp; Bedienung</button>
+  </aside>
+  <div id="sidebar-overlay"></div>
+
+  <!-- ═══════ MAIN ═══════ -->
+  <main id="main">
+    <div id="topbar">
+      <button id="sidebar-toggle" title="Einstellungen" type="button">☰</button>
+      <span id="breadcrumb">Streudiagramm</span>
+
+      <nav id="menubar">
+        <button id="btn-open"    class="btn-menu" type="button">CSV öffnen</button>
+        <button id="btn-example" class="btn-menu" type="button">Beispieldaten</button>
+        <button id="btn-png"     class="btn-menu" type="button" title="Diagramm als Bild speichern">PNG export</button>
+        <button id="btn-svg"     class="btn-menu" type="button" title="Diagramm als Vektorgrafik speichern">SVG export</button>
+        <button id="btn-code"    class="btn-menu btn-accent" type="button" title="Zeigt ein Python-Programm (csv + matplotlib), das genau dieses Diagramm zeichnet">Als Python-Code</button>
+        <button id="btn-desktop" class="btn-menu" type="button">Desktop-Version</button>
+      </nav>
+      <div id="menu-overlay"></div>
+
+      <button id="menu-toggle" title="Menü" type="button">⋮</button>
+      <span id="status">Bereit</span>
+    </div>
+
+    <div id="work">
+      <div id="chart-pane">
+        <div id="chart-box"><svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      </div>
+      <div id="split-handle" title="Ziehen, um die Aufteilung zu ändern"></div>
+      <div id="tabs-pane">
+        <div id="tabbar" role="tablist">
+          <button class="tab active" data-tab="table" type="button">Tabelle</button>
+          <button class="tab" data-tab="stats" type="button">Kennwerte</button>
+          <button class="tab" data-tab="freq" type="button">Häufigkeiten</button>
+          <button class="tab" data-tab="tests" type="button">Statistik-Tests</button>
+          <span class="tab-spacer"></span>
+          <button id="btn-copy-table" class="btn-small" type="button" title="Tabelle tabulatorgetrennt kopieren – z. B. für eine Tabellenkalkulation">Tabelle kopieren</button>
+        </div>
+        <div class="tab-page active" id="page-table"><div class="table-wrap"><table id="tbl-data" class="grid"></table></div></div>
+        <div class="tab-page" id="page-stats"><div class="caption" id="cap-stats"></div><div class="table-wrap"><table id="tbl-stats" class="grid"></table></div></div>
+        <div class="tab-page" id="page-freq"><div class="caption" id="cap-freq"></div><div class="table-wrap"><table id="tbl-freq" class="grid"></table></div></div>
+        <div class="tab-page" id="page-tests">
+          <div class="test-row">
+            <label>Test: <select id="t-test"></select></label>
+            <label>H₁: <select id="t-alt"></select></label>
+            <label title="Signifikanzniveau (Irrtumswahrscheinlichkeit 1. Art)">α: <input id="t-alpha" type="text" inputmode="decimal" value="0,05" size="5"></label>
+          </div>
+          <div class="test-row" id="t-page-binom">
+            <label>Spalte: <select id="b-col"></select></label>
+            <label>Treffer: <select id="b-hit"></select></label>
+            <label>n: <input id="b-n" type="number" min="1" step="1" value="100"></label>
+            <label>k: <input id="b-k" type="number" min="0" step="1" value="50"></label>
+            <label>p₀: <input id="b-p0" type="text" inputmode="decimal" value="0,5" size="5"></label>
+          </div>
+          <div class="test-row" id="t-page-t1">
+            <label>Variable: <select id="t1-col"></select></label>
+            <label>μ₀: <input id="t1-mu0" type="text" inputmode="decimal" value="0" size="7"></label>
+          </div>
+          <div class="test-row" id="t-page-t2">
+            <label>Art: <select id="t2-kind"></select></label>
+            <label id="t2-val-box">Variable: <select id="t2-val"></select></label>
+            <label id="t2-grp-box">Gruppen: <select id="t2-grp"></select></label>
+            <label><span id="t2-a-lbl">Gruppe A:</span> <select id="t2-a"></select></label>
+            <label><span id="t2-b-lbl">Gruppe B:</span> <select id="t2-b"></select></label>
+          </div>
+          <div id="t-result"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div><!-- #app -->
+
+<input type="file" id="file-input" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
+
+<!-- ═══════ HINWEIS ═══════ -->
+<div id="modal" class="overlay">
+  <div id="modal-box" class="dialog">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div class="dialog-buttons"><button id="modal-close" class="btn-primary" type="button">OK</button></div>
+  </div>
+</div>
+
+<!-- ═══════ PYTHON-CODE ═══════ -->
+<div id="code-modal" class="overlay">
+  <div id="code-box" class="dialog dialog-wide">
+    <h2 id="code-title">Python-Code</h2>
+    <p class="dialog-hint">Dieses Programm zeichnet das gleiche Diagramm mit matplotlib. Es liest die
+      CSV-Datei Zeile für Zeile ein – probiere aus, Spalten, Farben oder Beschriftungen zu ändern!</p>
+    <pre id="code-view"></pre>
+    <div class="dialog-buttons">
+      <button id="code-to-tab" class="btn-primary" type="button">In neuen Editor-Tab</button>
+      <button id="code-copy" class="btn-secondary" type="button">Kopieren</button>
+      <button id="code-save" class="btn-secondary" type="button">Als .py speichern</button>
+      <button id="code-close" class="btn-secondary" type="button">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ HILFE ═══════ -->
+<div id="help-modal" class="overlay">
+  <div id="help-box" role="dialog" aria-labelledby="help-title">
+    <div id="help-head">
+      <h2 id="help-title">Hilfe &amp; Bedienung</h2>
+      <button id="help-close" title="Schließen (Esc)" type="button">✕</button>
+    </div>
+    <div id="help-body">
+      <section>
+        <h3>Daten laden</h3>
+        <ul>
+          <li><b>CSV öffnen</b> lädt eine CSV-Datei, z. B. eine Messreihe aus dem Serial Plotter oder eine Umfrage. Datei auch einfach auf das Fenster ziehen. Trennzeichen <code>;</code>, <code>,</code> oder Tabulator und deutsches Dezimalkomma werden automatisch erkannt.</li>
+          <li>Die erste Zeile mit Spaltennamen wird erkannt; fehlt sie, heißen die Spalten „Spalte 1“, „Spalte 2“ …</li>
+          <li><b>Beispieldaten</b> lädt eine kleine Klassenumfrage zum Ausprobieren.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Diagramm wählen</h3>
+        <ul>
+          <li>Links einen <b>Diagrammtyp</b> antippen, darunter die Spalten einstellen.</li>
+          <li><b>Kategorie</b>: eine Spalte mit Gruppen (z. B. Klasse) färbt Punkte ein bzw. bildet je Gruppe eine Säule, ein Kreisstück oder einen Boxplot.</li>
+          <li>Streudiagramm: <b>Ausgleichsgerade</b> mit Gleichung und R². Boxplot: <b>Ausreißer</b>-Regel und <b>Werte beschriften</b>. Histogramm: <b>Klassenbreite</b> und relative Häufigkeit.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Auswerten</h3>
+        <ul>
+          <li><b>Tabelle</b>: die Rohdaten. <b>Kennwerte</b>: Median, Quartile, Mittelwert, Standardabweichung … (je Gruppe). <b>Häufigkeiten</b>: absolute, relative und kumulierte Häufigkeit.</li>
+          <li><b>Statistik-Tests</b>: Signifikanztest (Binomialtest), t-Test für eine und zwei Stichproben mit p-Wert, Konfidenzintervall und Entscheidung.</li>
+          <li><b>Tabelle kopieren</b> legt die gerade sichtbare Tabelle tabulatorgetrennt in die Zwischenablage – zum Einfügen in eine Tabellenkalkulation.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Weiterverwenden</h3>
+        <ul>
+          <li><b>PNG export</b> / <b>SVG export</b> speichern das Diagramm als Bild (z. B. fürs Protokoll).</li>
+          <li><b>Als Python-Code</b> zeigt ein Programm, das dasselbe Diagramm mit matplotlib zeichnet – zum Ausprobieren und Verändern.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Rechenregeln</h3>
+        <ul>
+          <li>Quartile wie im Schulbuch: Median der unteren bzw. oberen Hälfte, bei ungeradem n ohne den Median.</li>
+          <li>σ teilt durch n, s (wie „sx“ am Taschenrechner) durch n − 1.</li>
+          <li>Histogrammklassen sind halboffen [a; b), die letzte Klasse schließt das Maximum ein.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ DOWNLOAD ═══════ -->
+<div id="download-modal" class="overlay">
+  <div id="download-box" class="dialog">
+    <h2>StatPlot für den Desktop</h2>
+    <p id="download-intro">
+      Die Desktop-Version läuft ohne Internet in einem eigenen Fenster und
+      speichert Diagramme direkt auf dem Rechner. Funktionsumfang und
+      Bedienung sind identisch zur Web-Version.
+    </p>
+    <div id="download-version"></div>
+    <div id="download-list"></div>
+    <p id="download-note">
+      macOS: Beim ersten Start Rechtsklick auf die App → „Öffnen“, da die App
+      nicht bei Apple notarisiert ist.
+    </p>
+    <div class="dialog-buttons"><button id="download-close" class="btn-primary" type="button">Schließen</button></div>
+  </div>
+</div>
+
+<div id="drop-hint">CSV-Datei hier ablegen</div>
+
+<script src="stats.js?v=1"></script>
+<script src="statplot.js?v=1"></script>
+</body>
+</html>

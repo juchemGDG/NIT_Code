@@ -30,22 +30,6 @@ _PATHS: dict[str, str] = {
                 '<path d="M10 7h4a3 3 0 0 1 3 3v4"/><path d="M15.5 12.5L17 14l1.5-1.5"/>',
     "stats":    '<path d="M4 4v16h16"/><rect x="7" y="11" width="3" height="6" rx=".5"/>'
                 '<rect x="12" y="7" width="3" height="10" rx=".5"/><rect x="17" y="13" width="3" height="4" rx=".5"/>',
-    # Datenauswertung: Diagrammtypen + Aktionen
-    "chart_scatter": '<path d="M4 4v16h16"/><circle cx="8.5" cy="15" r="1.4"/><circle cx="11.5" cy="10.5" r="1.4"/>'
-                     '<circle cx="15" cy="13" r="1.4"/><circle cx="18" cy="7" r="1.4"/>',
-    "chart_line":    '<path d="M4 4v16h16"/><path d="M7 16l4-5 3 2.5 5-6.5"/>',
-    "chart_column":  '<path d="M4 4v16h16"/><rect x="7" y="11" width="3" height="6" rx=".5"/>'
-                     '<rect x="12" y="7" width="3" height="10" rx=".5"/><rect x="17" y="13" width="3" height="4" rx=".5"/>',
-    "chart_bar":     '<path d="M4 4v16h16"/><rect x="7" y="6" width="8" height="3" rx=".5"/>'
-                     '<rect x="7" y="11" width="12" height="3" rx=".5"/><rect x="7" y="16" width="5" height="1" rx=".5"/>',
-    "chart_pie":     '<path d="M11 4a8 8 0 1 0 8 8h-8z"/><path d="M14 2.5a8 8 0 0 1 7 7h-7z"/>',
-    "chart_hist":    '<path d="M3 20h18"/><path d="M5 20v-5h4v5M9 20V8h4v12M13 20v-9h4v9M17 20v-3h3v3"/>',
-    "chart_box":     '<path d="M12 3v4M12 17v4M9 3h6M9 21h6"/><rect x="7" y="7" width="10" height="10" rx="1"/>'
-                     '<path d="M7 12h10"/>',
-    "image":    '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/>'
-                '<path d="M21 16l-5-5-8 8"/>',
-    "chevron":  '<path d="M6 9l6 6 6-6"/>',
-    "code":     '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
     "help":'<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.2 1-1.2 1.8"/><path d="M12 16.8v.2"/>',
     "settings": '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3'
                 'M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',

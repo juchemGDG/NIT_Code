@@ -1,6 +1,6 @@
 # Plan: Datenauswertung (CSV) – Erweiterung des CSV-Streudiagramms
 
-Stand: 2026-10-06 · Branch: `feature_sj/layout` · Ausgangsversion 1.10.0-beta.8, Stufe 1 in 1.10.0-beta.9
+Stand: 2026-10-06 · Ausgangsversion 1.10.0-beta.8, Stufe 1 in 1.10.0-beta.9, als 1.10.1 released; seit 1.11.0-beta.1 ausgelagert nach StatPlot (siehe unten)
 
 ## Ziel
 
@@ -131,19 +131,44 @@ auf Windows/macOS im echten Fenster.
 - Klapp-Pfeile werden aus `icons.py` („chevron“) als PNG ins Temp-Verzeichnis
   gerendert, weil Qt-Stylesheets eine Bilddatei brauchen.
 
+## Umzug nach StatPlot (1.11.0-beta.1)
+
+Die Datenauswertung ist jetzt eine eigene Web-App:
+[StatPlot](https://github.com/juchemGDG/StatPlot) – Web-Version (z. B. auf dem
+iPad), Desktop-Version (pywebview) und eingebettet in NIT_Code, wie PAP-/IBD-Editor.
+
+- Rechenkern `stats.js` ist eine 1:1-Portierung von `csv_stats.py`,
+  `stat_tests.py`, `csv_codegen.py` und dem CSV-Einlesen (Stand v1.10.1).
+  StatPlots `tests/test_stats.js` prüft ihn gegen die Python-Ergebnisse
+  (331 Fälle, Python-Code zeichengenau). Beim CSV-Einlesen ist StatPlot in zwei
+  Fällen besser als `csv.Sniffer` (Dezimalkomma ohne Kopfzeile, Tab-Dateien).
+- NIT_Code liefert eine Kopie unter `nit_code/assets/statplot` mit und zeigt sie
+  **offline** über einen lokalen Server auf 127.0.0.1 im iframe
+  (`nit_code/statplot_window.py`, Unterklasse von `PapEditorWindow`).
+  Abgleich: `bash release/scripts/sync_statplot.sh ../StatPlot`, Stand steht in
+  `nit_code/assets/statplot/VERSION`.
+- Embed-Protokoll wie PAP/IBD (`source/target: 'statplot'`) plus Schalter in
+  `load`: `open` (Dateidialog im Sketchbook), `code` (neuer Editor-Tab),
+  `clipboard` (Kopieren über Qt), `nit` (Hinweise im Python-Code).
+  Die gemeinsame Host-Seite in `pap_editor.py` kennt dafür `_LOAD`, `_send()`
+  und `_on_embed_event()`.
+- Entfallen: `csv_plot.py`, `stat_tests.py`, `stat_tests_panel.py`,
+  `csv_codegen.py`, `mint_style.py`, die Diagramm-Symbole in `icons.py`.
+  `csv_stats.py` enthält nur noch die Ausgleichsgerade für den Serial Plotter.
+- Neu gegenüber der Qt-Version: SVG-Export, Beispieldaten, Datei per
+  Drag & Drop, Excel-CSV (Windows-1252), Vorauswahl ohne Nummerierungsspalten
+  auch bei X/Y.
+
 ## Dateien
 
 | Datei | Rolle |
 |---|---|
-| `nit_code/csv_stats.py` | Qt-freie Statistik: Kennwerte, Quartile, Klassen, Häufigkeiten, Aggregation |
-| `nit_code/csv_plot.py` | Fenster, CSV-Einlesen, Canvas je Diagrammtyp, Code-Dialog |
-| `nit_code/csv_codegen.py` | Qt-freier Generator für den Python-Code (csv + matplotlib) |
-| `nit_code/serial_plot.py` | Ausgleichsgerade im X-Y-Modus |
-| `nit_code/stat_tests.py` | Qt-freie Tests: Binomialtest, t-Tests, t-Verteilung |
-| `nit_code/stat_tests_panel.py` | Reiter „Statistik-Tests“ |
-| `nit_code/mint_style.py` | Palette + Stylesheets im PAP-/IBD-Look |
-| `nit_code/icons.py` | Symbole der Diagrammtypen, Chevron |
+| `nit_code/statplot_window.py` | Fenster, lokaler Server, Dateidialog, Code → Editor-Tab |
+| `nit_code/pap_editor.py` | gemeinsame Host-Seite (iframe, postMessage, PNG-Rasterung) |
+| `nit_code/assets/statplot/` | mitgelieferte StatPlot-Web-App (nicht von Hand ändern) |
+| `release/scripts/sync_statplot.sh` | übernimmt StatPlot aus dessen Repository |
+| `nit_code/csv_stats.py` | Ausgleichsgerade für den Serial Plotter (X-Y-Modus) |
 | `release/requirements-runtime.txt` | matplotlib für die Schüler-Runtime |
-| `nit_code/main_window.py` | Menüeintrag `_open_csv_plot` |
+| `nit_code/main_window.py` | `_open_csv_plot` |
 | `README.md`, `nit_code/assets/hilfe/Kurzanleitung.md` | Doku |
 | `nit_code/config.py` | `APP_VERSION` |

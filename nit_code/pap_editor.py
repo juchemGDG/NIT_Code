@@ -25,7 +25,11 @@ Zwei Dinge sind dabei wichtig:
   würde alle Pfeilspitzen des Ablaufplans verschlucken.
 
 Der IBD-Editor spricht dasselbe Protokoll mit source/target 'ibd-editor'
-(Unterklasse IbdEditorWindow).
+(Unterklasse IbdEditorWindow). Die Datenauswertung (StatPlot, siehe
+statplot_window.py) nutzt dieselbe Host-Seite mit zusätzlichen Nachrichten:
+Die Schalter der ersten load-Nachricht kommen aus ``_LOAD``, weitere
+Nachrichten an die Seite schickt ``_send()``, und Ereignisse wie 'open',
+'code' oder 'copy' landen in ``_on_embed_event()``.
 
 Das fertige PNG holt die Python-Seite per runJavaScript() ab (kurzes Polling,
 solange das Fenster offen ist) und legt es in die Zwischenablage.
@@ -80,14 +84,21 @@ _HOST_HTML = r"""<!DOCTYPE html>
 
   // Puffer für die Python-Seite; __nitPapTake() holt ihn ab und leert ihn.
   var out = null;
-  function reset() { out = { ready: false, png: null, diagram: null, download: null, error: null, exit: false }; }
+  function reset() { out = { ready: false, png: null, diagram: null, download: null, error: null, exit: false, events: [] }; }
   reset();
 
   window.__nitEmbedTake = function () {
     var o = out;
-    if (!o.ready && !o.png && !o.download && !o.error && !o.exit) return null;
+    if (!o.ready && !o.png && !o.download && !o.error && !o.exit && !o.events.length) return null;
     reset();
     return JSON.stringify(o);
+  };
+
+  // Weitere Nachrichten der Python-Seite an die eingebettete Seite
+  window.__nitEmbedSend = function (msg) {
+    var m = { target: '__SOURCE__' };
+    for (var k in msg) m[k] = msg[k];
+    frame.contentWindow.postMessage(m, ORIGIN);
   };
 
   function svgToPng(svg) {
@@ -127,11 +138,10 @@ _HOST_HTML = r"""<!DOCTYPE html>
     if (m.event === 'ready') {
       // Pflicht-Handshake: erst dadurch kennt der Editor unsere Origin und
       // kann das Diagramm später überhaupt zurückschicken.
-      frame.contentWindow.postMessage(
-        { target: '__SOURCE__', action: 'load', diagram: null, title: 'NIT_Code',
-          downloads: true },
-        ORIGIN
-      );
+      var load = __LOAD__;
+      load.target = '__SOURCE__';
+      load.action = 'load';
+      frame.contentWindow.postMessage(load, ORIGIN);
       out.ready = true;
     } else if (m.event === 'save') {
       pendingDiagram = (m.diagram === undefined) ? null : m.diagram;
@@ -153,6 +163,10 @@ _HOST_HTML = r"""<!DOCTYPE html>
       })(m.name || 'diagramm', m.mime || '');
     } else if (m.event === 'exit') {
       out.exit = true;
+    } else if (m.event === 'open' || m.event === 'code' || m.event === 'copy') {
+      // Nur Text-Felder weiterreichen (JSON-tauglich)
+      out.events.push({ event: m.event, code: String(m.code || ''), title: String(m.title || ''),
+                        text: String(m.text || '') });
     }
   });
 })();
@@ -163,12 +177,16 @@ _HOST_HTML = r"""<!DOCTYPE html>
 
 
 def _host_html(url: str = PAP_EDITOR_URL, origin: str = PAP_EDITOR_ORIGIN,
-               source: str = "pap-editor", title: str = "PAP-Editor") -> str:
+               source: str = "pap-editor", title: str = "PAP-Editor",
+               load: dict | None = None) -> str:
+    if load is None:
+        load = {"diagram": None, "title": "NIT_Code", "downloads": True}
     return (_HOST_HTML
             .replace("__PAP_URL__", url)
             .replace("__PAP_ORIGIN__", origin)
             .replace("__SOURCE__", source)
             .replace("__TITLE__", title)
+            .replace("__LOAD__", json.dumps(load))
             .replace("__PNG_SCALE__", str(_PNG_SCALE)))
 
 
@@ -185,6 +203,9 @@ class PapEditorWindow(QMainWindow):
     _PNG_NAME = "diagramm.png"
     _SAVE_TITLE = "Ablaufplan speichern"
     _MIME = PAP_MIME                  # None = keine Diagrammdaten in die Zwischenablage
+    # Inhalt der ersten load-Nachricht (Fähigkeiten des Hosts)
+    _LOAD = {"diagram": None, "title": "NIT_Code", "downloads": True}
+    _NO_CONNECTION = "Internetverbindung/Proxy prüfen."
 
     _HINT = ("„In Projekt übernehmen“ legt den Plan in die Zwischenablage – "
              "für Seiten, die kein Einfügen erlauben (z. B. AIS-Chat), danach "
@@ -277,7 +298,7 @@ class PapEditorWindow(QMainWindow):
         """Host-Seite laden – Base-URL = Editor-Origin, siehe Modul-Docstring."""
         self._connected = False
         self._view.setHtml(
-            _host_html(self._URL, self._ORIGIN, self._SOURCE, self._NAME),
+            _host_html(self._URL, self._ORIGIN, self._SOURCE, self._NAME, self._LOAD),
             QUrl(self._ORIGIN + "/"))
         self._set_status("Editor wird geladen …")
         # Kommt nach dieser Zeit kein 'ready', steckt meist Netz/Proxy dahinter.
@@ -291,7 +312,7 @@ class PapEditorWindow(QMainWindow):
         if self._connected or self._view is None or not self.isVisible():
             return
         self._set_status(
-            f"Keine Verbindung zu {self._HOST} – Internetverbindung/Proxy prüfen.",
+            f"Keine Verbindung zu {self._HOST} – {self._NO_CONNECTION}",
             kind="error",
         )
 
@@ -361,6 +382,10 @@ class PapEditorWindow(QMainWindow):
         if data.get("ready"):
             self._connected = True
             self._set_status(self._HINT)
+            self._on_ready()
+        for event in data.get("events") or []:
+            if isinstance(event, dict):
+                self._on_embed_event(event)
         if data.get("error"):
             self._set_status(str(data["error"]), kind="error")
         if data.get("png"):
@@ -369,6 +394,18 @@ class PapEditorWindow(QMainWindow):
             self._save_download(data["download"])
         if data.get("exit"):
             self.close()
+
+    def _on_ready(self):
+        """Die eingebettete Seite ist verbunden (Unterklassen: Daten nachschieben)."""
+
+    def _on_embed_event(self, event: dict):
+        """Weitere Ereignisse der Seite ('open', 'code', 'copy') – siehe Unterklassen."""
+
+    def _send(self, msg: dict):
+        """Nachricht an die eingebettete Seite (target wird ergänzt)."""
+        if self._view is not None:
+            self._view.page().runJavaScript(
+                f"window.__nitEmbedSend && window.__nitEmbedSend({json.dumps(msg)})")
 
     def _copy_png(self, data_url: str, diagram=None):
         prefix = "data:image/png;base64,"
@@ -462,6 +499,7 @@ class PapEditorWindow(QMainWindow):
             ".jpg": "JPEG-Bild",
             ".jpeg": "JPEG-Bild",
             ".svg": "SVG-Grafik",
+            ".py": "Python-Programm",
         }.get(suffix, "Datei")
         pattern = f"{beschreibung} (*{suffix});;Alle Dateien (*)" if suffix else "Alle Dateien (*)"
 
