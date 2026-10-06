@@ -7,3 +7,6 @@
 # Lehrkräfte jederzeit über den Pip-Manager der IDE nachinstallieren.
 pyserial>=3.5
 requests>=2.31.0
+# Datenauswertung: „Als Python-Code …“ erzeugt Programme mit matplotlib –
+# mitgeliefert, weil pip in Schulnetzen oft am Proxy scheitert.
+matplotlib>=3.8

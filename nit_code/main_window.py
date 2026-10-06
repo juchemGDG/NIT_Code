@@ -957,7 +957,7 @@ class MainWindow(QMainWindow):
         self._act_plotter.setToolTip("Zahlenausgabe eines laufenden Programms live als Graph anzeigen")
         self._act_plotter.toggled.connect(self._toggle_plotter)
         m_viz.addAction(self._act_plotter)
-        self._add_action(m_viz, "📊  CSV-Streudiagramm …", self._open_csv_plot)
+        self._add_action(m_viz, "📊  Datenauswertung (CSV) …", self._open_csv_plot)
 
         # ── Python ──
         self._m_python = mb.addMenu("Python")
@@ -1656,15 +1656,23 @@ class MainWindow(QMainWindow):
         win.activateWindow()
 
     def _open_csv_plot(self):
-        """Öffnet das CSV-Streudiagramm und lässt eine CSV-Datei auswählen."""
+        """Öffnet die Datenauswertung (CSV) und lässt eine CSV-Datei auswählen."""
         win = getattr(self, "_csv_window", None)
         if win is None:
             win = CsvPlotWindow(self)
+            win.set_code_sink(self._open_code_in_new_tab)
             self._csv_window = win
         win.show()
         win.raise_()
         win.activateWindow()
         win._choose_file()
+
+    def _open_code_in_new_tab(self, code: str):
+        """Erzeugten Code (z. B. aus der Datenauswertung) in einem neuen Tab öffnen."""
+        tab = self._new_tab()
+        tab.editor.set_text(code)
+        self.raise_()
+        self.activateWindow()
 
     def _run_predict_mode(self):
         """Vorhersage-Modus: erst Ausgabe vorhersagen, dann Programm starten."""

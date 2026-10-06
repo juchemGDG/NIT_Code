@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import THEME
+from .csv_stats import linear_regression, regression_text
 
 # Feste, gut unterscheidbare Farbpalette für die Kurven.
 _SERIES_COLORS = [
@@ -267,11 +268,31 @@ class _PlotCanvas(QWidget):
                 # Einzelpunkte sichtbar machen, solange noch keine Linie entsteht.
                 p.drawPoint(int(x), int(y))
                 prev = (x, y)
+
+        # Optional: Ausgleichsgerade je Kurve (gestrichelt) + Gleichung in der Legende
+        equations = {}
+        if plot._regression:
+            for ci, name in enumerate(series):
+                pts = curves.get(name)
+                reg = linear_regression([x for x, _ in pts], [y for _, y in pts]) if pts else None
+                if reg is None:
+                    continue
+                m, b, r2 = reg
+                equations[name] = regression_text(m, b, r2)
+                pen = QPen(QColor(_SERIES_COLORS[ci % len(_SERIES_COLORS)]), 1)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                p.setPen(pen)
+                x0, x1 = min(x for x, _ in pts), max(x for x, _ in pts)
+                p.drawLine(int(left + (x0 - xL) / xspan * pw),
+                           int(top + ph - (m * x0 + b - ymin) / yspan * ph),
+                           int(left + (x1 - xL) / xspan * pw),
+                           int(top + ph - (m * x1 + b - ymin) / yspan * ph))
         p.setClipping(False)
 
         self._draw_legend(p, left, top, [
             (ci, f"{name} → X ({_fmt(s.values[-1])})" if name == xs_key
-                 else f"{name} = {_fmt(s.values[-1])}")
+                 else f"{name} = {_fmt(s.values[-1])}"
+                 + (f"   {equations[name]}" if name in equations else ""))
             for ci, (name, s) in enumerate(series.items()) if s.values
         ])
 
@@ -329,6 +350,7 @@ class SerialPlot(QWidget):
         self._x_min = DEFAULT_CONFIG["x_min"]
         self._x_max = DEFAULT_CONFIG["x_max"]
         self._xy_key: str | None = None   # Kurve, die im X-Y-Modus die X-Werte liefert
+        self._regression = False          # X-Y-Modus: Ausgleichsgerade einzeichnen
         self._build_ui()
 
         self._repaint_timer = QTimer(self)
@@ -392,6 +414,11 @@ class SerialPlot(QWidget):
         self._xy_combo = QComboBox()
         self._setup_combo(self._xy_combo)
         bar.addWidget(self._xy_combo)
+        self._reg_chk = QCheckBox("Ausgleichsgerade")
+        self._reg_chk.setToolTip("Lineare Regression je Kurve mit Gleichung und R² "
+                                 "(z. B. Widerstand aus der U-I-Kennlinie)")
+        self._reg_chk.toggled.connect(self._on_regression_toggled)
+        bar.addWidget(self._reg_chk)
 
         bar.addStretch()
         root.addLayout(bar)
@@ -477,6 +504,7 @@ class SerialPlot(QWidget):
         xy = self._x_mode == "xy"
         self._xy_lbl.setVisible(xy)
         self._xy_combo.setVisible(xy)
+        self._reg_chk.setVisible(xy)
 
     def _on_axis_controls_changed(self, *_):
         """Live-Übersteuerung über die Plotter-Leiste (nicht persistent)."""
@@ -513,6 +541,10 @@ class SerialPlot(QWidget):
         self._xy_combo.blockSignals(False)
 
     # ── Steuerung ───────────────────────────────────────────────────────────
+    def _on_regression_toggled(self, on: bool):
+        self._regression = on
+        self._canvas.update()
+
     def _on_pause(self, paused: bool):
         self._paused = paused
 
@@ -596,5 +628,6 @@ class SerialPlot(QWidget):
         for lbl in (self._y_lbl, self._x_lbl, self._xy_lbl):
             lbl.setStyleSheet(lbl_style)
         self._pause_chk.setStyleSheet(lbl_style)
+        self._reg_chk.setStyleSheet(lbl_style)
         self.setStyleSheet(f"background:{THEME['terminal_bg']};")
         self._canvas.update()
