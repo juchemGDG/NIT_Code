@@ -53,7 +53,7 @@ from .ais_chat_panel import AisChatPanel
 from .coder_panel import CoderPanel
 from .worksheet_panel import WorksheetPanel
 from .help_dialog import HelpDialog, guide_path
-from .pap_editor import PapEditorWindow
+from .pap_editor import IbdEditorWindow, PapEditorWindow
 from .settings_dialog import SettingsDialog
 from .terminal_panel import ClaudeTerminalPanel, find_claude_binary, pty_available
 from .tutor_panel import TutorPanel
@@ -1131,6 +1131,7 @@ class MainWindow(QMainWindow):
         add("plotter", "plotter", "Serial Plotter ein-/ausblenden",
             lambda: self._act_plotter.setChecked(not self._act_plotter.isChecked()), True)
         add("pap", "flow", "PAP-Editor – Programmablaufplan zeichnen", self._open_pap_editor)
+        add("ibd", "ibd", "IBD-Editor – Informationsfluss darstellen", self._open_ibd_editor)
         lay.addStretch(1)
         add("help", "help", "Kurzanleitung (F1)", self._show_quickstart)
         add("settings", "settings", "Einstellungen (Strg+,)", self._open_settings)
@@ -1627,6 +1628,17 @@ class MainWindow(QMainWindow):
             # beim Speichern automatisch greift.
             win = PapEditorWindow(self, sketchbook_dir=lambda: self._settings_sketchbook)
             self._pap_window = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    # ── IBD-Editor ────────────────────────────────────────────────────────
+    def _open_ibd_editor(self):
+        """Öffnet den IBD-Editor (Informationsfluss) im Extrafenster – wie der PAP-Editor."""
+        win = getattr(self, "_ibd_window", None)
+        if win is None:
+            win = IbdEditorWindow(self, sketchbook_dir=lambda: self._settings_sketchbook)
+            self._ibd_window = win
         win.show()
         win.raise_()
         win.activateWindow()
@@ -3690,7 +3702,7 @@ class MainWindow(QMainWindow):
         self._aischat_panel.refresh_theme()
         self._claude_terminal_panel.refresh_theme()
         self._worksheet_panel.refresh_theme()
-        for attr in ("_parsons_window", "_csv_window", "_pap_window"):
+        for attr in ("_parsons_window", "_csv_window", "_pap_window", "_ibd_window"):
             win = getattr(self, attr, None)
             if win is not None:
                 win.apply_theme()

@@ -274,7 +274,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.10.0-beta.7"
+APP_VERSION = "1.10.0-beta.8"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"
@@ -401,6 +401,10 @@ AIS_CHAT_URL = "https://app.ais-chat.schule"
 # targetOrigin der postMessage-Aufrufe benutzt.
 PAP_EDITOR_ORIGIN = "https://pap.mint-checker.de"
 PAP_EDITOR_URL = PAP_EDITOR_ORIGIN + "/?embed=1"
+
+# IBD-Editor (Informations-Blockdiagramm): gleiches Embed-Protokoll wie der PAP-Editor.
+IBD_EDITOR_ORIGIN = "https://ibd.mint-checker.de"
+IBD_EDITOR_URL = IBD_EDITOR_ORIGIN + "/?embed=1"
 
 
 def is_ollama_available() -> bool:

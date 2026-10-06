@@ -1,4 +1,4 @@
-"""PAP-Editor (Programmablaufplan) als Extrafenster – Ergebnis als PNG in die Zwischenablage.
+"""PAP-Editor (Programmablaufplan) und IBD-Editor (Informationsfluss) als Extrafenster – Ergebnis als PNG in die Zwischenablage.
 
 Gezeichnet wird auf pap.mint-checker.de. Die Seite kennt einen Embed-Modus
 (`?embed=1`), der sich aber nur einschaltet, wenn sie in einem iframe steckt
@@ -24,6 +24,9 @@ Zwei Dinge sind dabei wichtig:
   PNG), nicht mit QtSvg: dessen SVG-Tiny-Renderer kennt `<marker>` nicht und
   würde alle Pfeilspitzen des Ablaufplans verschlucken.
 
+Der IBD-Editor spricht dasselbe Protokoll mit source/target 'ibd-editor'
+(Unterklasse IbdEditorWindow).
+
 Das fertige PNG holt die Python-Seite per runJavaScript() ab (kurzes Polling,
 solange das Fenster offen ist) und legt es in die Zwischenablage.
 """
@@ -45,7 +48,9 @@ try:
 except Exception:
     HAS_WEBENGINE = False
 
-from .config import PAP_EDITOR_ORIGIN, PAP_EDITOR_URL, THEME
+from .config import (
+    IBD_EDITOR_ORIGIN, IBD_EDITOR_URL, PAP_EDITOR_ORIGIN, PAP_EDITOR_URL, THEME,
+)
 from .pap_import import PAP_MIME
 
 # Auflösung des erzeugten PNG (2× = scharf genug für Arbeitsblätter/Word)
@@ -58,19 +63,19 @@ _HOST_HTML = r"""<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>PAP-Editor</title>
+<title>__TITLE__</title>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #ffffff; }
   iframe { display: block; width: 100%; height: 100%; border: 0; }
 </style>
 </head>
 <body>
-<iframe id="pap" src="__PAP_URL__"></iframe>
+<iframe id="editor" src="__PAP_URL__"></iframe>
 <script>
 (function () {
   var ORIGIN = '__PAP_ORIGIN__';
   var SCALE  = __PNG_SCALE__;
-  var frame  = document.getElementById('pap');
+  var frame  = document.getElementById('editor');
   var pendingDiagram = null;   // Diagrammdaten des letzten „save“, wandern zusammen mit dem PNG zurück
 
   // Puffer für die Python-Seite; __nitPapTake() holt ihn ab und leert ihn.
@@ -78,7 +83,7 @@ _HOST_HTML = r"""<!DOCTYPE html>
   function reset() { out = { ready: false, png: null, diagram: null, download: null, error: null, exit: false }; }
   reset();
 
-  window.__nitPapTake = function () {
+  window.__nitEmbedTake = function () {
     var o = out;
     if (!o.ready && !o.png && !o.download && !o.error && !o.exit) return null;
     reset();
@@ -117,13 +122,13 @@ _HOST_HTML = r"""<!DOCTYPE html>
     // Origin-Vergleich und unabhängig davon, wie Qt die Origin serialisiert).
     if (!frame || e.source !== frame.contentWindow) return;
     var m = e.data;
-    if (!m || typeof m !== 'object' || m.source !== 'pap-editor') return;
+    if (!m || typeof m !== 'object' || m.source !== '__SOURCE__') return;
 
     if (m.event === 'ready') {
       // Pflicht-Handshake: erst dadurch kennt der Editor unsere Origin und
       // kann das Diagramm später überhaupt zurückschicken.
       frame.contentWindow.postMessage(
-        { target: 'pap-editor', action: 'load', diagram: null, title: 'NIT_Code',
+        { target: '__SOURCE__', action: 'load', diagram: null, title: 'NIT_Code',
           downloads: true },
         ORIGIN
       );
@@ -157,15 +162,29 @@ _HOST_HTML = r"""<!DOCTYPE html>
 """
 
 
-def _host_html() -> str:
+def _host_html(url: str = PAP_EDITOR_URL, origin: str = PAP_EDITOR_ORIGIN,
+               source: str = "pap-editor", title: str = "PAP-Editor") -> str:
     return (_HOST_HTML
-            .replace("__PAP_URL__", PAP_EDITOR_URL)
-            .replace("__PAP_ORIGIN__", PAP_EDITOR_ORIGIN)
+            .replace("__PAP_URL__", url)
+            .replace("__PAP_ORIGIN__", origin)
+            .replace("__SOURCE__", source)
+            .replace("__TITLE__", title)
             .replace("__PNG_SCALE__", str(_PNG_SCALE)))
 
 
 class PapEditorWindow(QMainWindow):
     """Eigenständiges Fenster: Programmablaufplan zeichnen, Ergebnis als PNG kopieren."""
+
+    # Pro Editor überschreibbar (siehe IbdEditorWindow)
+    _URL = PAP_EDITOR_URL
+    _ORIGIN = PAP_EDITOR_ORIGIN
+    _SOURCE = "pap-editor"            # source/target-Name im postMessage-Protokoll
+    _NAME = "PAP-Editor"
+    _WINDOW_TITLE = "NIT PAP-Editor"
+    _HOST = "pap.mint-checker.de"
+    _PNG_NAME = "diagramm.png"
+    _SAVE_TITLE = "Ablaufplan speichern"
+    _MIME = PAP_MIME                  # None = keine Diagrammdaten in die Zwischenablage
 
     _HINT = ("„In Projekt übernehmen“ legt den Plan in die Zwischenablage – "
              "für Seiten, die kein Einfügen erlauben (z. B. AIS-Chat), danach "
@@ -173,7 +192,7 @@ class PapEditorWindow(QMainWindow):
 
     def __init__(self, parent=None, sketchbook_dir=None):
         super().__init__(parent)
-        self.setWindowTitle("NIT PAP-Editor")
+        self.setWindowTitle(self._WINDOW_TITLE)
         self.resize(1100, 760)
         # Callable, damit ein spaeter in den Einstellungen geaenderter
         # Sketchbook-Ordner automatisch mitgenommen wird.
@@ -244,7 +263,7 @@ class PapEditorWindow(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout(w)
         lbl = QLabel(
-            "Der PAP-Editor ist nicht verfügbar.\n\n"
+            f"Der {self._NAME} ist nicht verfügbar.\n\n"
             "Er benötigt PyQt6-WebEngine:\n\n"
             "    pip install PyQt6-WebEngine"
         )
@@ -257,7 +276,9 @@ class PapEditorWindow(QMainWindow):
     def _load_host_page(self):
         """Host-Seite laden – Base-URL = Editor-Origin, siehe Modul-Docstring."""
         self._connected = False
-        self._view.setHtml(_host_html(), QUrl(PAP_EDITOR_ORIGIN + "/"))
+        self._view.setHtml(
+            _host_html(self._URL, self._ORIGIN, self._SOURCE, self._NAME),
+            QUrl(self._ORIGIN + "/"))
         self._set_status("Editor wird geladen …")
         # Kommt nach dieser Zeit kein 'ready', steckt meist Netz/Proxy dahinter.
         QTimer.singleShot(20000, self._check_connected)
@@ -270,7 +291,7 @@ class PapEditorWindow(QMainWindow):
         if self._connected or self._view is None or not self.isVisible():
             return
         self._set_status(
-            "Keine Verbindung zu pap.mint-checker.de – Internetverbindung/Proxy prüfen.",
+            f"Keine Verbindung zu {self._HOST} – Internetverbindung/Proxy prüfen.",
             kind="error",
         )
 
@@ -281,8 +302,8 @@ class PapEditorWindow(QMainWindow):
             self._reload()
             return
         QMessageBox.warning(
-            self, "PAP-Editor",
-            "Die Anzeige des PAP-Editors ist abgestürzt (Grafik-Problem).\n\n"
+            self, self._NAME,
+            f"Die Anzeige des {self._NAME} ist abgestürzt (Grafik-Problem).\n\n"
             "Unter Windows ist Software-Rendering bereits automatisch aktiv.\n"
             "Falls der Fehler weiter auftritt, NIT_Code neu starten.\n\n"
             "Optionaler Override:\n"
@@ -305,7 +326,7 @@ class PapEditorWindow(QMainWindow):
         # zwar das Schließen, geht aber beim nächsten Kopieren verloren.
         if self._last_png and not self._last_png_saved:
             antwort = QMessageBox.question(
-                self, "PAP-Editor",
+                self, self._NAME,
                 "Das übernommene Diagramm liegt bisher nur in der Zwischenablage.\n\n"
                 "Soll es zusätzlich als PNG-Datei gespeichert werden?",
                 QMessageBox.StandardButton.Save
@@ -327,7 +348,7 @@ class PapEditorWindow(QMainWindow):
         if self._view is None:
             return
         self._view.page().runJavaScript(
-            "window.__nitPapTake ? window.__nitPapTake() : null", self._on_result
+            "window.__nitEmbedTake ? window.__nitEmbedTake() : null", self._on_result
         )
 
     def _on_result(self, payload):
@@ -370,9 +391,9 @@ class PapEditorWindow(QMainWindow):
         mime.setData("image/png", QByteArray(raw))
         # Diagrammdaten mitgeben: Der Code-Generator liest daraus den Ablauf
         # verlustfrei, ohne das Bild erkennen zu müssen.
-        if diagram:
+        if diagram and self._MIME:
             payload = diagram if isinstance(diagram, str) else json.dumps(diagram, ensure_ascii=False)
-            mime.setData(PAP_MIME, QByteArray(payload.encode("utf-8")))
+            mime.setData(self._MIME, QByteArray(payload.encode("utf-8")))
         clipboard = QGuiApplication.clipboard()
         if clipboard is None:
             self._set_status("Auf die Zwischenablage konnte nicht zugegriffen werden.", kind="error")
@@ -383,8 +404,9 @@ class PapEditorWindow(QMainWindow):
         self._act_save_png.setEnabled(True)
         self._set_status(
             f"✓ Als PNG in der Zwischenablage ({img.width()}×{img.height()} px) – "
-            "mit Strg+V / Cmd+V einfügen oder „Bild speichern“. "
-            "Der Code-Generator kann den Ablauf direkt daraus importieren.",
+            "mit Strg+V / Cmd+V einfügen oder „Bild speichern“."
+            + (" Der Code-Generator kann den Ablauf direkt daraus importieren."
+               if self._MIME else ""),
             kind="success",
         )
 
@@ -426,7 +448,7 @@ class PapEditorWindow(QMainWindow):
         if not self._last_png:
             self._set_status("Es wurde noch kein Diagramm übernommen.", kind="error")
             return False
-        if self._write_file("diagramm.png", self._last_png):
+        if self._write_file(self._PNG_NAME, self._last_png):
             self._last_png_saved = True
             return True
         return False
@@ -444,7 +466,7 @@ class PapEditorWindow(QMainWindow):
         pattern = f"{beschreibung} (*{suffix});;Alle Dateien (*)" if suffix else "Alle Dateien (*)"
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Ablaufplan speichern", os.path.join(self._start_dir(), name), pattern
+            self, self._SAVE_TITLE, os.path.join(self._start_dir(), name), pattern
         )
         if not path:
             self._set_status("Speichern abgebrochen.")
@@ -475,3 +497,20 @@ class PapEditorWindow(QMainWindow):
     def apply_theme(self):
         """Theme-Wechsel aus den Einstellungen (die Editor-Seite selbst ist hell)."""
         self._style_status()
+
+
+class IbdEditorWindow(PapEditorWindow):
+    """Informations-Blockdiagramm (ibd.mint-checker.de) – gleiches Protokoll wie der PAP-Editor."""
+
+    _URL = IBD_EDITOR_URL
+    _ORIGIN = IBD_EDITOR_ORIGIN
+    _SOURCE = "ibd-editor"
+    _NAME = "IBD-Editor"
+    _WINDOW_TITLE = "NIT IBD-Editor"
+    _HOST = "ibd.mint-checker.de"
+    _PNG_NAME = "informationsfluss.png"
+    _SAVE_TITLE = "Informationsfluss speichern"
+    _MIME = None
+    _HINT = ("„In Projekt übernehmen“ legt das Diagramm in die Zwischenablage – "
+             "für Seiten, die kein Einfügen erlauben (z. B. AIS-Chat), danach "
+             "„Bild speichern“ benutzen.")
