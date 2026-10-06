@@ -1,6 +1,6 @@
 # Plan: Datenauswertung (CSV) – Erweiterung des CSV-Streudiagramms
 
-Stand: 2026-10-06 · Ausgangsversion 1.10.0-beta.8, Stufe 1 in 1.10.0-beta.9, als 1.10.1 released; seit 1.11.0-beta.1 ausgelagert nach StatPlot (siehe unten)
+Stand: 2026-10-06 · Ausgangsversion 1.10.0-beta.8, Stufe 1 in 1.10.0-beta.9, als 1.10.1 released; seit 1.10.2 ausgelagert nach StatPlot (siehe unten)
 
 ## Ziel
 
@@ -131,7 +131,7 @@ auf Windows/macOS im echten Fenster.
 - Klapp-Pfeile werden aus `icons.py` („chevron“) als PNG ins Temp-Verzeichnis
   gerendert, weil Qt-Stylesheets eine Bilddatei brauchen.
 
-## Umzug nach StatPlot (1.11.0-beta.1)
+## Umzug nach StatPlot (1.10.2)
 
 Die Datenauswertung ist jetzt eine eigene Web-App:
 [StatPlot](https://github.com/juchemGDG/StatPlot) – Web-Version (z. B. auf dem
