@@ -28,8 +28,8 @@ from collections import OrderedDict
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel,
+    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from .config import THEME
@@ -333,6 +333,36 @@ class _PlotCanvas(QWidget):
             ly += 16
 
 
+class _ToolbarScroll(QScrollArea):
+    """Horizontal scrollbare Werkzeugleiste ohne eigene Mindestbreite.
+
+    Sonst erzwingt die breite Plotter-Leiste (~850 px) zusammen mit Datei- und
+    KI-Panel eine Fensterbreite, die über den Bildschirmrand hinausgeht.
+    """
+
+    def __init__(self, inner: QWidget, parent=None):
+        super().__init__(parent)
+        self.setWidget(inner)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.horizontalScrollBar().rangeChanged.connect(lambda *_: self._fit_height())
+        self._fit_height()
+
+    def _fit_height(self):
+        h = self.widget().sizeHint().height()
+        if self.horizontalScrollBar().maximum() > 0:
+            h += self.horizontalScrollBar().sizeHint().height()
+        self.setFixedHeight(h)
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        hint.setWidth(0)
+        return hint
+
+
 class SerialPlot(QWidget):
     """Plotter-Panel: Steuerleiste (Leeren/Pause/Achsen) + Zeichenfläche."""
 
@@ -363,7 +393,8 @@ class SerialPlot(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        bar = QHBoxLayout()
+        bar_widget = QWidget()
+        bar = QHBoxLayout(bar_widget)
         bar.setContentsMargins(6, 4, 6, 4)
         bar.setSpacing(6)
 
@@ -421,7 +452,7 @@ class SerialPlot(QWidget):
         bar.addWidget(self._reg_chk)
 
         bar.addStretch()
-        root.addLayout(bar)
+        root.addWidget(_ToolbarScroll(bar_widget))
 
         self._canvas = _PlotCanvas(self)
         root.addWidget(self._canvas, 1)
