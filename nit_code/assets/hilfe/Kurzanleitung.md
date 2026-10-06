@@ -152,7 +152,7 @@ Einschalten: **Einstellungen** (`Strg+,`) → KI-Tutor → *Code-Generator*.
 | Funktion | Wo |
 |---|---|
 | **Programmablaufplan** zeichnen | Knopf **PAP-Editor** rechts oben |
-| **CSV-Daten** auswerten (Diagramme, Boxplot, Kennwerte, Signifikanz- und t-Tests) | *Visualisieren → Datenauswertung (CSV) …* |
+| **CSV-Daten** auswerten (Diagramme, Boxplot, Kennwerte, Signifikanz- und t-Tests) | Knopf **Datenauswertung** (Balken-Symbol) in der Seitenleiste oder *Visualisieren → Datenauswertung (CSV) …* |
 | **pip-Pakete** installieren | Menü *Python → Pakete installieren (pip) …* |
 | **Git** | Menü *Git* (klonen, commit, push, pull) |
 

@@ -156,7 +156,7 @@ class _PlotCanvas(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(), QColor(THEME["terminal_bg"]))
         if not self._win.headers:
-            self._center_text(p, "Bitte eine CSV-Datei öffnen.")
+            self._center_text(p, "Oben über „📂 CSV öffnen …“ eine CSV-Datei laden.")
             return
         draw = {
             SCATTER: self._draw_xy, LINE: self._draw_xy,
@@ -598,8 +598,9 @@ def _box_label_items(s):
 class CsvPlotWindow(QMainWindow):
     """Fenster: Tabelle/Kennwerte/Häufigkeiten (oben) + Diagramm (unten)."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, start_dir=None):
         super().__init__(parent)
+        self._start_dir = start_dir    # Callable → Startordner des Öffnen-Dialogs
         self.setWindowTitle("NIT Datenauswertung")
         self.resize(960, 760)
         self.headers: list[str] = []
@@ -1157,7 +1158,10 @@ class CsvPlotWindow(QMainWindow):
 
     # ── Dateien ───────────────────────────────────────────────────────────────
     def _choose_file(self):
-        start = str(Path(self._path).parent) if self._path else str(Path.home())
+        if self._path:
+            start = str(Path(self._path).parent)
+        else:
+            start = (self._start_dir() if self._start_dir else "") or str(Path.home())
         path, _ = QFileDialog.getOpenFileName(
             self, "CSV-Datei öffnen", start,
             "CSV-Dateien (*.csv *.tsv *.txt);;Alle Dateien (*)"

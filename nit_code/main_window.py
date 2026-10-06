@@ -1132,6 +1132,8 @@ class MainWindow(QMainWindow):
             lambda: self._act_plotter.setChecked(not self._act_plotter.isChecked()), True)
         add("pap", "flow", "PAP-Editor – Programmablaufplan zeichnen", self._open_pap_editor)
         add("ibd", "ibd", "IBD-Editor – Informationsfluss darstellen", self._open_ibd_editor)
+        add("stats", "stats", "Datenauswertung – CSV-Daten darstellen und statistisch testen",
+            self._open_csv_plot)
         lay.addStretch(1)
         add("help", "help", "Kurzanleitung (F1)", self._show_quickstart)
         add("settings", "settings", "Einstellungen (Strg+,)", self._open_settings)
@@ -1656,16 +1658,15 @@ class MainWindow(QMainWindow):
         win.activateWindow()
 
     def _open_csv_plot(self):
-        """Öffnet die Datenauswertung (CSV) und lässt eine CSV-Datei auswählen."""
+        """Öffnet die Datenauswertung (CSV); die Datei lädt man im Fenster selbst."""
         win = getattr(self, "_csv_window", None)
         if win is None:
-            win = CsvPlotWindow(self)
+            win = CsvPlotWindow(self, start_dir=lambda: self._settings_sketchbook)
             win.set_code_sink(self._open_code_in_new_tab)
             self._csv_window = win
         win.show()
         win.raise_()
         win.activateWindow()
-        win._choose_file()
 
     def _open_code_in_new_tab(self, code: str):
         """Erzeugten Code (z. B. aus der Datenauswertung) in einem neuen Tab öffnen."""

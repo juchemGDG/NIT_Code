@@ -28,6 +28,8 @@ _PATHS: dict[str, str] = {
                 '<path d="M12 10l5 4-5 4-5-4z"/><path d="M12 18v3"/>',
     "ibd":      '<rect x="3" y="4" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/>'
                 '<path d="M10 7h4a3 3 0 0 1 3 3v4"/><path d="M15.5 12.5L17 14l1.5-1.5"/>',
+    "stats":    '<path d="M4 4v16h16"/><rect x="7" y="11" width="3" height="6" rx=".5"/>'
+                '<rect x="12" y="7" width="3" height="10" rx=".5"/><rect x="17" y="13" width="3" height="4" rx=".5"/>',
     "help":     '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.2 1-1.2 1.8"/><path d="M12 16.8v.2"/>',
     "settings": '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3'
                 'M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',
