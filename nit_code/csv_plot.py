@@ -17,18 +17,20 @@ import csv
 import math
 from pathlib import Path
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
 from PyQt6.QtGui import (
-    QAction, QColor, QFont, QFontDatabase, QFontMetrics, QKeySequence, QPainter, QPen,
+    QColor, QFont, QFontDatabase, QFontMetrics, QKeySequence, QPainter, QPen,
     QPolygonF, QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
-    QHBoxLayout, QLabel, QMainWindow, QPlainTextEdit, QPushButton, QSplitter,
-    QTableWidget, QTableWidgetItem, QTabWidget, QToolBar, QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
+    QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPlainTextEdit,
+    QPushButton, QScrollArea, QSplitter,
+    QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from .config import THEME
+from .icons import make_icon
+from .mint_style import C, dialog_qss, main_qss, sidebar_qss
 from .csv_codegen import generate_code
 from .stat_tests_panel import StatTestsPanel
 from .csv_stats import (
@@ -55,6 +57,25 @@ SCATTER, LINE, COLUMN, BAR, PIE, HIST, BOX = (
 )
 CHART_TYPES = [SCATTER, LINE, COLUMN, BAR, PIE, HIST, BOX]
 GROUP_CHARTS = (COLUMN, BAR, PIE)      # je Kategorie ein Wert
+
+# Karten in der Seitenleiste: (Symbol, Kurzhinweis)
+_TYPE_CARDS = {
+    SCATTER: ("chart_scatter", "Zusammenhang zweier Größen"),
+    LINE: ("chart_line", "Verlauf, z. B. über die Zeit"),
+    COLUMN: ("chart_column", "Anzahl oder Wert je Kategorie"),
+    BAR: ("chart_bar", "wie Säulen – gut bei langen Namen"),
+    PIE: ("chart_pie", "Anteile am Ganzen"),
+    HIST: ("chart_hist", "Verteilung in Klassen"),
+    BOX: ("chart_box", "Median, Quartile, Streuung"),
+}
+
+# Beschriftung der Kategorie-Auswahl je Diagrammtyp
+_CAT_LABELS = {
+    SCATTER: "Kategorie (färbt die Punkte)", LINE: "Kategorie (eine Linie je Wert)",
+    COLUMN: "Kategorie (eine Säule je Wert)", BAR: "Kategorie (ein Balken je Wert)",
+    PIE: "Kategorie (ein Kreisstück je Wert)", BOX: "Gruppierung (optional)",
+    HIST: "Kategorie",
+}
 
 
 def _to_float(s: str):
@@ -154,9 +175,10 @@ class _PlotCanvas(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor(THEME["terminal_bg"]))
+        p.fillRect(self.rect(), QColor(C["plot_bg"]))
         if not self._win.headers:
-            self._center_text(p, "Oben über „📂 CSV öffnen …“ eine CSV-Datei laden.")
+            self._center_text(p, "Noch keine Daten geladen.\n\n"
+                                 "Links auf „CSV öffnen …“ klicken und eine CSV-Datei wählen.")
             return
         draw = {
             SCATTER: self._draw_xy, LINE: self._draw_xy,
@@ -169,7 +191,7 @@ class _PlotCanvas(QWidget):
 
     # ── Hilfen ────────────────────────────────────────────────────────────────
     def _center_text(self, p, text):
-        p.setPen(QColor(THEME["text_dim"]))
+        p.setPen(QColor(C["text_dim"]))
         p.setFont(QFont(*self._TITLE_FONT))
         p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, text)
 
@@ -188,9 +210,9 @@ class _PlotCanvas(QWidget):
         p.setFont(QFont(*self._AXIS_FONT))
         for t in ticks:
             y = top + ph - (t - lo) / (hi - lo) * ph
-            p.setPen(QPen(QColor(THEME["border"]), 1))
+            p.setPen(QPen(QColor(C["grid"]), 1))
             p.drawLine(QPointF(left, y), QPointF(left + pw, y))
-            p.setPen(QColor(THEME["text_dim"]))
+            p.setPen(QColor(C["text_dim"]))
             p.drawText(QRectF(18, y - 7, left - 24, 14),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        fmt_num(t))
@@ -200,15 +222,15 @@ class _PlotCanvas(QWidget):
         p.setFont(QFont(*self._AXIS_FONT))
         for t in ticks:
             x = left + (t - lo) / (hi - lo) * pw
-            p.setPen(QPen(QColor(THEME["border"]), 1))
+            p.setPen(QPen(QColor(C["grid"]), 1))
             p.drawLine(QPointF(x, top), QPointF(x, top + ph))
-            p.setPen(QColor(THEME["text_dim"]))
+            p.setPen(QColor(C["text_dim"]))
             p.drawText(QRectF(x - 40, top + ph + 3, 80, 14),
                        Qt.AlignmentFlag.AlignHCenter, fmt_num(t))
 
     def _titles(self, p, area, x_title, y_title):
         left, top, pw, ph = area
-        p.setPen(QColor(THEME["text"]))
+        p.setPen(QColor(C["text"]))
         p.setFont(QFont(self._TITLE_FONT[0], self._TITLE_FONT[1], QFont.Weight.Bold))
         if x_title:
             p.drawText(QRectF(left, self.height() - 16, pw, 14),
@@ -228,17 +250,17 @@ class _PlotCanvas(QWidget):
         fm = QFontMetrics(p.font())
         shown = items[:15]
         width = max(fm.horizontalAdvance(name or "(leer)") for name, _ in shown) + 24
-        bg = QColor(THEME["terminal_bg"])
+        bg = QColor(C["plot_bg"])
         bg.setAlpha(200)
         p.fillRect(QRectF(lx - 4, ly - 3, width, len(shown) * 16 + 4), bg)
         for name, color in shown:
             p.fillRect(QRectF(lx, ly, 10, 10), color)
-            p.setPen(QColor(THEME["text"]))
+            p.setPen(QColor(C["text"]))
             p.drawText(QPointF(lx + 16, ly + 10), name if name else "(leer)")
             ly += 16
 
     def _note(self, p, text):
-        p.setPen(QColor(THEME["text_dim"]))
+        p.setPen(QColor(C["text_dim"]))
         p.setFont(QFont(*self._AXIS_FONT))
         p.drawText(QRectF(0, 2, self.width() - 16, 14), Qt.AlignmentFlag.AlignRight, text)
 
@@ -267,7 +289,7 @@ class _PlotCanvas(QWidget):
                            top + ph - (y - ylo) / (yhi - ylo) * ph)
 
         cat_color = win.category_color_map()
-        single = QColor(THEME["accent"])
+        single = QColor(C["accent"])
         p.setClipRect(QRectF(left, top, pw, ph))
         if win.chart_type == LINE:
             series = {}
@@ -312,7 +334,7 @@ class _PlotCanvas(QWidget):
         vals = [v for _, v in data]
         lo, hi, ticks = _nice_ticks(min(0, min(vals)), max(0, max(vals)))
         cat_color = win.category_color_map()
-        single = QColor(THEME["accent"])
+        single = QColor(C["accent"])
         fm = QFontMetrics(QFont(*self._AXIS_FONT))
         n = len(data)
 
@@ -336,13 +358,13 @@ class _PlotCanvas(QWidget):
                 p.setBrush(cat_color.get(name, single))
                 p.drawRect(QRectF(x0 + (slot - bw) / 2, y0, bw, y1 - y0))
                 p.setFont(QFont(*self._AXIS_FONT))
-                p.setPen(QColor(THEME["text_dim"]))
+                p.setPen(QColor(C["text_dim"]))
                 label = fm.elidedText(name or "(leer)", Qt.TextElideMode.ElideRight,
                                       int(slot) - 2)
                 p.drawText(QRectF(x0, top + ph + 3, slot, 14),
                            Qt.AlignmentFlag.AlignHCenter, label)
                 if slot >= 28:
-                    p.setPen(QColor(THEME["text"]))
+                    p.setPen(QColor(C["text"]))
                     ty = y0 - 14 if v >= 0 else y1
                     p.drawText(QRectF(x0, ty, slot, 14),
                                Qt.AlignmentFlag.AlignHCenter, fmt_num(v, 2))
@@ -370,12 +392,12 @@ class _PlotCanvas(QWidget):
             p.setBrush(cat_color.get(name, single))
             p.drawRect(QRectF(x0, y0 + (slot - bh) / 2, x1 - x0, bh))
             p.setFont(QFont(*self._AXIS_FONT))
-            p.setPen(QColor(THEME["text_dim"]))
+            p.setPen(QColor(C["text_dim"]))
             label = fm.elidedText(name or "(leer)", Qt.TextElideMode.ElideRight, lw)
             p.drawText(QRectF(4, y0, left - 10, slot),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label)
             if slot >= 14:
-                p.setPen(QColor(THEME["text"]))
+                p.setPen(QColor(C["text"]))
                 p.drawText(QRectF(x1 + 4, y0, 80, slot),
                            Qt.AlignmentFlag.AlignVCenter, fmt_num(v, 2))
         return None
@@ -383,7 +405,7 @@ class _PlotCanvas(QWidget):
     def _label_box(self, p, cx, bw, slot, s, y_at):
         """Fünf Kennwerte rechts neben dem Kasten, x̄ als Raute im Kasten."""
         p.setFont(QFont(*self._AXIS_FONT))
-        p.setPen(QColor(THEME["text"]))
+        p.setPen(QColor(C["text"]))
         x = cx + bw / 2 + 6
         width = max(20, slot / 2 - bw / 2 - 8)
         fm = QFontMetrics(p.font())
@@ -397,7 +419,7 @@ class _PlotCanvas(QWidget):
             last_y = y
         # Mittelwert als Raute + Beschriftung links
         ym = y_at(s["mean"])
-        p.setBrush(QColor(THEME["text"]))
+        p.setBrush(QColor(C["text"]))
         p.drawPolygon(QPolygonF([QPointF(cx, ym - 5), QPointF(cx + 5, ym),
                                  QPointF(cx, ym + 5), QPointF(cx - 5, ym)]))
         p.drawText(QRectF(cx - slot / 2 + 2, ym - 7, slot / 2 - bw / 2 - 6, 14),
@@ -431,11 +453,11 @@ class _PlotCanvas(QWidget):
         cx0, cy0 = 20, (self.height() - d) / 2
         rect = QRectF(cx0, cy0, d, d)
         start = 90 * 16                       # 12 Uhr, dann im Uhrzeigersinn
-        p.setPen(QPen(QColor(THEME["terminal_bg"]), 1.5))
+        p.setPen(QPen(QColor(C["plot_bg"]), 1.5))
         p.setFont(QFont(self._TITLE_FONT[0], self._TITLE_FONT[1], QFont.Weight.Bold))
         for name, v in data:
             span = -v / total * 360 * 16
-            p.setBrush(cat_color.get(name, QColor(THEME["accent"])))
+            p.setBrush(cat_color.get(name, QColor(C["accent"])))
             p.drawPie(rect, int(start), int(round(span)))
             share = v / total
             if share >= 0.05:                 # Prozentangabe nur bei genug Platz
@@ -445,20 +467,20 @@ class _PlotCanvas(QWidget):
                 p.setPen(QColor("#ffffff"))
                 p.drawText(QRectF(tx - 30, ty - 8, 60, 16), Qt.AlignmentFlag.AlignCenter,
                            f"{fmt_num(share * 100, 1)} %")
-                p.setPen(QPen(QColor(THEME["terminal_bg"]), 1.5))
+                p.setPen(QPen(QColor(C["plot_bg"]), 1.5))
             start += span
 
         p.setFont(QFont(*self._TITLE_FONT))
         lx = cx0 + d + 24
         ly = max(10, (self.height() - len(data[:20]) * 18) / 2)
         for (name, _), text in list(zip(data, legend))[:20]:
-            p.fillRect(QRectF(lx, ly + 2, 10, 10), cat_color.get(name, QColor(THEME["accent"])))
-            p.setPen(QColor(THEME["text"]))
+            p.fillRect(QRectF(lx, ly + 2, 10, 10), cat_color.get(name, QColor(C["accent"])))
+            p.setPen(QColor(C["text"]))
             p.drawText(QRectF(lx + 16, ly, self.width() - lx - 20, 16),
                        Qt.AlignmentFlag.AlignVCenter,
                        fm.elidedText(text, Qt.TextElideMode.ElideRight, int(lw)))
             ly += 18
-        p.setPen(QColor(THEME["text_dim"]))
+        p.setPen(QColor(C["text_dim"]))
         p.drawText(QRectF(lx, 4, self.width() - lx - 8, 16), Qt.AlignmentFlag.AlignLeft,
                    win.value_title())
         return None
@@ -489,9 +511,9 @@ class _PlotCanvas(QWidget):
         p.setFont(QFont(*self._AXIS_FONT))
         for t, lab in zip(yt, y_labels):
             y = top + ph - (t - ylo) / (yhi - ylo) * ph
-            p.setPen(QPen(QColor(THEME["border"]), 1))
+            p.setPen(QPen(QColor(C["grid"]), 1))
             p.drawLine(QPointF(left, y), QPointF(left + pw, y))
-            p.setPen(QColor(THEME["text_dim"]))
+            p.setPen(QColor(C["text_dim"]))
             p.drawText(QRectF(18, y - 7, left - 24, 14),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, lab)
         for t in xt:
@@ -501,8 +523,8 @@ class _PlotCanvas(QWidget):
         self._titles(p, area, win.headers[win.y_col],
                      "relative Häufigkeit" if win.hist_relative else "absolute Häufigkeit")
 
-        color = QColor(THEME["accent"])
-        p.setPen(QPen(QColor(THEME["terminal_bg"]), 1))
+        color = QColor(C["accent"])
+        p.setPen(QPen(QColor(C["plot_bg"]), 1))
         p.setBrush(color)
         for (a, b, _), hgt in zip(bins, heights):
             x0 = left + (a - xlo) / (xhi - xlo) * pw
@@ -544,7 +566,7 @@ class _PlotCanvas(QWidget):
             return top + ph - (v - lo) / (hi - lo) * ph
 
         cat_color = win.category_color_map()
-        single = QColor(THEME["accent"])
+        single = QColor(C["accent"])
         fm = QFontMetrics(QFont(*self._AXIS_FONT))
         slot = pw / len(groups)
         bw = min(slot * 0.5, 90)
@@ -568,14 +590,14 @@ class _PlotCanvas(QWidget):
             p.setBrush(fill)
             y3, y1 = y_at(s["q3"]), y_at(s["q1"])
             p.drawRect(QRectF(cx - bw / 2, y3, bw, y1 - y3))
-            p.setPen(QPen(QColor(THEME["text"]), 2.5))
+            p.setPen(QPen(QColor(C["text"]), 2.5))
             ym = y_at(s["median"])
             p.drawLine(QPointF(cx - bw / 2, ym), QPointF(cx + bw / 2, ym))
             if win.box_labels:
                 self._label_box(p, cx, bw, slot, s, y_at)
             # Beschriftung
             p.setFont(QFont(*self._AXIS_FONT))
-            p.setPen(QColor(THEME["text_dim"]))
+            p.setPen(QColor(C["text_dim"]))
             label = f"{name or '(leer)'} (n={s['n']})"
             label = fm.elidedText(label, Qt.TextElideMode.ElideRight, int(slot) - 2)
             p.drawText(QRectF(cx - slot / 2, top + ph + 3, slot, 14),
@@ -595,14 +617,49 @@ def _box_label_items(s):
     return items
 
 
+_HELP_HTML = """
+<h3>Daten laden</h3>
+<ul>
+<li><b>CSV öffnen …</b> (links oder oben) lädt eine CSV-Datei, z. B. eine Messreihe aus dem
+Serial Plotter oder eine Umfrage. Trennzeichen <code>;</code> oder <code>,</code> und deutsches
+Dezimalkomma werden automatisch erkannt.</li>
+<li>Die erste Zeile mit Spaltennamen wird erkannt; fehlt sie, heißen die Spalten „Spalte 1“, „Spalte 2“ …</li>
+</ul>
+<h3>Diagramm wählen</h3>
+<ul>
+<li>Links einen <b>Diagrammtyp</b> anklicken, darunter die Spalten einstellen.</li>
+<li><b>Kategorie</b>: eine Spalte mit Gruppen (z. B. Klasse) färbt Punkte ein bzw. bildet je
+Gruppe eine Säule, ein Kreisstück oder einen Boxplot.</li>
+<li>Streudiagramm: <b>Ausgleichsgerade</b> mit Gleichung und R². Boxplot: <b>Ausreißer</b>-Regel
+und <b>Werte beschriften</b>. Histogramm: <b>Klassenbreite</b> und relative Häufigkeit.</li>
+</ul>
+<h3>Auswerten</h3>
+<ul>
+<li><b>Tabelle</b>: die Rohdaten. <b>Kennwerte</b>: Median, Quartile, Mittelwert,
+Standardabweichung … (je Gruppe). <b>Häufigkeiten</b>: absolute, relative und kumulierte
+Häufigkeit.</li>
+<li><b>Statistik-Tests</b>: Signifikanztest (Binomialtest), t-Test für eine und zwei Stichproben
+mit p-Wert, Konfidenzintervall und Entscheidung.</li>
+<li>Tabellen kopieren: Zellen markieren, <b>Strg+C</b> – dann z. B. in eine Tabellenkalkulation einfügen.</li>
+</ul>
+<h3>Weiterverwenden</h3>
+<ul>
+<li><b>PNG export</b> speichert das Diagramm als Bild (z. B. fürs Protokoll).</li>
+<li><b>Als Python-Code</b> zeigt ein Programm, das dasselbe Diagramm mit matplotlib zeichnet –
+mit einem Klick als neuer Editor-Tab zum Ausprobieren und Verändern.</li>
+</ul>
+"""
+
+
 class CsvPlotWindow(QMainWindow):
-    """Fenster: Tabelle/Kennwerte/Häufigkeiten (oben) + Diagramm (unten)."""
+    """Fenster im PAP-/IBD-Look: Seitenleiste (Datei, Diagrammtyp, Einstellungen)
+    links, rechts Kopfleiste mit Aktionen, Diagramm und Reiter mit Auswertungen."""
 
     def __init__(self, parent=None, start_dir=None):
         super().__init__(parent)
         self._start_dir = start_dir    # Callable → Startordner des Öffnen-Dialogs
         self.setWindowTitle("NIT Datenauswertung")
-        self.resize(960, 760)
+        self.resize(1180, 820)
         self.headers: list[str] = []
         self.rows: list[list[str]] = []
         self._path = ""
@@ -624,32 +681,82 @@ class CsvPlotWindow(QMainWindow):
 
     # ── UI ────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        tb = QToolBar("Aktionen")
-        tb.setMovable(False)
-        self.addToolBar(tb)
-        self._act_open = QAction("📂  CSV öffnen …", self)
-        self._act_open.triggered.connect(self._choose_file)
-        tb.addAction(self._act_open)
-        self._act_png = QAction("🖼  Diagramm als PNG …", self)
-        self._act_png.triggered.connect(self._export_png)
-        tb.addAction(self._act_png)
-        self._act_code = QAction("🐍  Als Python-Code …", self)
-        self._act_code.setToolTip("Zeigt ein Python-Programm (csv + matplotlib), "
-                                  "das genau dieses Diagramm zeichnet")
-        self._act_code.triggered.connect(self._show_code)
-        tb.addAction(self._act_code)
-
         central = QWidget()
-        root = QVBoxLayout(central)
-        root.setContentsMargins(8, 6, 8, 8)
-        root.setSpacing(6)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_sidebar())
+        root.addWidget(self._build_main(), 1)
+        self.setCentralWidget(central)
+        self.apply_theme()
+        self._update_field_visibility()
 
-        # Diagrammtyp + Spaltenauswahl (je nach Typ werden Felder ausgeblendet)
-        bar = QHBoxLayout()
-        bar.setSpacing(10)
+    def _build_sidebar(self):
+        """Dunkle Seitenleiste wie im PAP-/IBD-Editor: Datei, Diagrammtyp, Einstellungen."""
+        side = QWidget()
+        side.setObjectName("dataSidebar")
+        side.setFixedWidth(262)
+        outer = QVBoxLayout(side)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        lay = QVBoxLayout(body)
+        lay.setContentsMargins(14, 18, 12, 10)
+        lay.setSpacing(6)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+
+        title = QLabel("Datenauswertung")
+        title.setObjectName("sideTitle")
+        subtitle = QLabel("CSV-Daten darstellen, beschreiben und testen")
+        subtitle.setObjectName("sideSubtitle")
+        subtitle.setWordWrap(True)
+        lay.addWidget(title)
+        lay.addWidget(subtitle)
+        lay.addSpacing(8)
+
+        lay.addWidget(self._section("DATEI"))
+        self._open_btn = self._card("files", "CSV öffnen …\nMessreihe oder Umfrage laden",
+                                    "CSV-Datei laden")
+        self._open_btn.setCheckable(False)
+        self._open_btn.clicked.connect(self._choose_file)
+        lay.addWidget(self._open_btn)
+        self._file_label = QLabel("Noch keine Datei geladen")
+        self._file_label.setObjectName("muted")
+        self._file_label.setWordWrap(True)
+        lay.addWidget(self._file_label)
+        lay.addSpacing(6)
+
+        # Diagrammtyp als Karten; die (unsichtbare) Combobox hält den Zustand.
+        lay.addWidget(self._section("DIAGRAMM"))
         self._type_combo = QComboBox()
         self._type_combo.addItems(CHART_TYPES)
-        self._type_combo.currentIndexChanged.connect(self._on_selection_changed)
+        self._type_combo.currentIndexChanged.connect(self._on_type_changed)
+        self._type_group = QButtonGroup(self)
+        self._type_group.setExclusive(True)
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        for i, t in enumerate(CHART_TYPES):
+            icon, hint = _TYPE_CARDS[t]
+            card = self._card(icon, t.replace("diagramm", "-\ndiagramm")
+                              if len(t) > 12 else t, hint)
+            card.setMinimumHeight(50)
+            card.clicked.connect(lambda _=False, i=i: self._type_combo.setCurrentIndex(i))
+            self._type_group.addButton(card, i)
+            grid.addWidget(card, i // 2, i % 2)
+        lay.addLayout(grid)
+        self._type_group.button(0).setChecked(True)
+        self._type_hint = QLabel(_TYPE_CARDS[SCATTER][1])
+        self._type_hint.setObjectName("muted")
+        self._type_hint.setWordWrap(True)
+        lay.addWidget(self._type_hint)
+        lay.addSpacing(6)
+
+        lay.addWidget(self._section("EINSTELLUNGEN"))
         self._x_combo = QComboBox()
         self._y_combo = QComboBox()
         self._value_combo = QComboBox()
@@ -662,43 +769,92 @@ class CsvPlotWindow(QMainWindow):
         self._width_spin.setSpecialValueText("automatisch")
         self._width_spin.setToolTip("Klassenbreite des Histogramms (0 = automatisch)")
         self._width_spin.valueChanged.connect(self._on_selection_changed)
-        self._rel_check = QCheckBox("relativ")
+        for combo in (self._x_combo, self._y_combo, self._value_combo,
+                      self._agg_combo, self._cat_combo):
+            combo.currentIndexChanged.connect(self._on_selection_changed)
+        self._f_x, _ = self._field(lay, "X-Achse", self._x_combo)
+        self._f_y, self._y_label = self._field(lay, "Y-Achse", self._y_combo)
+        self._f_value, _ = self._field(lay, "Wert", self._value_combo)
+        self._f_agg, _ = self._field(lay, "zusammengefasst als", self._agg_combo)
+        self._f_cat, self._cat_label = self._field(lay, "Kategorie", self._cat_combo)
+        self._f_width, _ = self._field(lay, "Klassenbreite", self._width_spin)
+
+        self._rel_check = QCheckBox("relative Häufigkeit")
         self._rel_check.setToolTip("relative statt absoluter Häufigkeit")
-        self._rel_check.toggled.connect(self._on_selection_changed)
         self._reg_check = QCheckBox("Ausgleichsgerade")
         self._reg_check.setToolTip("Lineare Regression (Methode der kleinsten Quadrate) "
                                    "mit Geradengleichung und Bestimmtheitsmaß R²")
-        self._reg_check.toggled.connect(self._on_selection_changed)
         self._outlier_check = QCheckBox("Ausreißer (1,5·IQR)")
         self._outlier_check.setToolTip(
             "Antennen höchstens 1,5 Quartilsabstände lang, weiter entfernte Werte "
             "als Kreise – sonst reichen die Antennen bis Minimum/Maximum")
-        self._outlier_check.toggled.connect(self._on_selection_changed)
         self._boxlabel_check = QCheckBox("Werte beschriften")
         self._boxlabel_check.setToolTip("Minimum, Quartile, Median, Maximum und "
                                         "Mittelwert x̄ (◆) direkt am Boxplot anzeigen")
-        self._boxlabel_check.toggled.connect(self._on_selection_changed)
-        for combo in (self._x_combo, self._y_combo, self._value_combo,
-                      self._agg_combo, self._cat_combo):
-            combo.setMinimumWidth(120)
-            combo.currentIndexChanged.connect(self._on_selection_changed)
+        for chk in (self._rel_check, self._reg_check, self._outlier_check,
+                    self._boxlabel_check):
+            chk.toggled.connect(self._on_selection_changed)
+            lay.addWidget(chk)
+        lay.addStretch(1)
 
-        self._field(bar, "Diagramm:", self._type_combo)
-        self._f_x, _ = self._field(bar, "X:", self._x_combo)
-        self._f_y, self._y_label = self._field(bar, "Y:", self._y_combo)
-        self._f_value, _ = self._field(bar, "Wert:", self._value_combo)
-        self._f_agg, _ = self._field(bar, "als:", self._agg_combo)
-        self._f_cat, _ = self._field(bar, "Kategorie:", self._cat_combo)
-        self._f_width, _ = self._field(bar, "Klassenbreite:", self._width_spin)
-        bar.addWidget(self._rel_check)
-        bar.addWidget(self._reg_check)
-        bar.addWidget(self._outlier_check)
-        bar.addWidget(self._boxlabel_check)
-        bar.addStretch()
-        root.addLayout(bar)
+        help_btn = QPushButton("Hilfe && Bedienung")
+        help_btn.setObjectName("helpButton")
+        help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        help_btn.clicked.connect(self._show_help)
+        help_box = QWidget()
+        hl = QVBoxLayout(help_box)
+        hl.setContentsMargins(14, 6, 14, 14)
+        hl.addWidget(help_btn)
+        outer.addWidget(help_box)
+        self._sidebar = side
+        return side
+
+    def _build_main(self):
+        """Heller Arbeitsbereich: Kopfleiste mit Aktionen, Diagramm, Reiter."""
+        main = QWidget()
+        main.setObjectName("mainArea")
+        lay = QVBoxLayout(main)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        top = QWidget()
+        top.setObjectName("topbar")
+        tl = QVBoxLayout(top)
+        tl.setContentsMargins(12, 6, 12, 8)
+        tl.setSpacing(6)
+        row = QHBoxLayout()
+        self._breadcrumb = QLabel(SCATTER)
+        self._breadcrumb.setObjectName("breadcrumb")
+        self._status = QLabel("Bereit")
+        self._status.setObjectName("status")
+        row.addWidget(self._breadcrumb, 1)
+        row.addWidget(self._status)
+        tl.addLayout(row)
+        menu = QHBoxLayout()
+        menu.setSpacing(5)
+        for text, icon, slot, accent, tip in (
+            ("CSV öffnen", "files", self._choose_file, False, "CSV-Datei laden"),
+            ("PNG export", "image", self._export_png, False, "Diagramm als Bild speichern"),
+            ("Als Python-Code", "code", self._show_code, True,
+             "Zeigt ein Python-Programm (csv + matplotlib), das genau dieses Diagramm zeichnet"),
+        ):
+            btn = QPushButton(text)
+            btn.setObjectName("accentButton" if accent else "menuButton")
+            btn.setIcon(make_icon(icon, "#ffffff", 16))
+            btn.setToolTip(tip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(slot)
+            menu.addWidget(btn)
+        menu.addStretch(1)
+        tl.addLayout(menu)
+        lay.addWidget(top)
 
         split = self._split = QSplitter(Qt.Orientation.Vertical)
+        split.setHandleWidth(8)
+        self._canvas = _PlotCanvas(self)
+        split.addWidget(self._canvas)
         self._tabs = QTabWidget()
+        self._tabs.setDocumentMode(False)
         self._table = QTableWidget()
         self._tabs.addTab(self._table, "Tabelle")
         self._stats_caption = QLabel("")
@@ -715,45 +871,77 @@ class CsvPlotWindow(QMainWindow):
         for t in (self._table, self._stats_table, self._freq_table):
             t.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             t.setSelectionMode(QTableWidget.SelectionMode.ContiguousSelection)
+            t.setAlternatingRowColors(False)
             sc = QShortcut(QKeySequence.StandardKey.Copy, t)
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(lambda t=t: self._copy_table(t))
-        split.addWidget(self._tabs)
-        self._canvas = _PlotCanvas(self)
-        split.addWidget(self._canvas)
-        split.setSizes([260, 460])
-        root.addWidget(split, 1)
+        tab_box = QWidget()
+        tbl = QVBoxLayout(tab_box)
+        tbl.setContentsMargins(10, 0, 10, 10)
+        tbl.addWidget(self._tabs)
+        split.addWidget(tab_box)
+        split.setSizes([480, 280])
         self._tabs.currentChanged.connect(self._on_tab_changed)
+        plot_box = QWidget()
+        pl = QVBoxLayout(plot_box)
+        pl.setContentsMargins(10, 10, 10, 0)
+        pl.addWidget(split)
+        lay.addWidget(plot_box, 1)
+        return main
 
-        self.setCentralWidget(central)
-        self.statusBar().setSizeGripEnabled(True)
-        self.apply_theme()
-        self._update_field_visibility()
+    @staticmethod
+    def _section(text):
+        label = QLabel(text)
+        label.setObjectName("sectionLabel")
+        return label
+
+    @staticmethod
+    def _card(icon, text, tip):
+        """Karte wie die Bausteine im PAP-Editor: Symbol + Beschriftung."""
+        btn = QPushButton(text)
+        btn.setObjectName("card")
+        btn.setCheckable(True)
+        btn.setIcon(make_icon(icon, C["side_text"], 24))
+        btn.setIconSize(QSize(24, 24))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(tip)
+        return btn
+
+    def _on_type_changed(self, index):
+        self._type_group.button(index).setChecked(True)
+        self._type_hint.setText(_TYPE_CARDS[CHART_TYPES[index]][1])
+        self._on_selection_changed()
 
     def _on_tab_changed(self, index):
         """Statistik-Tests brauchen mehr Platz für das Ergebnis als die Tabellen."""
         if self._tabs.widget(index) is self._tests:
             top, bottom = self._split.sizes()
-            if top < 440 and top + bottom > 600:
-                self._split.setSizes([440, top + bottom - 440])
+            if bottom < 420 and top + bottom > 640:
+                self._split.setSizes([top + bottom - 420, 420])
+
+    def _set_status(self, text):
+        self._status.setText(text)
 
     @staticmethod
-    def _field(bar, text, widget):
+    def _field(lay, text, widget):
+        """Beschriftung über dem Eingabefeld (schmale Seitenleiste)."""
         box = QWidget()
-        lay = QHBoxLayout(box)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(4)
+        bl = QVBoxLayout(box)
+        bl.setContentsMargins(0, 2, 0, 2)
+        bl.setSpacing(3)
         label = QLabel(text)
-        lay.addWidget(label)
-        lay.addWidget(widget)
-        bar.addWidget(box)
+        label.setObjectName("fieldLabel")
+        bl.addWidget(label)
+        bl.addWidget(widget)
+        lay.addWidget(box)
         return box, label
 
     @staticmethod
     def _captioned(caption, table):
+        caption.setObjectName("caption")
         box = QWidget()
         lay = QVBoxLayout(box)
-        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setContentsMargins(8, 6, 8, 4)
         lay.setSpacing(4)
         lay.addWidget(caption)
         lay.addWidget(table, 1)
@@ -763,7 +951,8 @@ class CsvPlotWindow(QMainWindow):
         t = self.chart_type
         self._f_x.setVisible(t in (SCATTER, LINE))
         self._f_y.setVisible(t in (SCATTER, LINE, HIST, BOX))
-        self._y_label.setText("Y:" if t in (SCATTER, LINE) else "Variable:")
+        self._y_label.setText("Y-Achse" if t in (SCATTER, LINE) else "Variable")
+        self._cat_label.setText(_CAT_LABELS[t])
         self._f_value.setVisible(t in GROUP_CHARTS)
         # Beim Kreisdiagramm sind nur Anteile an einer Summe sinnvoll.
         self._f_agg.setVisible(t in (COLUMN, BAR) and self.value_col is not None)
@@ -779,21 +968,22 @@ class CsvPlotWindow(QMainWindow):
         try:
             headers, rows, self._csv_info = read_csv(path)
         except Exception as e:
-            self.statusBar().showMessage(f"Fehler beim Lesen: {e}")
+            self._set_status(f"Fehler beim Lesen: {e}")
             return
         self.headers, self.rows, self._path = headers, rows, path
         if not headers:
-            self.statusBar().showMessage("Leere oder unlesbare CSV-Datei.")
+            self._set_status("Leere oder unlesbare CSV-Datei.")
             self._fill_table()
             self._fill_combos()
             self._tests.refresh_columns()
             self._refresh()
             return
         self.setWindowTitle(f"NIT Datenauswertung – {Path(path).name}")
+        self._file_label.setText(f"{Path(path).name}\n{len(rows)} Zeilen · {len(headers)} Spalten")
         self._fill_table()
         self._fill_combos()
         self._tests.refresh_columns()
-        self.statusBar().showMessage(f"{len(rows)} Zeilen · {len(headers)} Spalten")
+        self._set_status(f"{len(rows)} Zeilen · {len(headers)} Spalten")
         self._refresh()
 
     def _fill_table(self):
@@ -848,6 +1038,7 @@ class CsvPlotWindow(QMainWindow):
         self.box_labels = self._boxlabel_check.isChecked()
 
     def _refresh(self):
+        self._breadcrumb.setText(self.chart_type)
         self._update_field_visibility()
         self._fill_stats()
         self._fill_freq()
@@ -1109,7 +1300,7 @@ class CsvPlotWindow(QMainWindow):
     def _show_code(self):
         problem = self._code_problem()
         if problem:
-            self.statusBar().showMessage(problem)
+            self._set_status(problem)
             return
         code = generate_code(self.code_spec())
 
@@ -1130,30 +1321,43 @@ class CsvPlotWindow(QMainWindow):
         buttons = QHBoxLayout()
         buttons.addStretch()
         if self._code_sink is not None:
-            to_tab = QPushButton("📝  In neuen Editor-Tab")
+            to_tab = QPushButton("In neuen Editor-Tab")
+            to_tab.setObjectName("accentButton")
 
             def _to_tab():
                 self._code_sink(code)
                 dlg.accept()
             to_tab.clicked.connect(_to_tab)
             buttons.addWidget(to_tab)
-        copy = QPushButton("📋  Kopieren")
+        copy = QPushButton("Kopieren")
         copy.clicked.connect(lambda: (QApplication.clipboard().setText(code),
-                                      copy.setText("✔  Kopiert")))
+                                      copy.setText("Kopiert ✓")))
         buttons.addWidget(copy)
         close = QPushButton("Schließen")
         close.clicked.connect(dlg.reject)
         buttons.addWidget(close)
         lay.addLayout(buttons)
-        t = THEME
-        dlg.setStyleSheet(
-            f"QDialog {{ background:{t['bg_dark']}; }} QLabel {{ color:{t['text']}; }}"
-            f"QPlainTextEdit {{ background:{t['bg_editor']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; }}"
-            f"QPushButton {{ background:{t['bg_panel']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; border-radius:6px; padding:4px 12px; }}"
-            f"QPushButton:hover {{ background:{t['accent']}; color:#fff; }}"
-        )
+        dlg.setStyleSheet(dialog_qss())
+        dlg.exec()
+
+    def _show_help(self):
+        """Kurze Bedienungsanleitung – wie „Hilfe & Bedienung“ im PAP-Editor."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Hilfe & Bedienung – Datenauswertung")
+        dlg.resize(620, 560)
+        lay = QVBoxLayout(dlg)
+        view = QTextBrowser()
+        view.setOpenExternalLinks(False)
+        view.setHtml(_HELP_HTML)
+        lay.addWidget(view, 1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        ok = QPushButton("OK")
+        ok.setObjectName("accentButton")
+        ok.clicked.connect(dlg.accept)
+        row.addWidget(ok)
+        lay.addLayout(row)
+        dlg.setStyleSheet(dialog_qss())
         dlg.exec()
 
     # ── Dateien ───────────────────────────────────────────────────────────────
@@ -1171,7 +1375,7 @@ class CsvPlotWindow(QMainWindow):
 
     def _export_png(self):
         if not self.headers:
-            self.statusBar().showMessage("Erst eine CSV-Datei öffnen.")
+            self._set_status("Erst eine CSV-Datei öffnen.")
             return
         src = Path(self._path)
         default = src.with_name(f"{src.stem}_{self.chart_type}.png")
@@ -1183,36 +1387,13 @@ class CsvPlotWindow(QMainWindow):
         if not path.lower().endswith(".png"):
             path += ".png"
         if self._canvas.grab().save(path, "PNG"):
-            self.statusBar().showMessage(f"Gespeichert: {path}")
+            self._set_status(f"Gespeichert: {path}")
         else:
-            self.statusBar().showMessage(f"Speichern fehlgeschlagen: {path}")
+            self._set_status(f"Speichern fehlgeschlagen: {path}")
 
     # ── Theme ─────────────────────────────────────────────────────────────────
     def apply_theme(self):
-        t = THEME
-        self.setStyleSheet(
-            f"QMainWindow, QWidget {{ background:{t['bg_dark']}; color:{t['text']}; }}"
-            f"QTableWidget {{ background:{t['bg_editor']}; color:{t['text']};"
-            f" gridline-color:{t['border']}; border:1px solid {t['border']};"
-            f" selection-background-color:{t['accent']}; }}"
-            f"QHeaderView::section {{ background:{t['bg_panel']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; padding:3px; }}"
-            f"QTableCornerButton::section {{ background:{t['bg_panel']};"
-            f" border:1px solid {t['border']}; }}"
-            f"QTabWidget::pane {{ border:1px solid {t['border']}; }}"
-            f"QTabBar::tab {{ background:{t['bg_panel']}; color:{t['text_dim']};"
-            f" border:1px solid {t['border']}; padding:4px 12px; }}"
-            f"QTabBar::tab:selected {{ background:{t['bg_editor']}; color:{t['text']}; }}"
-            f"QTextBrowser {{ background:{t['bg_editor']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; }}"
-            f"QComboBox, QDoubleSpinBox, QSpinBox {{ background:{t['bg_dark']}; color:{t['text']};"
-            f" border:1px solid {t['border']}; border-radius:4px; padding:2px 6px;"
-            f" combobox-popup:0; }}"
-            f"QComboBox QAbstractItemView {{ background:{t['bg_dark']};"
-            f" color:{t['text']}; selection-background-color:{t['accent']}; }}"
-            f"QStatusBar {{ color:{t['text_dim']}; }}"
-        )
-        self._stats_caption.setStyleSheet(f"color:{t['text_dim']};")
-        self._freq_caption.setStyleSheet(f"color:{t['text_dim']};")
+        """Fester Look wie pap.mint-checker.de – unabhängig vom IDE-Theme."""
+        self.setStyleSheet(sidebar_qss("dataSidebar") + main_qss())
         self._tests.refresh_theme()
         self._canvas.update()

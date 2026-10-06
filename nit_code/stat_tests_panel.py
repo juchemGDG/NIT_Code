@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from .config import THEME
+from .mint_style import C
 from .csv_stats import fmt_num
 from .stat_tests import (
     ALTERNATIVES, binomial_test, one_sample_t, paired_t, two_sample_t,
@@ -68,6 +68,7 @@ class StatTestsPanel(QWidget):
         # Binomialtest
         page, row = self._page()
         self._b_col = self._combo(row, "Spalte:")
+        self._b_col.setMinimumWidth(140)
         self._b_hit = self._combo(row, "Treffer:")
         self._b_n = QSpinBox()
         self._b_n.setRange(1, 10_000_000)
@@ -402,19 +403,19 @@ class StatTestsPanel(QWidget):
 
     # ── HTML ──────────────────────────────────────────────────────────────────
     def _report(self, title, hyp, rows, r, reason, note):
-        t = THEME
+        t = C
         alpha = fmt_num(r["alpha"])
         p = _p_text(r["p"])
         if r["reject"]:
             verdict = (f"p = {p} ≤ α = {alpha}"
                        + (f" ({reason})" if reason else "")
                        + " → <b>H₀ wird verworfen</b> – das Ergebnis ist signifikant.")
-            color = "#16a34a"
+            color = C["ok"]
         else:
             verdict = (f"p = {p} &gt; α = {alpha}"
                        + (f" ({reason})" if reason else "")
                        + " → <b>H₀ kann nicht verworfen werden</b> – nicht signifikant.")
-            color = "#d97706"
+            color = C["warn"]
         cells = "".join(
             f"<tr><td style='padding:2px 14px 2px 0; color:{t['text_dim']}'>{k}</td>"
             f"<td style='padding:2px 0'>{v}</td></tr>" for k, v in rows)
@@ -424,10 +425,10 @@ class StatTestsPanel(QWidget):
                 f"<p style='margin:2px 0; color:{t['text_dim']}'>{note}</p>")
 
     def _msg(self, text):
-        return f"<p style='color:{THEME['text_dim']}'>{text}</p>"
+        return f"<p style='color:{C['text_dim']}'>{text}</p>"
 
     def _wrap(self, html):
-        return f"<div style='color:{THEME['text']}'>{html}</div>"
+        return f"<div style='color:{C['text']}'>{html}</div>"
 
     def refresh_theme(self):
         self._on_changed()

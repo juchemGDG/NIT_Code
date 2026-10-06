@@ -117,6 +117,20 @@ auf Windows/macOS im echten Fenster.
 - Ideen für später: Chi²-Test (Vierfeldertafel), Korrelationstest für r,
   Code-Export der Tests.
 
+## Layout im PAP-/IBD-Stil (1.10.0-beta.10)
+
+- [x] Knopf „Datenauswertung“ in der Seitenleiste der IDE; das Fenster öffnet
+      ohne Dateidialog, „CSV öffnen …“ startet im Sketchbook-Ordner.
+- [x] Fenster im Look von pap.mint-checker.de / ibd.mint-checker.de:
+      dunkle Seitenleiste (Titel, DATEI, DIAGRAMM als Karten-Raster mit
+      Symbolen, EINSTELLUNGEN, „Hilfe & Bedienung“), heller Arbeitsbereich mit
+      Kopfleiste (Diagrammname, Status, Knöpfe, „Als Python-Code“ blau),
+      Diagramm oben, Reiter darunter.
+- Farben/Stylesheets zentral in `nit_code/mint_style.py` (feste Palette,
+  unabhängig vom IDE-Theme – wie die eingebetteten Web-Editoren).
+- Klapp-Pfeile werden aus `icons.py` („chevron“) als PNG ins Temp-Verzeichnis
+  gerendert, weil Qt-Stylesheets eine Bilddatei brauchen.
+
 ## Dateien
 
 | Datei | Rolle |
@@ -127,6 +141,8 @@ auf Windows/macOS im echten Fenster.
 | `nit_code/serial_plot.py` | Ausgleichsgerade im X-Y-Modus |
 | `nit_code/stat_tests.py` | Qt-freie Tests: Binomialtest, t-Tests, t-Verteilung |
 | `nit_code/stat_tests_panel.py` | Reiter „Statistik-Tests“ |
+| `nit_code/mint_style.py` | Palette + Stylesheets im PAP-/IBD-Look |
+| `nit_code/icons.py` | Symbole der Diagrammtypen, Chevron |
 | `release/requirements-runtime.txt` | matplotlib für die Schüler-Runtime |
 | `nit_code/main_window.py` | Menüeintrag `_open_csv_plot` |
 | `README.md`, `nit_code/assets/hilfe/Kurzanleitung.md` | Doku |
