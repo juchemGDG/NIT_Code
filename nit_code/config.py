@@ -274,7 +274,7 @@ def tool_command(module: str) -> list[str]:
 
 
 APP_NAME = "NIT_Code"
-APP_VERSION = "1.10.2"
+APP_VERSION = "1.10.3"
 
 # GitHub-Repository für Bibliotheken
 LIB_REPO_API = "https://api.github.com/repos/juchemGDG/NIT_Bibliotheken/contents"
@@ -405,6 +405,11 @@ PAP_EDITOR_URL = PAP_EDITOR_ORIGIN + "/?embed=1"
 # IBD-Editor (Informations-Blockdiagramm): gleiches Embed-Protokoll wie der PAP-Editor.
 IBD_EDITOR_ORIGIN = "https://ibd.mint-checker.de"
 IBD_EDITOR_URL = IBD_EDITOR_ORIGIN + "/?embed=1"
+
+# StatPlot (Datenauswertung): erst online, ohne Netz die mitgelieferte Kopie –
+# siehe statplot_window.py.
+STATPLOT_ORIGIN = "https://statplot.mint-checker.de"
+STATPLOT_URL = STATPLOT_ORIGIN + "/?embed=1"
 
 
 def is_ollama_available() -> bool:

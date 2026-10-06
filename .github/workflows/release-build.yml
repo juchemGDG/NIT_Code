@@ -21,6 +21,9 @@ on:
 # Plattform-Builds erfolgreich waren – ein halbfertiges Release wird also nie
 # sichtbar. Artefakte gibt es nur noch bei Nicht-Tag-Builds (zum Testen), mit
 # einem Tag Aufbewahrung.
+#
+# Die Datenauswertung (StatPlot) lädt NIT_Code online; für den Offline-Fall
+# holt jeder Build den aktuellen StatPlot-Stand von GitHub (sync_statplot.sh).
 permissions:
   contents: write
 
@@ -43,6 +46,21 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: Checkout StatPlot
+        uses: actions/checkout@v7
+        with:
+          repository: juchemGDG/StatPlot
+          path: _statplot
+          fetch-depth: 0
+
+      # Offline-Kopie der Datenauswertung auf den aktuellen StatPlot-Stand
+      # bringen. Schlägt das fehl (z. B. StatPlot-Tests rot), bleibt die
+      # eingecheckte Kopie stehen – das Skript löscht erst nach den Tests.
+      - name: StatPlot übernehmen
+        continue-on-error: true
+        shell: bash
+        run: bash release/scripts/sync_statplot.sh _statplot
 
       - name: Build Linux package
         run: bash release/scripts/build_linux.sh
@@ -76,6 +94,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Checkout StatPlot
+        uses: actions/checkout@v7
+        with:
+          repository: juchemGDG/StatPlot
+          path: _statplot
+          fetch-depth: 0
+
+      # Offline-Kopie der Datenauswertung auf den aktuellen StatPlot-Stand
+      # bringen. Schlägt das fehl (z. B. StatPlot-Tests rot), bleibt die
+      # eingecheckte Kopie stehen – das Skript löscht erst nach den Tests.
+      - name: StatPlot übernehmen
+        continue-on-error: true
+        shell: bash
+        run: bash release/scripts/sync_statplot.sh _statplot
+
       - name: Build macOS package
         run: bash release/scripts/build_macos.sh
         env:
@@ -106,6 +139,21 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: Checkout StatPlot
+        uses: actions/checkout@v7
+        with:
+          repository: juchemGDG/StatPlot
+          path: _statplot
+          fetch-depth: 0
+
+      # Offline-Kopie der Datenauswertung auf den aktuellen StatPlot-Stand
+      # bringen. Schlägt das fehl (z. B. StatPlot-Tests rot), bleibt die
+      # eingecheckte Kopie stehen – das Skript löscht erst nach den Tests.
+      - name: StatPlot übernehmen
+        continue-on-error: true
+        shell: bash
+        run: bash release/scripts/sync_statplot.sh _statplot
 
       - name: Build Windows package
         shell: pwsh

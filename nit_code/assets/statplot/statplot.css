@@ -548,3 +548,16 @@ body.dragging #drop-hint { display: flex; }
 body.embed #btn-desktop, body.desktop #btn-desktop { display: none; }
 #code-to-tab { display: none; }
 body.host-code #code-to-tab { display: inline-block; }
+
+/* ─── Daten eingeben ──────────────────────────────────────── */
+#entry-size { display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px; color: #334155; }
+#entry-size input { width: 64px; margin-left: 6px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+#entry-scroll { flex: 1; min-height: 120px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; -webkit-overflow-scrolling: touch; }
+#entry-table { border-collapse: collapse; }
+#entry-table th, #entry-table td { border: 1px solid #e2e8f0; padding: 0; }
+#entry-table th.rn { background: #f1f5f9; color: #64748b; font-weight: normal; font-size: 12px; padding: 0 8px; position: sticky; left: 0; }
+#entry-table thead th { position: sticky; top: 0; background: #f1f5f9; z-index: 1; }
+#entry-table input { width: 110px; border: none; padding: 7px 8px; font-size: 14px; background: transparent; }
+#entry-table thead input { font-weight: bold; color: #0f172a; }
+#entry-table input:focus { outline: 2px solid #2563eb; outline-offset: -2px; background: #fff; }
+#entry-error { color: #b91c1c; min-height: 18px; margin: 8px 0 0; }

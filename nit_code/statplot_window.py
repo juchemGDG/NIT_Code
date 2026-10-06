@@ -5,11 +5,14 @@ NIT_Code als Web-App: Diagramme, Kennwerte, Häufigkeiten, Statistik-Tests und
 Python-Code-Export. Dieselbe Seite läuft auf statplot.mint-checker.de, als
 Desktop-App und hier im iframe mit ``?embed=1``.
 
-Anders als PAP/IBD kommt die Seite nicht aus dem Netz: Eine Kopie liegt in
-``nit_code/assets/statplot`` (abgleichen mit release/scripts/sync_statplot.sh)
-und wird über einen kleinen lokalen HTTP-Server auf 127.0.0.1 ausgeliefert.
-So funktioniert die Datenauswertung wie bisher ohne Internet, und die Host-Seite
-bekommt eine echte Origin für postMessage (siehe pap_editor.py).
+Wie PAP/IBD wird zuerst die Online-Version geladen – Änderungen an
+statplot.mint-checker.de sind damit sofort in NIT_Code zu sehen. Meldet sich die
+Seite nicht innerhalb von ``_ONLINE_TIMEOUT_MS`` (kein Netz, Proxy), schalten wir
+auf die mitgelieferte Kopie in ``nit_code/assets/statplot`` um. Sie wird über
+einen kleinen lokalen HTTP-Server auf 127.0.0.1 ausgeliefert, damit die
+Host-Seite eine echte Origin für postMessage hat (siehe pap_editor.py). Die
+Kopie aktualisiert der Release-Build automatisch (sync_statplot.sh), von Hand
+geht es mit ``bash release/scripts/sync_statplot.sh <StatPlot-Pfad>``.
 
 Zusätzlich zum PAP-Protokoll (Schalter in ``_LOAD``):
 
@@ -19,6 +22,8 @@ Zusätzlich zum PAP-Protokoll (Schalter in ``_LOAD``):
 * clipboard:true – Kopieren läuft über Qt ('copy'), im iframe ist die
                    Zwischenablage sonst oft gesperrt.
 * nit:true       – der Python-Code verweist auf NIT_Codes Paket-Menü.
+* save:false     – kein „In Projekt übernehmen“: NIT_Code übernimmt kein
+                   Diagramm, der Code-Export ist der Weg ins Projekt.
 """
 import functools
 import http.server
@@ -27,10 +32,11 @@ import socketserver
 import threading
 from pathlib import Path
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QFileDialog
 
-from .config import asset_path
+from .config import STATPLOT_ORIGIN, STATPLOT_URL, asset_path
 from .pap_editor import PapEditorWindow
 
 _server_lock = threading.Lock()
@@ -84,24 +90,45 @@ class StatPlotWindow(PapEditorWindow):
     _PNG_NAME = "diagramm.png"
     _SAVE_TITLE = "Datenauswertung speichern"
     _MIME = None
-    _LOAD = {"downloads": True, "open": True, "code": True, "clipboard": True, "nit": True}
+    _LOAD = {"downloads": True, "open": True, "code": True, "clipboard": True, "nit": True,
+             "save": False}
     _NO_CONNECTION = "bitte NIT_Code neu starten."
-    _HINT = ("„In Projekt übernehmen“ legt das Diagramm als Bild in die Zwischenablage, "
-             "„Als Python-Code“ öffnet das Programm in einem neuen Editor-Tab.")
+    _HINT = "„Als Python-Code“ öffnet das Programm in einem neuen Editor-Tab."
+    _OFFLINE_HINT = "Offline-Version der Datenauswertung (keine Verbindung zu statplot.mint-checker.de)."
+    _ONLINE_TIMEOUT_MS = 8000
 
     def __init__(self, parent=None, sketchbook_dir=None):
-        origin = _local_origin()
         # Vor super().__init__: dort wird die Host-Seite schon geladen.
-        self._ORIGIN = origin or "http://127.0.0.1"
-        self._URL = self._ORIGIN + "/index.html?embed=1"
+        self._ORIGIN = STATPLOT_ORIGIN
+        self._URL = STATPLOT_URL
+        self._offline = False
         self._code_sink = None
         self._last_load: dict | None = None      # nach „Neu laden“ erneut schicken
         self._csv_dir: str | None = None
         super().__init__(parent, sketchbook_dir=sketchbook_dir)
         self.resize(1240, 840)
+        # Gibt es hier nie (save:false) – nur Platz in der Werkzeugleiste.
+        self._act_save_png.setVisible(False)
+
+    def _load_host_page(self):
+        super()._load_host_page()
+        if not self._offline:
+            QTimer.singleShot(self._ONLINE_TIMEOUT_MS, self._fall_back_offline)
+
+    def _fall_back_offline(self):
+        """Online-Version meldet sich nicht → mitgelieferte Kopie laden."""
+        if self._connected or self._offline or self._view is None:
+            return
+        origin = _local_origin()
         if origin is None:
-            self._set_status("Die Datenauswertung fehlt in dieser Installation "
+            self._set_status("Keine Verbindung zu statplot.mint-checker.de, und die "
+                             "Offline-Version fehlt in dieser Installation "
                              "(nit_code/assets/statplot).", kind="error")
+            return
+        self._offline = True
+        self._ORIGIN = origin
+        self._URL = origin + "/index.html?embed=1"
+        self._load_host_page()
 
     def set_code_sink(self, sink):
         """Callback, der erzeugten Python-Code in einen neuen Editor-Tab übernimmt."""
@@ -122,6 +149,8 @@ class StatPlotWindow(PapEditorWindow):
 
     # ── Ereignisse der Seite ─────────────────────────────────────────────
     def _on_ready(self):
+        if self._offline:
+            self._set_status(self._OFFLINE_HINT)
         if self._last_load:
             self._send(self._last_load)
 

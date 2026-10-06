@@ -8,7 +8,7 @@
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <!-- Cache-Buster: bei jedem Deploy hochzählen, sonst liefern Browser/Hosting alte Dateien aus -->
-  <link rel="stylesheet" href="statplot.css?v=1">
+  <link rel="stylesheet" href="statplot.css?v=2">
 </head>
 <body>
 
@@ -62,6 +62,7 @@
 
       <nav id="menubar">
         <button id="btn-open"    class="btn-menu" type="button">CSV öffnen</button>
+        <button id="btn-entry"   class="btn-menu" type="button" title="Messwerte von Hand in eine Tabelle eintragen">Daten eingeben</button>
         <button id="btn-example" class="btn-menu" type="button">Beispieldaten</button>
         <button id="btn-png"     class="btn-menu" type="button" title="Diagramm als Bild speichern">PNG export</button>
         <button id="btn-svg"     class="btn-menu" type="button" title="Diagramm als Vektorgrafik speichern">SVG export</button>
@@ -163,6 +164,7 @@
         <ul>
           <li><b>CSV öffnen</b> lädt eine CSV-Datei, z. B. eine Messreihe aus dem Serial Plotter oder eine Umfrage. Datei auch einfach auf das Fenster ziehen. Trennzeichen <code>;</code>, <code>,</code> oder Tabulator und deutsches Dezimalkomma werden automatisch erkannt.</li>
           <li>Die erste Zeile mit Spaltennamen wird erkannt; fehlt sie, heißen die Spalten „Spalte 1“, „Spalte 2“ …</li>
+          <li><b>Daten eingeben</b> öffnet eine Tabelle zum Eintippen eigener Messwerte (z. B. aus dem Physikpraktikum): Spaltennamen, Anzahl der Spalten und Zeilen sind frei wählbar. „Übernehmen“ macht sie zur Datengrundlage für Diagramme, Kennwerte und Tests; erneutes Öffnen ergänzt die vorhandenen Daten.</li>
           <li><b>Beispieldaten</b> lädt eine kleine Klassenumfrage zum Ausprobieren.</li>
         </ul>
       </section>
@@ -201,6 +203,25 @@
   </div>
 </div>
 
+<!-- ═══════ DATEN EINGEBEN ═══════ -->
+<div id="entry-modal" class="overlay">
+  <div id="entry-box" class="dialog dialog-wide" role="dialog" aria-labelledby="entry-title">
+    <h2 id="entry-title">Daten eingeben</h2>
+    <p class="dialog-hint">Spaltennamen oben eintragen, Werte darunter. Mit Enter geht es eine Zeile weiter; Zellen aus einer Tabellenkalkulation lassen sich einfügen. Dezimalkomma und Dezimalpunkt sind möglich.</p>
+    <div id="entry-size">
+      <label>Spalten <input id="entry-cols" type="number" min="1" max="30" step="1"></label>
+      <label>Zeilen <input id="entry-rows" type="number" min="1" max="1000" step="1"></label>
+    </div>
+    <div id="entry-scroll"><table id="entry-table"></table></div>
+    <div id="entry-error" class="dialog-hint"></div>
+    <div class="dialog-buttons">
+      <button id="entry-clear" class="btn-secondary" type="button">Leeren</button>
+      <button id="entry-cancel" class="btn-secondary" type="button">Abbrechen</button>
+      <button id="entry-apply" class="btn-primary" type="button">Übernehmen</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ DOWNLOAD ═══════ -->
 <div id="download-modal" class="overlay">
   <div id="download-box" class="dialog">
@@ -223,6 +244,6 @@
 <div id="drop-hint">CSV-Datei hier ablegen</div>
 
 <script src="stats.js?v=1"></script>
-<script src="statplot.js?v=1"></script>
+<script src="statplot.js?v=3"></script>
 </body>
 </html>

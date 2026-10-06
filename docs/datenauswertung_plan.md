@@ -142,14 +142,18 @@ iPad), Desktop-Version (pywebview) und eingebettet in NIT_Code, wie PAP-/IBD-Edi
   StatPlots `tests/test_stats.js` prüft ihn gegen die Python-Ergebnisse
   (331 Fälle, Python-Code zeichengenau). Beim CSV-Einlesen ist StatPlot in zwei
   Fällen besser als `csv.Sniffer` (Dezimalkomma ohne Kopfzeile, Tab-Dateien).
-- NIT_Code liefert eine Kopie unter `nit_code/assets/statplot` mit und zeigt sie
-  **offline** über einen lokalen Server auf 127.0.0.1 im iframe
+- Seit 1.10.3 lädt NIT_Code zuerst die Online-Version von
+  statplot.mint-checker.de (Änderungen dort sind sofort sichtbar). Meldet sie
+  sich nicht binnen 8 s, zeigt es die mitgelieferte Kopie unter
+  `nit_code/assets/statplot` über einen lokalen Server auf 127.0.0.1
   (`nit_code/statplot_window.py`, Unterklasse von `PapEditorWindow`).
-  Abgleich: `bash release/scripts/sync_statplot.sh ../StatPlot`, Stand steht in
+  Die Kopie gleicht jeder Release-Build automatisch mit StatPlot `main` ab;
+  von Hand: `bash release/scripts/sync_statplot.sh ../StatPlot`, Stand steht in
   `nit_code/assets/statplot/VERSION`.
 - Embed-Protokoll wie PAP/IBD (`source/target: 'statplot'`) plus Schalter in
   `load`: `open` (Dateidialog im Sketchbook), `code` (neuer Editor-Tab),
-  `clipboard` (Kopieren über Qt), `nit` (Hinweise im Python-Code).
+  `clipboard` (Kopieren über Qt), `nit` (Hinweise im Python-Code),
+  `save:false` (kein „In Projekt übernehmen“).
   Die gemeinsame Host-Seite in `pap_editor.py` kennt dafür `_LOAD`, `_send()`
   und `_on_embed_event()`.
 - Entfallen: `csv_plot.py`, `stat_tests.py`, `stat_tests_panel.py`,
