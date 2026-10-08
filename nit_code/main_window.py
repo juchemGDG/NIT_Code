@@ -1163,6 +1163,8 @@ class MainWindow(QMainWindow):
 
         add("files", "files", "Dateien ein-/ausblenden", self._toggle_file_panel, True)
         add("ai", "ai", "KI-Assistent ein-/ausblenden", self._toggle_ai_panel, True)
+        add("debuglog", "log", "Fehlerprotokoll ein-/ausblenden (Strg+Umschalt+P)",
+            self._toggle_debug_log, True)
         add("blocks", "blocks", "Block-Editor öffnen …", self._open_block_editor)
         add("plotter", "plotter", "Serial Plotter ein-/ausblenden",
             lambda: self._act_plotter.setChecked(not self._act_plotter.isChecked()), True)
@@ -1196,7 +1198,9 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_activity_buttons"):
             return
         self._activity_buttons["files"].setChecked(not self._left_splitter.isHidden())
-        self._activity_buttons["ai"].setChecked(not self._ai_stack.isHidden())
+        # Rechts ist höchstens eins sichtbar: KI-Assistent oder Fehlerprotokoll
+        self._activity_buttons["ai"].setChecked(self._ai_page_visible())
+        self._activity_buttons["debuglog"].setChecked(self._debug_log_visible())
         self._activity_buttons["plotter"].setChecked(self._act_plotter.isChecked())
         if hasattr(self, "_m_blocks"):
             self._activity_buttons["blocks"].setVisible(self._m_blocks.menuAction().isVisible())
@@ -1215,8 +1219,19 @@ class MainWindow(QMainWindow):
             self._left_splitter.setVisible(False)
         self._sync_activity_bar()
 
+    def _ai_page_visible(self) -> bool:
+        """True, wenn rechts ein KI-Panel (Infi, AIS-Chat, Code-Generator) zu sehen ist."""
+        return not self._ai_stack.isHidden() and self._ai_stack.currentIndex() in (0, 1, 2)
+
+    def _debug_log_visible(self) -> bool:
+        return (not self._ai_stack.isHidden()
+                and hasattr(self, "_debug_log_panel")
+                and self._ai_stack.currentWidget() is self._debug_log_panel)
+
     def _toggle_ai_panel(self):
-        if not self._ai_stack.isHidden():
+        """KI-Assistent ein/aus. Ist rechts gerade etwas anderes offen (z. B. das
+        Fehlerprotokoll), wird auf den KI-Assistenten umgeschaltet."""
+        if self._ai_page_visible():
             self._ai_stack.setVisible(False)
         elif self._settings_tutor_mode == "none":
             QMessageBox.information(
@@ -1225,11 +1240,9 @@ class MainWindow(QMainWindow):
                 "Wähle unter Datei → Einstellungen → KI-Tutor einen Assistenten aus.",
             )
         else:
-            self._ai_stack.setVisible(True)
-            sizes = self._main_splitter.sizes()
-            if len(sizes) == 3 and sizes[2] == 0:
-                total = sum(sizes)
-                self._main_splitter.setSizes([sizes[0], max(200, total - sizes[0] - 360), 360])
+            if self._debug_log_visible():
+                self._debug_log_panel.save()
+            self._show_tutor_panel()
         self._sync_activity_bar()
 
     # ──────────────────────────────────────────────────────────────────────
@@ -2028,6 +2041,7 @@ class MainWindow(QMainWindow):
             total = sum(sizes)
             self._main_splitter.setSizes([sizes[0], total - sizes[0] - 520, 520])
         self._worksheet_panel.load_file(path)
+        self._sync_activity_bar()
 
     def _close_worksheet_preview(self):
         self._apply_settings()   # zurück zum regulären, Settings-gesteuerten KI-Panel
@@ -2362,13 +2376,18 @@ class MainWindow(QMainWindow):
         if sizes[2] == 0:
             total = sum(sizes)
             self._main_splitter.setSizes([sizes[0], max(200, total - sizes[0] - 420), 420])
+        self._sync_activity_bar()
 
     def _close_debug_log(self):
+        """Protokoll schließen – der rechte Bereich bleibt danach leer
+        (den KI-Assistenten blendet sein eigener Schalter ein)."""
         self._debug_log_panel.save()
-        self._apply_settings()   # zurück zum regulären, Settings-gesteuerten KI-Panel
+        self._ai_stack.setVisible(False)
+        self._sync_activity_bar()
 
     def _toggle_debug_log(self):
-        if self._ai_stack.isVisible() and self._ai_stack.currentWidget() is self._debug_log_panel:
+        """Fehlerprotokoll ein/aus. Ist rechts der KI-Assistent offen, wird umgeschaltet."""
+        if self._debug_log_visible():
             self._close_debug_log()
         else:
             self._open_debug_log()
@@ -4281,7 +4300,15 @@ class MainWindow(QMainWindow):
         self._autosave_timer.stop()
         if self._settings_autosave_secs > 0:
             self._autosave_timer.start(self._settings_autosave_secs * 1000)
-        # KI-Tutor (3 Modi: none / ollama / aischat)
+        # KI-Tutor (3 Modi: none / ollama / aischat). Ein offenes Fehlerprotokoll bleibt offen.
+        keep_log = self._debug_log_visible()
+        self._show_tutor_panel()
+        if keep_log:
+            self._open_debug_log()
+        self._sync_activity_bar()
+
+    def _show_tutor_panel(self):
+        """Rechten Bereich gemäß Einstellung „KI-Tutor“ zeigen (bzw. bei „none“ ausblenden)."""
         from .ais_chat_panel import (
             PANEL_DEFAULT_WIDTH,
             PANEL_MAX_WIDTH,

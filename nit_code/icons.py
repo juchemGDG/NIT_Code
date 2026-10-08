@@ -21,6 +21,8 @@ _PATHS: dict[str, str] = {
     "files":    '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     "ai":       '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/>'
                 '<path d="M18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+    "log":      '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9z"/>'
+                '<path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4"/>',
     "blocks":   '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/>'
                 '<rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M17 13.5v7M13.5 17h7"/>',
     "plotter":  '<path d="M4 4v16h16"/><path d="M7 15l4-5 3 3 5-6"/>',
