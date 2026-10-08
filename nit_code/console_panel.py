@@ -16,6 +16,24 @@ from PyQt6.QtWidgets import (
 from .config import THEME, python_executable, tool_command
 
 
+def _decode_shell_bytes(raw: bytes) -> str:
+    """Dekodiert Shell-Ausgabe: zuerst UTF-8, sonst die System-Codepage
+    (Windows: meist cp1252) – nie mit Exception."""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        import locale
+        # getencoding() (ab 3.11) liefert die echte ANSI-Codepage auch im UTF-8-Modus.
+        getenc = getattr(locale, "getencoding", None)
+        enc = (getenc() if getenc else locale.getpreferredencoding(False)) or "cp1252"
+        if enc.lower().replace("-", "") == "utf8":
+            enc = "cp1252"
+        try:
+            return raw.decode(enc, errors="replace")
+        except LookupError:
+            return raw.decode("cp1252", errors="replace")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Signal-Brücke für Thread-sichere Ausgaben
 # ──────────────────────────────────────────────────────────────────────────────
@@ -580,14 +598,20 @@ class ShellWidget(QWidget):
                 t = threading.Thread(target=self._read_pty, daemon=True)
                 t.start()
             else:
+                # Binär lesen und selbst dekodieren: Windows-Programme geben oft
+                # in der ANSI-Codepage aus (z. B. 0xFC = „ü“), ein fester UTF-8-
+                # Textmodus ließe den Lesethread mit UnicodeDecodeError abstürzen.
+                env = os.environ.copy()
+                env["PYTHONIOENCODING"] = "utf-8"   # Python-REPL/mpremote → UTF-8
+                env["PYTHONUNBUFFERED"] = "1"
                 self._proc = subprocess.Popen(
                     cmd,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
+                    bufsize=0,
                     cwd=Path.home(),
+                    env=env,
                 )
                 t = threading.Thread(target=self._read_output, daemon=True)
                 t.start()
@@ -619,10 +643,16 @@ class ShellWidget(QWidget):
                 break
 
     def _read_output(self):
-        if not self._proc:
+        """Liest stdout des Shell-Prozesses (Windows, binäre Pipe)."""
+        proc = self._proc
+        if not proc or not proc.stdout:
             return
-        for line in self._proc.stdout:
-            self._append(line, THEME["terminal_text"])
+        try:
+            for raw in iter(proc.stdout.readline, b""):
+                text = _decode_shell_bytes(raw).replace("\r\n", "\n")
+                self._append(text, THEME["terminal_text"])
+        except (OSError, ValueError):
+            pass   # Pipe beim Beenden/Neustart der Shell geschlossen
 
     def _append(self, text: str, color: str):
         """Thread-sicher: aus Hintergrund-Thread aufrufbar."""
@@ -656,7 +686,7 @@ class ShellWidget(QWidget):
         elif self._proc and self._proc.poll() is None:
             self._do_append(f"$ {cmd}\n", THEME["accent"])
             try:
-                self._proc.stdin.write(cmd + "\n")
+                self._proc.stdin.write((cmd + "\n").encode("utf-8"))
                 self._proc.stdin.flush()
             except Exception as e:
                 self._do_append(f"Fehler: {e}\n", THEME["error"])
