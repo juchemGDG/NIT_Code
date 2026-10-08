@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 *.png
+!nit_code/assets/debug/*.png
 *.bin
 *.hex
 *.uf2
