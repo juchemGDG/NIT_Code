@@ -184,10 +184,16 @@ class DebugLogPanel(QWidget):
         self._file_lbl.setWordWrap(True)
         self._file_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
         tl.addWidget(self._file_lbl)
+        self._empty_hint = QLabel("")
+        self._empty_hint.setWordWrap(True)
+        self._empty_hint.setStyleSheet(f"color:{THEME['text_dim']}; padding:8px 2px;")
+        tl.addWidget(self._empty_hint)
         split.addWidget(top)
+        self._split = split
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        self._form_scroll = scroll   # nur sichtbar, solange ein Eintrag geöffnet ist
         form_w = QWidget()
         self._form = QFormLayout(form_w)
         self._form.setContentsMargins(8, 6, 8, 8)
@@ -242,6 +248,13 @@ class DebugLogPanel(QWidget):
         self._form.addRow(self._lbl_erg, self._f_erg)
         self._form.addRow(self._lbl_zr, zr)
         self._form.addRow(self._lbl_loes, self._f_loes)
+        btn_done = QPushButton("✓  Fertig")
+        btn_done.setToolTip("Eintrag zuklappen – er bleibt gespeichert und lässt sich in der Liste wieder öffnen")
+        btn_done.clicked.connect(self.close_entry)
+        done_row = QHBoxLayout()
+        done_row.addStretch()
+        done_row.addWidget(btn_done)
+        self._form.addRow(done_row)
         self._voll_rows = [(self._lbl_ek, ek), (self._lbl_zr, zr), (self._lbl_loes, self._f_loes)]
         scroll.setWidget(form_w)
         split.addWidget(scroll)
@@ -250,6 +263,7 @@ class DebugLogPanel(QWidget):
 
     def refresh_theme(self):
         self._file_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        self._empty_hint.setStyleSheet(f"color:{THEME['text_dim']}; padding:8px 2px;")
         self._f_laeufe.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
 
     # ── Stufe ────────────────────────────────────────────────────────────
@@ -310,10 +324,15 @@ class DebugLogPanel(QWidget):
 
     def save(self):
         self._save_timer.stop()
-        if not self._program or not self._eintraege:
+        if not self._program:
+            return
+        path = protocol_path(self._program)
+        # Ohne Einträge keine neue Datei anlegen – eine vorhandene aber leeren,
+        # sonst tauchen gelöschte Einträge beim nächsten Öffnen wieder auf.
+        if not self._eintraege and not os.path.exists(path):
             return
         try:
-            with open(protocol_path(self._program), "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(to_markdown(os.path.basename(self._program), self._eintraege, self._level))
         except OSError as exc:
             self._file_lbl.setText(f"⚠  Protokoll konnte nicht gespeichert werden: {exc}")
@@ -327,11 +346,16 @@ class DebugLogPanel(QWidget):
         nr = max((e.nr for e in self._eintraege), default=0) + 1
         e = Eintrag(nr=nr, soll_ist=(f"Ist: {ist}" if ist else ""))
         self._eintraege.append(e)
-        self._rebuild_list()
-        self._list.setCurrentRow(len(self._eintraege) - 1)
+        self._rebuild_list(select=len(self._eintraege) - 1)
         self._f_soll.setFocus()
         self._schedule_save()
         return e
+
+    def close_entry(self):
+        """Geöffneten Eintrag zuklappen (Felder ausblenden)."""
+        self.save()
+        self._list.setCurrentRow(-1)
+        self._list.clearSelection()
 
     def current(self) -> Eintrag | None:
         row = self._list.currentRow()
@@ -357,16 +381,16 @@ class DebugLogPanel(QWidget):
         self._rebuild_list()
         self._schedule_save()
 
-    def _rebuild_list(self):
+    def _rebuild_list(self, select: int | None = None):
+        """Liste neu aufbauen. Geöffnet wird nur der Eintrag ``select`` –
+        sonst bleiben die Eingabefelder zu, bis ein Eintrag angeklickt wird."""
         self._loading = True
-        cur = self._list.currentRow()
         self._list.clear()
         for e in self._eintraege:
             self._list.addItem(QListWidgetItem(self._item_text(e)))
         self._loading = False
-        if self._eintraege:
-            self._list.setCurrentRow(min(max(cur, 0), len(self._eintraege) - 1)
-                                     if cur >= 0 else len(self._eintraege) - 1)
+        if select is not None and 0 <= select < len(self._eintraege):
+            self._list.setCurrentRow(select)
         else:
             self._on_select(-1)
         self._update_enabled()
@@ -417,6 +441,19 @@ class DebugLogPanel(QWidget):
             w.setEnabled(has)
         self._btn_del.setEnabled(has)
         self._btn_export.setEnabled(bool(self._eintraege))
+        # Eingabefelder nur bei geöffnetem Eintrag zeigen
+        was_hidden = self._form_scroll.isHidden()
+        self._form_scroll.setVisible(has)
+        if has and was_hidden:
+            total = max(sum(self._split.sizes()), 400)
+            self._split.setSizes([150, total - 150])
+        self._empty_hint.setVisible(not has)
+        if self._eintraege:
+            self._empty_hint.setText("Klicke auf einen Eintrag, um ihn anzusehen oder weiterzuschreiben – "
+                                     "oder lege mit „Neuer Eintrag“ einen neuen an.")
+        else:
+            self._empty_hint.setText("Noch keine Einträge. Wenn du einem Fehler auf der Spur bist, "
+                                     "klicke auf „Neuer Eintrag“.")
 
     # ── Export ───────────────────────────────────────────────────────────
     def _export_pdf(self):
