@@ -1,7 +1,7 @@
 # NIT_Code für die Debugging-Landkarte – Umsetzungskonzept
 
 *Bezug: „Debugging-Landkarte – Konzept Version 2.1“, vor allem Abschnitt 7 (Anforderungen an NIT_Code)*
-Stand: 2026-10-08 · Konzept, noch nicht umgesetzt
+Stand: 2026-10-08 · A–H umgesetzt in `feature_sj/debugging` (1.11.0-beta.1), siehe Abschnitt 16
 Branch für die Umsetzung: `feature_sj/debugging` · Release als Beta `1.11.0-beta.N`
 
 ---
@@ -22,7 +22,7 @@ Branch für die Umsetzung: `feature_sj/debugging` · Release als Beta `1.11.0-be
 |---|---|---|
 | Fehlererklärung | [error_hints.py](../nit_code/error_hints.py): fester Hinweis je Fehlertyp, Infi-Knopf „Fehler erklären“ | Nur nach **Typ** unterschieden. `OSError` hat einen Sammeltext („Pin/Bus richtig verkabelt? … Beim Dateizugriff …“), keine Unterscheidung nach Fehlercode, keine Ebene, kein Bezug zum IBD. `RuntimeError` aus `nitbw_bme280` bekommt nur den allgemeinen Text. |
 | Traceback | Fehlerzeile im Editor markiert, `<stdin>` wird auf die aktive Datei abgebildet | Kein Hinweis „Hier beginnt deine Suche“ (letzte Zeile der **eigenen** Datei) im Unterschied zur Zeile in der Bibliothek. |
-| Klickbare Fehlerlinks | in `OutputConsole.append_error` angelegt | **Nebenbefund (Bug):** `self._links.clear()` am Ende von `append_error` löscht die Links sofort wieder, ein Klick bewirkt daher nichts. Wird im Branch mit behoben. |
+| Klickbare Fehlerlinks | in `OutputConsole.append_error` angelegt, funktionieren | – (Korrektur: ein zunächst vermuteter Fehler beim Löschen der Links besteht nicht) |
 | I2C-Scan | – | fehlt |
 | Stand sichern / zurück | Editor-Undo, Autosave, Git-Menü | Kein „letzter funktionierender Stand“; Git ist für Kl. 10 zu schwer. |
 | Live-Werte | Serial Plotter (auch X-Y) | ausreichend; kleine Ergänzung für Plausibilität möglich (6.4) |
@@ -35,7 +35,7 @@ Branch für die Umsetzung: `feature_sj/debugging` · Release als Beta `1.11.0-be
 | Nr. | Baustein | Bezug im Konzept | Aufwand | Beta |
 |---|---|---|---|---|
 | **A** | Fehlerhinweise nach Ebenen, Hardware-Lesehilfe, gestufte Hilfe | 3.4, 3.5, 6.2, Abschnitt 7 Z. 3–4 | mittel | beta.1 |
-| **B** | „Hier beginnt deine Suche“ im Traceback + Link-Bug | 3.5 „Zeile im Traceback“ | klein | beta.1 |
+| **B** | „Hier beginnt deine Suche“ im Traceback | 3.5 „Zeile im Traceback“ | klein | beta.1 |
 | **C** | I2C-Scan (mit Vorlage zum Einfügen) | Abschnitt 7 Z. 1 | klein–mittel | beta.1 |
 | **D** | Stände sichern und „Zurück zum letzten funktionierenden Stand“ | 3.1 Schritt 6, Abschnitt 7 Z. 2 | mittel | beta.2 |
 | **E** | Schritt-0-Hinweis bei Gefahrenanzeichen | 3.6 | klein | beta.2 |
@@ -129,7 +129,6 @@ Ausgabe unter dem Traceback:
 ```
 
 - Zeile 8 wird im Editor markiert (wie heute), die Bibliothekszeile nicht.
-- Die Fehlerlinks werden repariert (siehe Bug in Abschnitt 1), damit ein Klick zur Zeile springt.
 - Didaktischer Zweck: genau die kleine Übung aus DS 1 („Markiere die letzte Zeile der eigenen Datei“). Für diese Übung kann die Lehrkraft die Zeile über die Einstellung „Fehlerhilfe gestuft“ zunächst verbergen; sie erscheint dann erst als Stufe 2.
 
 ---
@@ -309,7 +308,7 @@ Vorschlag: zunächst weglassen und die Messung wie im Konzept mit Stoppuhr und B
 | Baustein | Dateien |
 |---|---|
 | A | `error_hints.py` (Regeln, Stufen, Infi-Prompt), neu `assets/debug/lesetabelle.json`, `console_panel.py` (Stufen-Links), `settings_dialog.py` |
-| B | `main_window.py` (`_handle_program_error`, `_resolve_traceback_file`), `console_panel.py` (Link-Bug) |
+| B | `main_window.py` (`_handle_program_error`, `_resolve_traceback_file`), `console_panel.py` |
 | C | `main_window.py` (Menüeintrag, mpremote-Aufruf), neu `i2c_scan.py` (Dialog, Adresstabelle) |
 | D | neu `snapshots.py` (Speichern, Aufräumen, Diff), `main_window.py` (Hooks bei Start/Ende, Menü) |
 | E | `console_panel.py` (Erkennung im MicroPython-Runner), `error_hints.py` (Texte) |
@@ -325,14 +324,14 @@ Tests: Einheitstests für Regel-Erkennung (echte MicroPython-Tracebacks aus der 
 
 - Branch `feature_sj/debugging` von `main` (Stand 1.10.4).
 - Version im Branch: `1.11.0-beta.1`, `-beta.2`, … (Tag `v1.11.0-beta.N`); der CI-Build lädt Tag-Builds bereits ans Entwurfs-Release, dort als **Pre-Release** markieren.
-- Fehlerbehebungen für `main` (z. B. der Link-Bug) können vorab einzeln nach `main` übernommen werden.
+- Fehlerbehebungen für `main` können vorab einzeln nach `main` übernommen werden.
 - Merge nach `main` und Release als `1.11.0`, wenn die Messreihe eingearbeitet und das Modul einmal erprobt ist.
 
 ### Vorschlag Beta-Folge
 
 | Beta | Inhalt | sinnvoll bis |
 |---|---|---|
-| beta.1 | A, B, C, H (+ Link-Bug) | zur Messreihe – die Lesetabelle wird dabei direkt am Gerät geprüft |
+| beta.1 | A, B, C, H | zur Messreihe – die Lesetabelle wird dabei direkt am Gerät geprüft |
 | beta.2 | D, E | vor DS 1 |
 | beta.3 | F, G (Kurz- und Vollform) | vor DS 1 / DS 2 |
 | beta.4 | Lesetabelle mit Messreihe belegt, Feinschliff nach Erprobung | – |
@@ -346,3 +345,31 @@ Tests: Einheitstests für Regel-Erkennung (echte MicroPython-Tracebacks aus der 
 3. **Ort der Stände:** im Projektordner (`.nit_staende/`, wandert mit dem Projekt auf den Schulserver) oder lokal im Benutzerprofil (Netzlaufwerk bleibt sauber)?
 4. **Fehlerprotokoll im Programm oder auf Papier?** Baustein G ist der größte Aufwand. Er lohnt sich, wenn das Protokoll digital abgegeben werden soll.
 5. **Messreihe:** Sobald sie vorliegt, liefert sie gleich die Testdaten für Baustein A. Ein Mitschnitt der Konsolenausgabe (kopierter Text) pro Sabotage reicht.
+
+---
+
+## 16. Umsetzungsstand und Entscheidungen (2026-10-08)
+
+**Entscheidungen**
+- A–G werden umgesetzt; die verdeckte Notiz von Partner B (9.3) entfällt.
+- Die Landkarte (H) sind die beiden Poster als Bild (`assets/debug/landkarte_kl89.png`, `landkarte_kl10.png`) statt einer Markdown-Seite.
+- Die Begriffe folgen den Postern: Kl. 8/9 kennt die Ebenen 0, 1a, 2, 3 und die Karten STOPP, PAP, Checkliste; Kl. 10/KS zusätzlich 1b, IBD und „PAP + IBD“. Kontrollpunkte heißen wie auf dem Poster `print("K3")`.
+- Stände liegen im Benutzerprofil (`<Konfig>/nit_code/staende/`), nicht im Projektordner.
+- Die Pins für den I2C-Scan werden aus dem eigenen Code übernommen (sonst zuletzt genutzte Werte, Voreinstellung 21/22).
+
+**Umgesetzt in 1.11.0-beta.1**
+
+| Baustein | Wo |
+|---|---|
+| A Fehlerhilfe nach Ebenen, gestuft, Lesetabelle, Infi im Zyklus | `error_hints.py`, `assets/debug/lesetabelle.json`, Links in `console_panel.py` |
+| B „Hier beginnt deine Suche“ (eigene Datei vs. Bibliothek) | `main_window._show_search_start` |
+| C I2C-Scan mit Adresse aus dem Code, Chip-ID (I), Vorlage einfügen | `i2c_scan.py`, Menü Debuggen und MicroPython |
+| D Lauf-Stände ✓/✗/■, 📌 Stand merken, ⏪ Zurück, Stände-Dialog mit Vergleich, Änderungshinweis | `snapshots.py` |
+| E Schritt-0-Kasten bei Brownout, Neustart, USB-Abbruch | `error_hints.detect_danger`, `main_window._debug_track_output` |
+| F Kontrollpunkte einfügen/entfernen (Strg+K, Rechtsklick), letzter erreichter Kontrollpunkt | `checkpoints.py` |
+| G Fehlerprotokoll-Panel Kurz-/Vollform, Läufe als Fakten, Markdown neben dem Programm, PDF | `debug_log_panel.py` |
+| H Debugging-Landkarte (Hilfe und Debuggen) | `debug_map_dialog.py` |
+
+Einstellungen → DEBUGGING: Stufe (Kl. 8/9 / Kl. 10/KS), Fehlerhilfe in Stufen, Änderungshinweis.
+
+**Noch offen:** Messreihe am Gerät (Lesetabelle von „Arbeitshypothese“ auf „belegt“ umstellen), Test mit echtem ESP32 (I2C-Scan, Brownout-Erkennung), Erprobung im Unterricht.

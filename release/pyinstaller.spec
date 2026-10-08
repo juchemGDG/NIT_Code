@@ -91,6 +91,7 @@ a = Analysis(
         'PyQt6.QtWebEngineWidgets',
         'PyQt6.QtWebEngineCore',
         'PyQt6.Qsci',
+        'PyQt6.QtPrintSupport',   # PDF-Export des Fehlerprotokolls
         'mpremote',
         'mpremote.main',
         'esptool',

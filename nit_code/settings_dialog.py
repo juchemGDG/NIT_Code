@@ -154,9 +154,13 @@ class SettingsDialog(QDialog):
         plot_x_min: int = 0,
         plot_x_max: int = 500,
         ui_font_pt: int = UI_FONT_PT_DEFAULT,
+        debug_level: str = "kl10",
+        debug_stepped: bool = True,
+        debug_change_hint: bool = True,
     ):
         super().__init__(parent)
         self._initial_ui_font_pt = ui_font_pt
+        self._debug_init = (debug_level, debug_stepped, debug_change_hint)
         self.setWindowTitle("Einstellungen")
         self.setModal(True)
         # Etwas breiter und mit Scrollbereich (siehe _build_ui), damit das Fenster
@@ -350,6 +354,37 @@ class SettingsDialog(QDialog):
         form_func.addRow("", hint_blocks)
 
         root.addLayout(form_func)
+        root.addSpacing(6)
+
+        # ── Abschnitt: Debugging ─────────────────────────────────────────
+        title_dbg, sep_dbg = self._section("DEBUGGING")
+        root.addWidget(title_dbg)
+        root.addWidget(sep_dbg)
+
+        form_dbg = QFormLayout()
+        form_dbg.setSpacing(8)
+        form_dbg.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        dbg_level, dbg_stepped, dbg_change = self._debug_init
+
+        self._combo_dbg_level = QComboBox()
+        self._combo_dbg_level.setFixedWidth(220)
+        self._combo_dbg_level.addItem("Klasse 8/9 (Kurzform)", "kl89")
+        self._combo_dbg_level.addItem("Klasse 10/KS (Vollform)", "kl10")
+        self._combo_dbg_level.setCurrentIndex(max(0, self._combo_dbg_level.findData(dbg_level)))
+        self._combo_dbg_level.setToolTip(
+            "Begriffe wie auf der Debugging-Landkarte der Stufe: Fehlerebenen, Karten "
+            "und Form des Fehlerprotokolls.")
+        form_dbg.addRow("Debugging-Landkarte:", self._combo_dbg_level)
+
+        self._chk_dbg_stepped = QCheckBox("  Fehlerhilfe in Stufen (Ebene → Karte → Verdächtige)")
+        self._chk_dbg_stepped.setChecked(dbg_stepped)
+        form_dbg.addRow("", self._chk_dbg_stepped)
+
+        self._chk_dbg_change = QCheckBox("  Beim Start zeigen, wie viele Stellen seit dem letzten Lauf geändert wurden")
+        self._chk_dbg_change.setChecked(dbg_change)
+        form_dbg.addRow("", self._chk_dbg_change)
+
+        root.addLayout(form_dbg)
         root.addSpacing(6)
 
         # ── Abschnitt: Ausführen ─────────────────────────────────────────
@@ -897,6 +932,18 @@ class SettingsDialog(QDialog):
     @property
     def blocks_enabled(self) -> bool:
         return self._chk_blocks.isChecked()
+
+    @property
+    def debug_level(self) -> str:
+        return self._combo_dbg_level.currentData()
+
+    @property
+    def debug_stepped(self) -> bool:
+        return self._chk_dbg_stepped.isChecked()
+
+    @property
+    def debug_change_hint(self) -> bool:
+        return self._chk_dbg_change.isChecked()
 
     @property
     def autosave_secs(self) -> int:

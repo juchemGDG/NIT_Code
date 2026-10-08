@@ -33,6 +33,7 @@ class CodeEditor(QWidget):
         # Zustand der laufenden Suche (für Weitersuchen mit findNext)
         self._search_active = False
         self._search_key = None
+        self._context_actions: list = []   # Zusatzeinträge im Rechtsklick-Menü
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -214,6 +215,57 @@ class CodeEditor(QWidget):
             self.sci.setTextCursor(cursor)
             self.sci.ensureCursorVisible()
         self.sci.setFocus()
+
+    def replace_text_undoable(self, text: str):
+        """Ersetzt den ganzen Inhalt so, dass Strg+Z ihn zurückholt
+        (set_text leert dagegen die Undo-Historie). Cursorzeile bleibt erhalten."""
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if HAS_QSCI:
+            line, _ = self.sci.getCursorPosition()
+            self.sci.beginUndoAction()
+            self.sci.selectAll()
+            self.sci.replaceSelectedText(text)
+            self.sci.endUndoAction()
+            line = max(0, min(line, self.sci.lines() - 1))
+            self.sci.setCursorPosition(line, 0)
+            self.sci.ensureLineVisible(line)
+        else:
+            cursor = self.sci.textCursor()
+            cursor.select(cursor.SelectionType.Document)
+            cursor.insertText(text)
+
+    def cursor_line(self) -> int:
+        """Aktuelle Cursorzeile (1-basiert)."""
+        if HAS_QSCI:
+            return self.sci.getCursorPosition()[0] + 1
+        return self.sci.textCursor().blockNumber() + 1
+
+    def selected_text(self) -> str:
+        if HAS_QSCI:
+            return self.sci.selectedText()
+        return self.sci.textCursor().selectedText()
+
+    def set_context_actions(self, actions: list):
+        """Zusätzliche Einträge (QAction, None = Trennlinie) im Rechtsklick-Menü."""
+        self._context_actions = list(actions)
+        if HAS_QSCI and not getattr(self, "_context_hooked", False):
+            self._context_hooked = True
+            self.sci.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.sci.customContextMenuRequested.connect(self._show_context_menu)
+
+    def _show_context_menu(self, pos):
+        menu = self.sci.createStandardContextMenu()
+        if menu is None:
+            from PyQt6.QtWidgets import QMenu
+            menu = QMenu(self)
+        if self._context_actions:
+            menu.addSeparator()
+            for act in self._context_actions:
+                if act is None:
+                    menu.addSeparator()
+                else:
+                    menu.addAction(act)
+        menu.exec(self.sci.mapToGlobal(pos))
 
     def mark_error_line(self, line: int):
         """Markiert eine Fehlerzeile mit einem roten Punkt im Margin."""

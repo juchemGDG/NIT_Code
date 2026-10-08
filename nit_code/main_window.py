@@ -870,6 +870,18 @@ class MainWindow(QMainWindow):
         self._settings_plot_x_mode: str = "sliding"   # "sliding" | "sweep" | "xy"
         self._settings_plot_x_min: int = 0
         self._settings_plot_x_max: int = 500
+        # Debugging-Landkarte
+        self._settings_debug_level: str = "kl10"        # "kl89" | "kl10" (Begriffe, Protokollform)
+        self._settings_debug_stepped: bool = True       # Fehlerhilfe in Stufen
+        self._settings_debug_change_hint: bool = True   # „Seit dem letzten Lauf: n Stellen geändert"
+        self._snapshots = None                          # SnapshotStore (lazy)
+        self._run_snapshot: tuple[str, str] | None = None   # (Datei, Stand-ID) des laufenden Programms
+        self._run_change_text = ""                      # Änderung seit dem letzten Lauf (für Protokoll)
+        self._danger_shown = False                      # Schritt-0-Kasten in diesem Lauf schon gezeigt
+        self._kp_partial = ""                           # unvollständige Ausgabezeile (Kontrollpunkte)
+        self._kp_reached: list[int] = []                # erreichte Kontrollpunkte in diesem Lauf
+        self._last_hint = None                          # ErrorHint des letzten Fehlers
+        self._hint_stage = 0                            # angezeigte Hilfestufe
         self._settings_store = QSettings()
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._autosave_all)
@@ -965,6 +977,22 @@ class MainWindow(QMainWindow):
         m_viz.addAction(self._act_plotter)
         self._add_action(m_viz, "📊  Datenauswertung (CSV) …", self._open_csv_plot)
 
+        # ── Debuggen (Debugging-Landkarte) ──
+        m_dbg = mb.addMenu("Debuggen")
+        self._add_action(m_dbg, "📝  Fehlerprotokoll", self._toggle_debug_log, "Ctrl+Shift+P")
+        m_dbg.addSeparator()
+        self._add_action(m_dbg, "📍  Kontrollpunkt einfügen", self._insert_checkpoint, "Ctrl+K")
+        self._add_action(m_dbg, "Alle Kontrollpunkte entfernen", self._remove_checkpoints, "Ctrl+Shift+K")
+        m_dbg.addSeparator()
+        self._add_action(m_dbg, "📌  Stand merken …", self._pin_snapshot, "Ctrl+Alt+S")
+        self._add_action(m_dbg, "⏪  Zurück zum letzten funktionierenden Stand",
+                         self._restore_last_good, "Ctrl+Alt+Z")
+        self._add_action(m_dbg, "🕘  Stände anzeigen …", self._show_snapshots)
+        m_dbg.addSeparator()
+        self._act_i2c_scan_dbg = self._add_action(m_dbg, "🔍  I2C-Scan …", self._open_i2c_scan)
+        m_dbg.addSeparator()
+        self._add_action(m_dbg, "🗺  Debugging-Landkarte", self._show_debug_map)
+
         # ── Python ──
         self._m_python = mb.addMenu("Python")
         self._add_action(self._m_python, "📦  Pakete installieren (pip) …", self._open_pip_manager)
@@ -987,6 +1015,7 @@ class MainWindow(QMainWindow):
         self._add_action(
             self._m_upy, "🔄  Controller neu starten", self._reset_controller
         )
+        self._add_action(self._m_upy, "🔍  I2C-Scan …", self._open_i2c_scan)
         self._m_upy.addSeparator()
 
         # ── Git ──
@@ -1013,6 +1042,7 @@ class MainWindow(QMainWindow):
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
         self._add_action(m_help, "📖  Kurzanleitung", self._show_quickstart, "F1")
+        self._add_action(m_help, "🗺  Debugging-Landkarte", self._show_debug_map)
         m_help.addSeparator()
         self._add_action(m_help, "🤖  NiT_Coder (ais.chat) …", self._show_ais_prompt)
         m_help.addSeparator()
@@ -1259,6 +1289,7 @@ class MainWindow(QMainWindow):
         self._console = ConsolePanel()
         self._console.error_link_clicked.connect(self._jump_to_error)
         self._console.explain_requested.connect(self._explain_error_with_infi)
+        self._console.action_requested.connect(self._on_console_action)
         self._device_panel.refresh_started.connect(self._on_device_refresh_start)
         self._device_panel.refresh_done.connect(self._on_device_refresh_done)
         self._device_panel.firmware_info.connect(
@@ -1282,6 +1313,12 @@ class MainWindow(QMainWindow):
         self._ai_stack.addWidget(self._coder_panel)          # Index 2 → Code-Generator
         self._ai_stack.addWidget(self._claude_terminal_panel)  # Index 3 → Claude-Terminal (Easter Egg)
         self._ai_stack.addWidget(self._worksheet_panel)        # Index 4 → Arbeitsblatt-Vorschau
+        from .debug_log_panel import DebugLogPanel
+        self._debug_log_panel = DebugLogPanel()
+        self._debug_log_panel.set_level(self._settings_debug_level)
+        self._ai_stack.addWidget(self._debug_log_panel)        # Index 5 → Fehlerprotokoll
+        self._debug_log_panel.close_requested.connect(self._close_debug_log)
+        self._debug_log_panel.restore_requested.connect(self._restore_last_good)
         self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
         self._coder_panel.open_as_blocks_requested.connect(self._open_blocks_from_code)
         self._worksheet_panel.insert_into_editor_requested.connect(self._on_worksheet_insert_code)
@@ -1376,10 +1413,22 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self._console.append_error(f"Datei konnte nicht geladen werden: {e}\n")
 
+        tab.editor.set_context_actions(self._editor_context_actions())
+
         self._tabs.append(tab)
         idx = self._tab_widget.addTab(tab.editor, tab.display_name)
         self._tab_widget.setCurrentIndex(idx)
         return tab
+
+    def _editor_context_actions(self) -> list:
+        """Rechtsklick-Einträge für die Kontrollpunkte (einmal angelegt, von allen Tabs geteilt)."""
+        if not hasattr(self, "_ctx_actions"):
+            ins = QAction("📍  Kontrollpunkt hier einfügen  (Strg+K)", self)
+            ins.triggered.connect(self._insert_checkpoint)
+            rem = QAction("Alle Kontrollpunkte entfernen", self)
+            rem.triggered.connect(self._remove_checkpoints)
+            self._ctx_actions = [ins, rem]
+        return self._ctx_actions
 
     def _close_tab(self, index: int):
         tab = self._tabs[index]
@@ -1407,6 +1456,8 @@ class MainWindow(QMainWindow):
         tab = self._tabs[index] if 0 <= index < len(self._tabs) else None
         if tab:
             self._status_file.setText(self._tab_location(tab))
+        if hasattr(self, "_debug_log_panel"):
+            self._debug_log_panel.set_program(self._protocol_program(tab))
 
     def _tab_location(self, tab: EditorTab) -> str:
         """Pfad für die Statusleiste – bei Controller-Dateien der Pfad dort."""
@@ -1890,6 +1941,7 @@ class MainWindow(QMainWindow):
         self._last_error_traceback = ""
         self._user_stopped = False
         self._console.set_explain_visible(False)
+        self._debug_before_run(tab)
 
         # Vorhersage-Modus für diesen Lauf aktivieren (Ausgabe sammeln + vergleichen)
         self._prediction = prediction
@@ -2010,7 +2062,7 @@ class MainWindow(QMainWindow):
         tab = self._current_tab()
         code = tab.editor.get_text() if tab else ""
         from .error_hints import build_infi_error_prompt
-        prompt = build_infi_error_prompt(code, tb)
+        prompt = build_infi_error_prompt(code, tb, self._last_hint)
         # Infi-Panel sicher einblenden (Index 0) – auch wenn der Splitter kollabiert war.
         self._ai_stack.setCurrentIndex(0)
         self._ai_stack.setVisible(True)
@@ -2022,6 +2074,7 @@ class MainWindow(QMainWindow):
         self._console.set_explain_visible(False)
 
     def _on_process_output(self, text: str, kind: str):
+        self._debug_track_output(text, kind)
         if kind == "stderr":
             self._console.append_program_error(text)
             self._run_stderr_buf.append(text)   # für Fehlerhinweis nach Programmende
@@ -2056,6 +2109,7 @@ class MainWindow(QMainWindow):
         else:
             self._console.append_error(f"\n✗  Programm beendet mit Code {code}\n")
             self._handle_program_error()
+        self._debug_after_run(code)
 
         # Vorhersage-Modus: Vorhersage mit tatsächlicher Ausgabe vergleichen
         if getattr(self, "_predict_mode", False):
@@ -2077,13 +2131,384 @@ class MainWindow(QMainWindow):
         if not traceback_text:
             return
         self._last_error_traceback = traceback_text
-        from .error_hints import explain
-        hint = explain(traceback_text)
+        self._console.flush_now()   # Traceback steht sicher vor den Hinweisen
+        self._show_search_start(traceback_text)
+        from .error_hints import analyze
+        hint = analyze(traceback_text, self._settings_debug_level)
+        self._last_hint = hint
+        self._hint_stage = 0
         if hint:
-            self._console.append_hint(hint)
+            stepped = self._settings_debug_stepped
+            self._show_hint_stage(1, with_links=stepped)
+            if not stepped:
+                self._show_hint_stage(2, with_links=False)
+                self._show_hint_stage(3)
         # KI-Erklärung nur anbieten, wenn der Ollama-Tutor (Infi) eingerichtet ist.
         if self._settings_tutor_mode == "ollama":
             self._console.set_explain_visible(True)
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Debugging-Landkarte (Fehlerhilfe, Stände, Kontrollpunkte, Protokoll)
+    # ──────────────────────────────────────────────────────────────────────
+    def _snapshot_store(self):
+        if self._snapshots is None:
+            from .snapshots import SnapshotStore
+            self._snapshots = SnapshotStore()
+        return self._snapshots
+
+    @staticmethod
+    def _protocol_program(tab) -> str | None:
+        """Programmdatei, neben der das Fehlerprotokoll liegt (nicht bei Controller-Dateien)."""
+        if tab is None or tab.device_path:
+            return None
+        return tab.filepath
+
+    def _sync_debug_log(self):
+        self._debug_log_panel.set_program(self._protocol_program(self._current_tab()))
+
+    def _run_tab(self):
+        """Tab der zuletzt gestarteten Datei (Fallback: aktueller Tab)."""
+        if self._last_run_file:
+            target = os.path.abspath(self._last_run_file)
+            for tab in self._tabs:
+                if tab.filepath and os.path.abspath(tab.filepath) == target:
+                    return tab
+        return self._current_tab()
+
+    def _debug_before_run(self, tab):
+        """Lauf-Stand anlegen und Änderung seit dem letzten Lauf melden."""
+        self._danger_shown = False
+        self._danger_tail = ""
+        self._kp_partial = ""
+        self._kp_reached = []
+        self._last_hint = None
+        self._hint_stage = 0
+        self._run_snapshot = None
+        self._run_change_text = ""
+        if not tab or not tab.filepath:
+            return
+        from .snapshots import change_summary
+        text = tab.editor.get_text()
+        store = self._snapshot_store()
+        try:
+            prev = store.previous(tab.filepath)
+            prev_text = store.read(tab.filepath, prev.id) if prev else None
+            stand = store.add(tab.filepath, text)
+        except OSError:
+            return
+        self._run_snapshot = (tab.filepath, stand.id)
+        if prev_text is None:
+            return
+        lines = change_summary(prev_text, text)
+        n = len(lines)
+        zeilen = ", ".join(map(str, lines[:6])) + (" …" if n > 6 else "")
+        if n == 0:
+            self._run_change_text = "keine Änderung"
+            msg = "   Seit dem letzten Lauf: nichts geändert.\n"
+        elif n == 1:
+            self._run_change_text = f"1 Stelle, Zeile {lines[0]}"
+            msg = f"   Seit dem letzten Lauf: 1 Stelle geändert (Zeile {lines[0]}).\n"
+        else:
+            self._run_change_text = f"{n} Stellen, Zeilen {zeilen}"
+            msg = (f"   Seit dem letzten Lauf: {n} Stellen geändert (Zeilen {zeilen}) – "
+                   "im Zyklus testest du eine Änderung nach der anderen.\n")
+        if self._settings_debug_change_hint:
+            self._console.append_info(msg)
+
+    def _debug_track_output(self, text: str, kind: str):
+        """Ausgabe mitlesen: Kontrollpunkte (K1, K2 …) und Schritt-0-Anzeichen."""
+        if self._mode == "micropython" and not self._danger_shown:
+            from .error_hints import detect_danger
+            self._danger_tail = (getattr(self, "_danger_tail", "") + text)[-400:]
+            danger = detect_danger(self._danger_tail)
+            if danger:
+                self._danger_shown = True
+                QTimer.singleShot(0, lambda d=danger: self._show_danger(d))
+        if kind == "stdout":
+            parts = (self._kp_partial + text).split("\n")
+            self._kp_partial = parts.pop()[-200:]
+            self._collect_checkpoints(parts)
+
+    def _collect_checkpoints(self, lines):
+        from .checkpoints import reached_in_output
+        for ln in lines:
+            self._kp_reached.extend(reached_in_output(ln.strip()))
+
+    def _flush_kp_partial(self):
+        if self._kp_partial:
+            self._collect_checkpoints([self._kp_partial])
+            self._kp_partial = ""
+
+    def _show_danger(self, kind: str):
+        from .error_hints import danger_text
+        self._console.flush_now()
+        self._console.append_warning(danger_text(kind))
+
+    def _report_checkpoints(self, error: bool):
+        from .checkpoints import is_checkpoint, line_of
+        tab = self._run_tab()
+        code = tab.editor.get_text() if tab else ""
+        if not any(is_checkpoint(ln) for ln in code.split("\n")):
+            return
+        if self._kp_reached:
+            last = self._kp_reached[-1]
+            if error:
+                ln = line_of(code, last)
+                msg = (f"📍  Letzter erreichter Kontrollpunkt: K{last}"
+                       + (f" (Zeile {ln})" if ln else "") + " – der Fehler liegt dahinter.")
+            else:
+                msg = "📍  Erreichte Kontrollpunkte: " + ", ".join(
+                    f"K{n}" for n in dict.fromkeys(self._kp_reached))
+        else:
+            msg = ("📍  Kein Kontrollpunkt erreicht – der Fehler liegt vor K1." if error
+                   else "📍  Kein Kontrollpunkt erreicht.")
+        self._console.append_hint(msg + "\n")
+
+    def _show_search_start(self, traceback_text: str):
+        """„Hier beginnt deine Suche": letzte Zeile der eigenen Datei vs. Bibliothek."""
+        from .error_hints import search_start, traceback_frames
+        self._flush_kp_partial()
+        self._report_checkpoints(error=True)
+        target = os.path.abspath(self._last_run_file) if self._last_run_file else None
+
+        def is_own(fname: str) -> bool:
+            resolved = self._resolve_traceback_file(fname)
+            return bool(resolved and target and os.path.abspath(resolved) == target)
+
+        own, origin = search_start(traceback_frames(traceback_text), is_own)
+        if own is None:
+            return
+        tab = self._run_tab()
+        lines = tab.editor.get_text().split("\n") if tab else []
+        code_line = lines[own[1] - 1].strip() if 0 < own[1] <= len(lines) else ""
+        msg = f"📍  Hier beginnt deine Suche: Zeile {own[1]} in deiner Datei"
+        if code_line:
+            msg += f":   {code_line}"
+        if origin:
+            name = os.path.basename(origin[0])
+            lib = (name.startswith("nitbw_") or "site-packages" in origin[0]
+                   or "/lib/" in origin[0].replace("\\", "/")
+                   or not os.path.isfile(self._resolve_traceback_file(origin[0]) or ""))
+            art = "Bibliothek – dort nichts ändern" if lib else "andere Datei"
+            msg += f"\n   Die Meldung entsteht in {name}, Zeile {origin[1]} ({art})."
+        self._console.append_hint(msg + "\n")
+
+    def _show_hint_stage(self, stage: int, with_links: bool = True):
+        """Eine Hilfestufe anzeigen: 1 Ebene, 2 Karte, 3 Verdächtige + erster Test."""
+        hint = self._last_hint
+        if hint is None or stage != self._hint_stage + 1:
+            return
+        self._hint_stage = stage
+        self._console.append_hint(hint.render(stage))
+        if not with_links:
+            return
+        links: list[tuple[str, str]] = []
+        if self._settings_debug_stepped and stage == 1:
+            links.append(("▸ Stufe 2: Welche Karte?", "hint2"))
+        elif self._settings_debug_stepped and stage == 2:
+            links.append(("▸ Stufe 3: Verdächtige & erster Test", "hint3"))
+        if stage == 3 and hint.aktion == "i2c_scan" and self._mode == "micropython":
+            links.append(("🔍 I2C-Scan starten", "i2c_scan"))
+        if stage in (1, 3):
+            links.append(("📝 Ins Fehlerprotokoll", "protokoll"))
+        if links:
+            self._console.append_info("   ")
+            for label, action in links:
+                self._console.append_action_link(label, action)
+            self._console.append_info("\n")
+
+    def _on_console_action(self, action: str):
+        if action == "hint2":
+            self._show_hint_stage(2)
+        elif action == "hint3":
+            self._show_hint_stage(3)
+        elif action == "i2c_scan":
+            self._open_i2c_scan()
+        elif action == "protokoll":
+            lines = [ln for ln in self._last_error_traceback.strip().splitlines() if ln.strip()]
+            self._open_debug_log()
+            self._debug_log_panel.new_entry(ist=lines[-1].strip() if lines else "")
+
+    def _debug_after_run(self, code: int):
+        """Ergebnis am Lauf-Stand eintragen, Lauf im Fehlerprotokoll vermerken."""
+        self._flush_kp_partial()
+        if self._user_stopped:
+            ergebnis = "stopped"
+        else:
+            ergebnis = "ok" if code == 0 else "error"
+        meldung = ""
+        if ergebnis == "error":
+            lines = [ln for ln in self._last_error_traceback.strip().splitlines() if ln.strip()]
+            meldung = lines[-1].strip()[:120] if lines else ""
+        if self._run_snapshot:
+            try:
+                self._snapshot_store().set_result(*self._run_snapshot, ergebnis, meldung)
+            except OSError:
+                pass
+        self._sync_debug_log()
+        self._debug_log_panel.record_run(ergebnis, self._run_change_text)
+        if ergebnis == "ok":
+            self._report_checkpoints(error=False)
+
+    # ── Fehlerprotokoll-Panel ──────────────────────────────────────────────
+    def _open_debug_log(self):
+        self._sync_debug_log()
+        self._main_splitter.setCollapsible(2, False)
+        self._ai_stack.setMinimumWidth(0)
+        self._ai_stack.setMaximumWidth(16777215)
+        self._ai_stack.setCurrentIndex(5)
+        self._ai_stack.setVisible(True)
+        sizes = self._main_splitter.sizes()
+        if sizes[2] == 0:
+            total = sum(sizes)
+            self._main_splitter.setSizes([sizes[0], max(200, total - sizes[0] - 420), 420])
+
+    def _close_debug_log(self):
+        self._debug_log_panel.save()
+        self._apply_settings()   # zurück zum regulären, Settings-gesteuerten KI-Panel
+
+    def _toggle_debug_log(self):
+        if self._ai_stack.isVisible() and self._ai_stack.currentWidget() is self._debug_log_panel:
+            self._close_debug_log()
+        else:
+            self._open_debug_log()
+
+    # ── Kontrollpunkte ─────────────────────────────────────────────────────
+    def _insert_checkpoint(self):
+        tab = self._current_tab()
+        if not tab:
+            return
+        from .checkpoints import insert
+        sel = tab.editor.selected_text()
+        name = sel if sel and "\n" not in sel else ""
+        new_text, line_no = insert(tab.editor.get_text(), tab.editor.cursor_line(), name)
+        tab.editor.replace_text_undoable(new_text)
+        tab.editor.goto_line(line_no)
+        self._update_tab_title(tab)
+        self.statusBar().showMessage(
+            "📍 Kontrollpunkt eingefügt – die Nummern K1, K2 … folgen der Reihenfolge im Programm.",
+            5000)
+
+    def _remove_checkpoints(self):
+        tab = self._current_tab()
+        if not tab:
+            return
+        from .checkpoints import remove_all
+        new_text, n = remove_all(tab.editor.get_text())
+        if n:
+            tab.editor.replace_text_undoable(new_text)
+            self._update_tab_title(tab)
+        self.statusBar().showMessage(
+            f"{n} Kontrollpunkt(e) entfernt." if n else "Keine Kontrollpunkte im Programm.", 4000)
+
+    # ── Stände ─────────────────────────────────────────────────────────────
+    def _snapshot_tab(self):
+        """Aktueller Tab mit gespeicherter Datei (fragt sonst nach „Speichern als")."""
+        tab = self._current_tab()
+        if tab and not tab.filepath:
+            self._save_file_as()
+        return tab if (tab and tab.filepath) else None
+
+    def _pin_snapshot(self):
+        tab = self._snapshot_tab()
+        if not tab:
+            return
+        from PyQt6.QtWidgets import QInputDialog
+        notiz, ok = QInputDialog.getText(
+            self, "📌  Stand merken",
+            "Kurze Notiz zu diesem Stand (z. B. „läuft, Temperatur plausibel“):")
+        if not ok:
+            return
+        try:
+            self._snapshot_store().add(tab.filepath, tab.editor.get_text(),
+                                       gemerkt=True, notiz=notiz.strip())
+        except OSError as exc:
+            QMessageBox.warning(self, "Stand merken", f"Konnte den Stand nicht speichern:\n{exc}")
+            return
+        self.statusBar().showMessage("📌 Stand gemerkt – „Zurück“ kehrt zu ihm zurück.", 4000)
+
+    def _restore_last_good(self):
+        tab = self._snapshot_tab()
+        if not tab:
+            return
+        from .snapshots import change_summary, text_hash
+        store = self._snapshot_store()
+        current = tab.editor.get_text()
+        newest = store.last_good(tab.filepath)
+        if newest is None:
+            QMessageBox.information(
+                self, "Zurück",
+                "Es gibt noch keinen funktionierenden Stand.\n\n"
+                "Ein Stand gilt als funktionierend, wenn das Programm ohne Fehler "
+                "beendet wurde (✓) oder du ihn mit „📌 Stand merken“ gesichert hast.")
+            return
+        if newest.hash == text_hash(current):
+            QMessageBox.information(self, "Zurück",
+                                    "Dein Code entspricht schon dem letzten funktionierenden Stand.")
+            return
+        old = store.read(tab.filepath, newest.id)
+        if old is None:
+            return
+        n = len(change_summary(old, current))
+        reply = QMessageBox.question(
+            self, "⏪  Zurück zum letzten funktionierenden Stand",
+            f"Zurück zum Stand  {newest.label()} ?\n\n"
+            f"Dabei werden {n} geänderte Stelle(n) rückgängig gemacht.\n"
+            "Mit Strg+Z holst du den jetzigen Code wieder zurück.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        tab.editor.replace_text_undoable(old)
+        self._update_tab_title(tab)
+        self._console.append_info(f"\n⏪  Zurück zum Stand {newest.label()}\n")
+
+    def _show_snapshots(self):
+        tab = self._snapshot_tab()
+        if not tab:
+            return
+        from .snapshots import show_snapshot_dialog
+        text = show_snapshot_dialog(self, self._snapshot_store(), tab.filepath, tab.editor.get_text())
+        if text is not None:
+            tab.editor.replace_text_undoable(text)
+            self._update_tab_title(tab)
+            self._console.append_info("\n⏪  Gesicherter Stand wiederhergestellt (Strg+Z macht es rückgängig).\n")
+
+    # ── I2C-Scan, Landkarte ────────────────────────────────────────────────
+    def _open_i2c_scan(self):
+        if self._mode != "micropython":
+            QMessageBox.information(
+                self, "I2C-Scan",
+                "Der I2C-Scan braucht einen Controller.\n"
+                "Wechsle oben in der Werkzeugleiste auf den Modus MicroPython.")
+            return
+        if self._process and self._process.isRunning():
+            QMessageBox.information(self, "I2C-Scan", "Bitte zuerst das laufende Programm stoppen.")
+            return
+        port = self._get_serial_port()
+        if not port:
+            return
+        from .i2c_scan import I2CScanDialog
+        tab = self._current_tab()
+        dlg = I2CScanDialog(self, port, tab.editor.get_text() if tab else "",
+                            self._acquire_port, self._release_port)
+        dlg.insert_script.connect(self._insert_scan_script)
+        dlg.result_text.connect(self._console.append_info)
+        dlg.exec()
+
+    def _insert_scan_script(self, code: str):
+        tab = self._new_tab()
+        tab.editor.set_text(code)
+        self._update_tab_title(tab)
+
+    def _show_debug_map(self):
+        from .debug_map_dialog import DebugMapDialog
+        dlg = getattr(self, "_debug_map_dlg", None)
+        if dlg is None:
+            dlg = DebugMapDialog(self, self._settings_debug_level)
+            self._debug_map_dlg = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _refresh_device_files_after_run(self):
         port = self._get_serial_port(silent=True)
@@ -3533,8 +3958,15 @@ class MainWindow(QMainWindow):
             plot_x_min=self._settings_plot_x_min,
             plot_x_max=self._settings_plot_x_max,
             ui_font_pt=self._settings_ui_font_pt,
+            debug_level=self._settings_debug_level,
+            debug_stepped=self._settings_debug_stepped,
+            debug_change_hint=self._settings_debug_change_hint,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
+            self._settings_debug_level = dlg.debug_level
+            self._settings_debug_stepped = dlg.debug_stepped
+            self._settings_debug_change_hint = dlg.debug_change_hint
+            self._debug_log_panel.set_level(self._settings_debug_level)
             ui_font_changed = dlg.ui_font_pt != self._settings_ui_font_pt
             self._settings_ui_font_pt = dlg.ui_font_pt
             self._settings_font_size = dlg.font_size
@@ -3669,6 +4101,10 @@ class MainWindow(QMainWindow):
         self._settings_plot_x_mode = str(self._settings_store.value("plot/x_mode", self._settings_plot_x_mode) or "sliding")
         self._settings_plot_x_min = self._settings_int("plot/x_min", self._settings_plot_x_min)
         self._settings_plot_x_max = self._settings_int("plot/x_max", self._settings_plot_x_max)
+        level = str(self._settings_store.value("debug/level", self._settings_debug_level) or "kl10")
+        self._settings_debug_level = level if level in ("kl89", "kl10") else "kl10"
+        self._settings_debug_stepped = self._settings_bool("debug/stepped", self._settings_debug_stepped)
+        self._settings_debug_change_hint = self._settings_bool("debug/change_hint", self._settings_debug_change_hint)
         # Theme sofort anwenden, damit alle nachfolgenden UI-Elemente korrekte Farben erhalten
         set_theme(self._settings_theme)
 
@@ -3695,6 +4131,9 @@ class MainWindow(QMainWindow):
         self._settings_store.setValue("plot/x_mode", self._settings_plot_x_mode)
         self._settings_store.setValue("plot/x_min", self._settings_plot_x_min)
         self._settings_store.setValue("plot/x_max", self._settings_plot_x_max)
+        self._settings_store.setValue("debug/level", self._settings_debug_level)
+        self._settings_store.setValue("debug/stepped", self._settings_debug_stepped)
+        self._settings_store.setValue("debug/change_hint", self._settings_debug_change_hint)
         self._settings_store.sync()
 
     def _choose_sketchbook_dir(self):
@@ -3821,6 +4260,7 @@ class MainWindow(QMainWindow):
         self._aischat_panel.refresh_theme()
         self._claude_terminal_panel.refresh_theme()
         self._worksheet_panel.refresh_theme()
+        self._debug_log_panel.refresh_theme()
         for attr in ("_parsons_window", "_csv_window", "_pap_window", "_ibd_window"):
             win = getattr(self, attr, None)
             if win is not None:
@@ -3935,5 +4375,6 @@ class MainWindow(QMainWindow):
         if scan is not None and scan.isRunning():
             scan.wait(1000)
         self._claude_terminal_panel.stop()   # sonst bleibt `claude` als Waisenprozess hängen
+        self._debug_log_panel.save()
         self._save_persistent_settings()
         event.accept()

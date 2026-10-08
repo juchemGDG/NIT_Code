@@ -361,6 +361,7 @@ class OutputConsole(QTextEdit):
     """Zeigt Programmausgaben an. Fehler-Links klickbar (rot, unterstrichen)."""
 
     error_link_clicked = pyqtSignal(str, int)   # (dateipfad, zeilennummer)
+    action_link_clicked = pyqtSignal(str)       # Aktions-Link (siehe append_action_link)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -443,12 +444,36 @@ class OutputConsole(QTextEdit):
         self.clear()
         self._links.clear()
 
+    def append_action_link(self, label: str, action: str, color: str | None = None):
+        """Klickbarer Text in der Ausgabe (z. B. „Stufe 2: Welche Karte?“).
+        Ein Klick sendet ``action_link_clicked(action)``."""
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color or THEME["accent"]))
+        fmt.setFontUnderline(True)
+        fmt.setAnchor(True)
+        fmt.setAnchorHref(f"act:{action}")
+        cursor.insertText(label, fmt)
+        cursor.insertText("   ", QTextCharFormat())
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
         anchor = self.anchorAt(event.pos())
-        if anchor and anchor in self._links:
+        if anchor.startswith("act:"):
+            self.action_link_clicked.emit(anchor[4:])
+        elif anchor and anchor in self._links:
             filepath, lineno = self._links[anchor]
             self.error_link_clicked.emit(filepath, lineno)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        # Handcursor über Links, damit sie als klickbar erkennbar sind
+        shape = (Qt.CursorShape.PointingHandCursor if self.anchorAt(event.pos())
+                 else Qt.CursorShape.IBeamCursor)
+        self.viewport().setCursor(shape)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -730,6 +755,7 @@ class ConsolePanel(QWidget):
 
     error_link_clicked = pyqtSignal(str, int)
     explain_requested  = pyqtSignal()   # „Infi erklärt diesen Fehler"-Knopf gedrückt
+    action_requested   = pyqtSignal(str)   # Aktions-Link in der Ausgabe geklickt
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -797,6 +823,7 @@ class ConsolePanel(QWidget):
         oc_layout.setSpacing(0)
         self.output_console = OutputConsole()
         self.output_console.error_link_clicked.connect(self.error_link_clicked)
+        self.output_console.action_link_clicked.connect(self.action_requested)
         oc_layout.addWidget(self.output_console)
 
         # Eingabezeile für laufende Programme (input()-Unterstützung)
@@ -956,6 +983,14 @@ class ConsolePanel(QWidget):
     def append_hint(self, text: str):
         """Verständlicher Klartext-Hinweis zu einem Fehler (eigene Info-Farbe)."""
         self.output_console.append_info("\n" + text)
+        self._focus_output_tab()
+
+    def append_action_link(self, label: str, action: str, color: str | None = None):
+        self.output_console.append_action_link(label, action, color)
+
+    def append_warning(self, text: str):
+        """Abgesetzter Warnkasten (Schritt 0) in Fehlerfarbe."""
+        self.output_console._append_colored(text, THEME["error"])
         self._focus_output_tab()
 
     def set_explain_visible(self, visible: bool):
