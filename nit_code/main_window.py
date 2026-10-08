@@ -2184,6 +2184,9 @@ class MainWindow(QMainWindow):
         """Tab der zuletzt gestarteten Datei (Fallback: aktueller Tab)."""
         if self._last_run_file:
             target = os.path.abspath(self._last_run_file)
+            cur = self._current_tab()
+            if cur and cur.filepath and os.path.abspath(cur.filepath) == target:
+                return cur   # gleiche Datei evtl. in mehreren Tabs – der aktive zählt
             for tab in self._tabs:
                 if tab.filepath and os.path.abspath(tab.filepath) == target:
                     return tab
@@ -2263,6 +2266,14 @@ class MainWindow(QMainWindow):
         tab = self._run_tab()
         code = tab.editor.get_text() if tab else ""
         if not any(is_checkpoint(ln) for ln in code.split("\n")):
+            return
+        from .error_hints import is_compile_error
+        if error and not self._kp_reached and is_compile_error(self._last_error_traceback):
+            # SyntaxError & Co.: Python hat die Datei gar nicht erst ausgeführt –
+            # „vor K1" wäre falsch, die Kontrollpunkte konnten nichts zeigen.
+            self._console.append_hint(
+                "📍  Kontrollpunkte helfen hier nicht: Bei diesem Fehler liest Python dein "
+                "Programm gar nicht erst ein – keine Zeile läuft, auch K1 nicht.\n")
             return
         if self._kp_reached:
             last = self._kp_reached[-1]

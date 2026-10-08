@@ -168,6 +168,21 @@ _KARTEN_HINWEIS: dict[tuple[str, str], str] = {
 }
 
 
+# Fehler, die Python schon beim Einlesen der Datei findet – vor der ersten Zeile.
+# Kontrollpunkte können hier nichts zeigen, weil keine Zeile ausgeführt wird.
+COMPILE_ERRORS = {"SyntaxError", "IndentationError", "TabError"}
+
+VOR_START_HINWEIS = ("Bei diesem Fehler läuft das Programm gar nicht erst los – Python liest "
+                     "zuerst die ganze Datei und stolpert dabei. Kontrollpunkte helfen hier "
+                     "nicht. Geh zur genannten Zeile und prüfe auch die Zeile darüber.")
+
+
+def is_compile_error(traceback_text: str) -> bool:
+    """True bei SyntaxError & Co. (Fehler beim Einlesen, nicht beim Ausführen)."""
+    etype, _ = _extract_exception(traceback_text)
+    return etype in COMPILE_ERRORS
+
+
 def karten_hinweis(karte: str, level: str) -> str:
     """Leitfrage der Karte in der Sprache der Stufe."""
     return (_KARTEN_HINWEIS.get((karte, level))
@@ -190,6 +205,11 @@ class ErrorHint:
     level: str = LEVEL_KL10
 
     @property
+    def vor_start(self) -> bool:
+        """Fehler beim Einlesen: das Programm ist gar nicht losgelaufen."""
+        return self.etype in COMPILE_ERRORS
+
+    @property
     def ebene_name(self) -> str:
         return EBENEN.get(self.ebene, {}).get(self.level, "")
 
@@ -202,6 +222,8 @@ class ErrorHint:
         if stage == 2:
             out = f"🗺   Karte: {self.karte}\n"
             hinweis = karten_hinweis(self.karte, self.level)
+            if self.vor_start:
+                hinweis = VOR_START_HINWEIS
             if hinweis:
                 out += f"   {hinweis}\n"
             return out
