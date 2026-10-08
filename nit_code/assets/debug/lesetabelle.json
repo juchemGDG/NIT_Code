@@ -1,14 +1,15 @@
 {
-  "_info": "Lesetabelle für Fehlermeldungen (Debugging-Landkarte). Die erste passende Regel gewinnt. 'belegt': false = Arbeitshypothese, bis die Messreihe am eigenen Gerät vorliegt. Felder mit Endung _kl89 ersetzen das Feld für Klasse 8/9.",
+  "_info": "Lesetabelle für Fehlermeldungen (Cheatsheet „Fehler finden“). Die erste passende Regel gewinnt. 'fall' = Fall aus Schritt 3: code | hardware | wert | nichts (Bezeichnung je Stufe steht in debug_guide.py). 'belegt': false = Arbeitshypothese, bis die Messreihe am eigenen Gerät vorliegt. Felder mit Endung _kl89 ersetzen das Feld für Klasse 8/9.",
   "regeln": [
     {
       "id": "enodev",
       "typ": "OSError",
-      "meldung": ["ENODEV", "Errno 19\\b", "^19$"],
-      "ebene": "1b",
-      "ebene_kl89": "1a",
-      "karte": "IBD",
-      "karte_kl89": "Checkliste",
+      "meldung": [
+        "ENODEV",
+        "Errno 19\\b",
+        "^19$"
+      ],
+      "fall": "hardware",
       "lesart": "Unter der angesprochenen I2C-Adresse hat kein Gerät geantwortet.",
       "verdaechtige": [
         "Adresse im Code",
@@ -29,11 +30,12 @@
     {
       "id": "etimedout",
       "typ": "OSError",
-      "meldung": ["ETIMEDOUT", "Errno 116\\b", "^116$"],
-      "ebene": "1b",
-      "ebene_kl89": "1a",
-      "karte": "IBD",
-      "karte_kl89": "Checkliste",
+      "meldung": [
+        "ETIMEDOUT",
+        "Errno 116\\b",
+        "^116$"
+      ],
+      "fall": "hardware",
       "lesart": "Die Übertragung auf dem I2C-Bus wurde nicht rechtzeitig fertig – der Bus antwortet nicht oder hängt.",
       "verdaechtige": [
         "Wackelkontakt an SDA oder SCL",
@@ -53,11 +55,12 @@
     {
       "id": "eio",
       "typ": "OSError",
-      "meldung": ["EIO", "Errno 5\\b", "^5$"],
-      "ebene": "1b",
-      "ebene_kl89": "1a",
-      "karte": "IBD",
-      "karte_kl89": "Checkliste",
+      "meldung": [
+        "EIO",
+        "Errno 5\\b",
+        "^5$"
+      ],
+      "fall": "hardware",
       "lesart": "Beim Datenaustausch mit der Hardware ist ein Übertragungsfehler aufgetreten.",
       "verdaechtige": [
         "Wackelkontakt",
@@ -75,9 +78,12 @@
     {
       "id": "enoent",
       "typ": "OSError",
-      "meldung": ["ENOENT", "Errno 2\\b", "^2$"],
-      "ebene": "1a",
-      "karte": "PAP",
+      "meldung": [
+        "ENOENT",
+        "Errno 2\\b",
+        "^2$"
+      ],
+      "fall": "code",
       "lesart": "Eine Datei oder ein Ordner wurde nicht gefunden. Das ist kein Hardwarefehler.",
       "verdaechtige": [
         "Schreibweise des Dateinamens",
@@ -90,10 +96,10 @@
     {
       "id": "bme280_chipid",
       "typ": "RuntimeError",
-      "meldung": ["BME280 nicht gefunden"],
-      "ebene": "1a",
-      "karte": "IBD",
-      "karte_kl89": "Checkliste",
+      "meldung": [
+        "BME280 nicht gefunden"
+      ],
+      "fall": "hardware",
       "lesart": "Unter der Adresse antwortet zwar ein Gerät, aber es meldet sich nicht als BME280 (die Chip-ID passt nicht).",
       "verdaechtige": [
         "anderer Sensortyp, z. B. BMP280 (Chip-ID 0x58 statt 0x60)",
@@ -108,10 +114,7 @@
       "id": "oserror_allgemein",
       "typ": "OSError",
       "meldung": [],
-      "ebene": "1b",
-      "ebene_kl89": "1a",
-      "karte": "IBD",
-      "karte_kl89": "Checkliste",
+      "fall": "hardware",
       "lesart": "Ein Zugriff auf Hardware oder Dateisystem ist fehlgeschlagen.",
       "verdaechtige": [
         "Pin oder Bus im Code (Nummer, richtig initialisiert?)",

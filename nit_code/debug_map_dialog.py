@@ -1,62 +1,38 @@
-"""Hilfe → Debugging-Landkarte: zeigt die Poster für Klasse 8/9 und 10/KS."""
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QDialog, QLabel, QScrollArea, QTabWidget, QVBoxLayout
+"""Hilfe → „Fehler finden: Schritt für Schritt“: das Cheatsheet (ohne Beispiel) für
+Klasse 8/9 und 10/KS. Der Text kommt aus :mod:`debug_guide` – derselbe wie in Konsole
+und Fehlerprotokoll."""
+from PyQt6.QtWidgets import QDialog, QTabWidget, QTextBrowser, QVBoxLayout
 
-from .config import asset_path
-from .error_hints import LEVEL_KL10, LEVEL_KL89
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    _WEBENGINE = True
+except ImportError:      # ohne WebEngine: einfache Qt-Ansicht
+    _WEBENGINE = False
 
-_POSTER = {
-    LEVEL_KL89: ("Klasse 8/9", "debug/landkarte_kl89.png"),
-    LEVEL_KL10: ("Klasse 10/KS", "debug/landkarte_kl10.png"),
-}
-
-
-class _FitLabel(QLabel):
-    """Bild, das sich an die Breite des Fensters anpasst."""
-
-    def __init__(self, pixmap: QPixmap):
-        super().__init__()
-        self._pix = pixmap
-        self.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-
-    def fit(self, width: int):
-        if self._pix.isNull():
-            return
-        w = max(300, min(width, self._pix.width()))
-        self.setPixmap(self._pix.scaledToWidth(w, Qt.TransformationMode.SmoothTransformation))
+from .debug_guide import LEVEL_KL10, LEVEL_KL89, LEVEL_LABEL, cheat_sheet_html
 
 
 class DebugMapDialog(QDialog):
     def __init__(self, parent=None, level: str = LEVEL_KL10):
         super().__init__(parent)
-        self.setWindowTitle("🗺  Debugging-Landkarte")
-        self.resize(980, 860)
+        self.setWindowTitle("🗺  Fehler finden: Schritt für Schritt")
+        self.resize(900, 860)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         self._tabs = QTabWidget()
         lay.addWidget(self._tabs)
-        self._labels: list[tuple[QScrollArea, _FitLabel]] = []
+        self._views: list = []
         for key in (LEVEL_KL89, LEVEL_KL10):
-            title, rel = _POSTER[key]
-            p = asset_path(rel)
-            pix = QPixmap(str(p)) if p else QPixmap()
-            lbl = _FitLabel(pix)
-            if pix.isNull():
-                lbl.setText(f"Bild nicht gefunden: {rel}")
-            area = QScrollArea()
-            area.setWidgetResizable(True)
-            area.setWidget(lbl)
-            self._tabs.addTab(area, title)
-            self._labels.append((area, lbl))
+            page = cheat_sheet_html(key)
+            if _WEBENGINE:
+                view = QWebEngineView(self)
+                view.setHtml(page)
+            else:
+                view = QTextBrowser(self)
+                view.setHtml(page)
+            self._views.append(view)
+            self._tabs.addTab(view, LEVEL_LABEL[key])
         self._tabs.setCurrentIndex(0 if level == LEVEL_KL89 else 1)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        for area, lbl in self._labels:
-            lbl.fit(area.viewport().width() - 4)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        for area, lbl in self._labels:
-            lbl.fit(area.viewport().width() - 4)
+    def set_level(self, level: str):
+        self._tabs.setCurrentIndex(0 if level == LEVEL_KL89 else 1)

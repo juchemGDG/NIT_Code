@@ -373,3 +373,30 @@ Tests: Einheitstests für Regel-Erkennung (echte MicroPython-Tracebacks aus der 
 Einstellungen → DEBUGGING: Stufe (Kl. 8/9 / Kl. 10/KS), Fehlerhilfe in Stufen, Änderungshinweis.
 
 **Noch offen:** Messreihe am Gerät (Lesetabelle von „Arbeitshypothese“ auf „belegt“ umstellen), Test mit echtem ESP32 (I2C-Scan, Brownout-Erkennung), Erprobung im Unterricht.
+
+---
+
+## 17. Version 2: Anpassung an das Cheatsheet „Fehler finden: Schritt für Schritt“ (Branch `feature_sj/debugging_v2`)
+
+Auslöser: zweite Fassung des Cheatsheets (je ein Blatt für Klasse 9 und Klasse 10). Sie ersetzt die Poster der ersten Fassung. **Ebenen und Karten gibt es nicht mehr**; stattdessen **Schritte 0 bis 6**, in Schritt 3 **vier Fälle** (Klasse 8/9: drei) und ein **Protokoll mit sechs Spalten, eine Zeile pro Runde**. NIT_Code übernimmt genau diese Wörter.
+
+**Eine Textquelle:** `nit_code/debug_guide.py` enthält Schritte, Fälle, Protokollspalten und Hinweistexte. Konsole, Fehlerprotokoll und Anleitungsseite lesen daraus, damit alles wortgleich zum Cheatsheet bleibt. Wird das Cheatsheet geändert, genügt eine Änderung an dieser Stelle.
+
+| Cheatsheet | In NIT_Code |
+|---|---|
+| Schritt 0 Stopp? | roter Banner oben im Fehlerprotokoll; Kasten in der Konsole bei Brownout, Neustart, USB-Abbruch |
+| Schritt 1 Läuft schon was? | Konsolenhinweis, wenn das Board den Programmstart nicht bestätigt („busy“, Raw-REPL), auch im I2C-Scan |
+| Schritt 2 Beobachten | Konsole: „Hier beginnt deine Suche“ (Zeile, Bibliothek), Kontrollpunkte; Protokoll: Karte „Beobachten“, Vorbelegung `Ist: <Meldung>, Zeile n` aus der Konsole |
+| Schritt 3 Eingrenzen | Konsole: Fall, „Wo suche ich?“, Verdächtige und erster Test (gestuft); Protokoll: Fall-Auswahl mit Anleitungstext, Freitext, Scan-Ergebnis auf Knopfdruck |
+| Schritt 4 Vermuten | Konsole erinnert an „Ich vermute …, weil …“; Protokoll weist auf ein fehlendes „weil“ hin |
+| Schritt 5 Ändern und testen | Protokoll: „📌 Stand merken“, Läufe mit Änderungen und letztem Kontrollpunkt als Fakten; automatische Stände ersetzen die Kopie |
+| Schritt 6 Geklappt? | nach jedem Lauf bei offener Runde: Ja/Nein-Hinweis mit „⏪ Zurück“ und „Ergebnis eintragen“; Protokoll: Ja/Nein, „Nächste Runde (weiter bei 4)“, Warnung nach drei Runden ohne Erfolg |
+| Protokolltabelle | Nr. · Soll / Ist · Eingrenzen · Vermutung · Änderung · Ergebnis, Markdown neben dem Programm, PDF-Export |
+
+**Entscheidungen**
+- Die Anleitungsseite (Hilfe und Menü Debuggen) zeigt das Cheatsheet **ohne Beispiel**, je Stufe ein Reiter, plus Kasten „So hilft dir NIT_Code“. Die alten Poster-Bilder sind entfernt (in Beta 1/2 nachlesbar).
+- Eine neue Runde nach einem „Nein“ übernimmt Soll/Ist und Eingrenzen („zurück zu 4“). Kommt sie aus der Konsole (neue Meldung), beginnt sie frisch.
+- Fall, Vermutung und Ergebnis bleiben Sache der SuS; NIT_Code trägt nur Fakten ein.
+- Der I2C-Scan zeigt `i2c.scan()` so, wie es auf dem Blatt steht (dezimal, z. B. `[119]`), und daneben Hex (`0x77`).
+- Protokolle aus Beta 1/2 (Ebene, Karte, Hypothese, Test) werden beim Laden übernommen.
+- Die Lesetabelle (`assets/debug/lesetabelle.json`) führt statt Ebene/Karte nur noch den Fall (`code`, `hardware`).

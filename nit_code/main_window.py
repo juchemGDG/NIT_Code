@@ -870,7 +870,7 @@ class MainWindow(QMainWindow):
         self._settings_plot_x_mode: str = "sliding"   # "sliding" | "sweep" | "xy"
         self._settings_plot_x_min: int = 0
         self._settings_plot_x_max: int = 500
-        # Debugging-Landkarte
+        # Fehler finden (Cheatsheet)
         self._settings_debug_level: str = "kl10"        # "kl89" | "kl10" (Begriffe, Protokollform)
         self._settings_debug_stepped: bool = True       # Fehlerhilfe in Stufen
         self._settings_debug_change_hint: bool = True   # „Seit dem letzten Lauf: n Stellen geändert"
@@ -878,6 +878,8 @@ class MainWindow(QMainWindow):
         self._run_snapshot: tuple[str, str] | None = None   # (Datei, Stand-ID) des laufenden Programms
         self._run_change_text = ""                      # Änderung seit dem letzten Lauf (für Protokoll)
         self._danger_shown = False                      # Schritt-0-Kasten in diesem Lauf schon gezeigt
+        self._busy_shown = False                        # Schritt-1-Hinweis in diesem Lauf schon gezeigt
+        self._last_own_line: int | None = None          # Zeile in der eigenen Datei (Schritt 2)
         self._kp_partial = ""                           # unvollständige Ausgabezeile (Kontrollpunkte)
         self._kp_reached: list[int] = []                # erreichte Kontrollpunkte in diesem Lauf
         self._last_hint = None                          # ErrorHint des letzten Fehlers
@@ -977,7 +979,7 @@ class MainWindow(QMainWindow):
         m_viz.addAction(self._act_plotter)
         self._add_action(m_viz, "📊  Datenauswertung (CSV) …", self._open_csv_plot)
 
-        # ── Debuggen (Debugging-Landkarte) ──
+        # ── Debuggen (Fehler finden: Schritt für Schritt) ──
         m_dbg = mb.addMenu("Debuggen")
         self._add_action(m_dbg, "📝  Fehlerprotokoll", self._toggle_debug_log, "Ctrl+Shift+P")
         m_dbg.addSeparator()
@@ -991,7 +993,7 @@ class MainWindow(QMainWindow):
         m_dbg.addSeparator()
         self._act_i2c_scan_dbg = self._add_action(m_dbg, "🔍  I2C-Scan …", self._open_i2c_scan)
         m_dbg.addSeparator()
-        self._add_action(m_dbg, "🗺  Debugging-Landkarte", self._show_debug_map)
+        self._add_action(m_dbg, "🗺  Fehler finden: Schritt für Schritt", self._show_debug_map)
 
         # ── Python ──
         self._m_python = mb.addMenu("Python")
@@ -1042,7 +1044,7 @@ class MainWindow(QMainWindow):
         # ── Hilfe ──
         m_help = mb.addMenu("Hilfe")
         self._add_action(m_help, "📖  Kurzanleitung", self._show_quickstart, "F1")
-        self._add_action(m_help, "🗺  Debugging-Landkarte", self._show_debug_map)
+        self._add_action(m_help, "🗺  Fehler finden: Schritt für Schritt", self._show_debug_map)
         m_help.addSeparator()
         self._add_action(m_help, "🤖  NiT_Coder (ais.chat) …", self._show_ais_prompt)
         m_help.addSeparator()
@@ -1332,6 +1334,7 @@ class MainWindow(QMainWindow):
         self._ai_stack.addWidget(self._debug_log_panel)        # Index 5 → Fehlerprotokoll
         self._debug_log_panel.close_requested.connect(self._close_debug_log)
         self._debug_log_panel.restore_requested.connect(self._restore_last_good)
+        self._debug_log_panel.pin_requested.connect(self._pin_snapshot)
         self._coder_panel.insert_code_requested.connect(self._on_insert_generated_code)
         self._coder_panel.open_as_blocks_requested.connect(self._open_blocks_from_code)
         self._worksheet_panel.insert_into_editor_requested.connect(self._on_worksheet_insert_code)
@@ -2145,8 +2148,9 @@ class MainWindow(QMainWindow):
         if not traceback_text:
             return
         self._last_error_traceback = traceback_text
+        self._sync_debug_log()      # offene Runde gehört zur gerade gelaufenen Datei
         self._console.flush_now()   # Traceback steht sicher vor den Hinweisen
-        self._show_search_start(traceback_text)
+        self._show_observation(traceback_text)
         from .error_hints import analyze
         hint = analyze(traceback_text, self._settings_debug_level)
         self._last_hint = hint
@@ -2162,7 +2166,7 @@ class MainWindow(QMainWindow):
             self._console.set_explain_visible(True)
 
     # ──────────────────────────────────────────────────────────────────────
-    # Debugging-Landkarte (Fehlerhilfe, Stände, Kontrollpunkte, Protokoll)
+    # Fehler finden (Fehlerhilfe, Stände, Kontrollpunkte, Protokoll)
     # ──────────────────────────────────────────────────────────────────────
     def _snapshot_store(self):
         if self._snapshots is None:
@@ -2195,7 +2199,9 @@ class MainWindow(QMainWindow):
     def _debug_before_run(self, tab):
         """Lauf-Stand anlegen und Änderung seit dem letzten Lauf melden."""
         self._danger_shown = False
+        self._busy_shown = False
         self._danger_tail = ""
+        self._last_own_line = None
         self._kp_partial = ""
         self._kp_reached = []
         self._last_hint = None
@@ -2241,6 +2247,11 @@ class MainWindow(QMainWindow):
             if danger:
                 self._danger_shown = True
                 QTimer.singleShot(0, lambda d=danger: self._show_danger(d))
+        if self._mode == "micropython" and kind == "stderr" and not self._busy_shown:
+            from .error_hints import detect_busy
+            if detect_busy(text):
+                self._busy_shown = True
+                QTimer.singleShot(0, self._show_busy)
         if kind == "stdout":
             parts = (self._kp_partial + text).split("\n")
             self._kp_partial = parts.pop()[-200:]
@@ -2256,70 +2267,85 @@ class MainWindow(QMainWindow):
             self._collect_checkpoints([self._kp_partial])
             self._kp_partial = ""
 
+    def _show_busy(self):
+        """Schritt 1 · Läuft schon was? – das Board hat den Programmstart nicht bestätigt."""
+        from . import debug_guide as guide
+        self._console.flush_now()
+        self._console.append_info(guide.step1_text())
+
     def _show_danger(self, kind: str):
         from .error_hints import danger_text
         self._console.flush_now()
         self._console.append_warning(danger_text(kind))
 
-    def _report_checkpoints(self, error: bool):
+    def _checkpoint_line(self, error: bool) -> str | None:
+        """Satz zu den Kontrollpunkten dieses Laufs (None, wenn das Programm keine hat)."""
         from .checkpoints import is_checkpoint, line_of
         tab = self._run_tab()
         code = tab.editor.get_text() if tab else ""
         if not any(is_checkpoint(ln) for ln in code.split("\n")):
-            return
+            return None
         from .error_hints import is_compile_error
         if error and not self._kp_reached and is_compile_error(self._last_error_traceback):
             # SyntaxError & Co.: Python hat die Datei gar nicht erst ausgeführt –
             # „vor K1" wäre falsch, die Kontrollpunkte konnten nichts zeigen.
-            self._console.append_hint(
-                "📍  Kontrollpunkte helfen hier nicht: Bei diesem Fehler liest Python dein "
-                "Programm gar nicht erst ein – keine Zeile läuft, auch K1 nicht.\n")
-            return
+            return ("📍  Kontrollpunkte helfen hier nicht: Bei diesem Fehler liest Python dein "
+                    "Programm gar nicht erst ein – keine Zeile läuft, auch K1 nicht.")
         if self._kp_reached:
             last = self._kp_reached[-1]
             if error:
                 ln = line_of(code, last)
-                msg = (f"📍  Letzter erreichter Kontrollpunkt: K{last}"
-                       + (f" (Zeile {ln})" if ln else "") + " – der Fehler liegt dahinter.")
-            else:
-                msg = "📍  Erreichte Kontrollpunkte: " + ", ".join(
-                    f"K{n}" for n in dict.fromkeys(self._kp_reached))
-        else:
-            msg = ("📍  Kein Kontrollpunkt erreicht – der Fehler liegt vor K1." if error
-                   else "📍  Kein Kontrollpunkt erreicht.")
-        self._console.append_hint(msg + "\n")
+                return (f"📍  Letzter erreichter Kontrollpunkt: K{last}"
+                        + (f" (Zeile {ln})" if ln else "") + " – der Fehler liegt dahinter.")
+            return "📍  Erreichte Kontrollpunkte: " + ", ".join(
+                f"K{n}" for n in dict.fromkeys(self._kp_reached))
+        return ("📍  Kein Kontrollpunkt erreicht – der Fehler liegt vor K1." if error
+                else "📍  Kein Kontrollpunkt erreicht.")
 
-    def _show_search_start(self, traceback_text: str):
-        """„Hier beginnt deine Suche": letzte Zeile der eigenen Datei vs. Bibliothek."""
+    def _show_observation(self, traceback_text: str):
+        """Schritt 2 · Beobachten: „Hier beginnt deine Suche“ (eigene Datei vs. Bibliothek)
+        und die Kontrollpunkte des Laufs."""
+        from . import debug_guide as guide
         from .error_hints import search_start, traceback_frames
         self._flush_kp_partial()
-        self._report_checkpoints(error=True)
         target = os.path.abspath(self._last_run_file) if self._last_run_file else None
 
         def is_own(fname: str) -> bool:
             resolved = self._resolve_traceback_file(fname)
             return bool(resolved and target and os.path.abspath(resolved) == target)
 
+        lines = [guide.step_header(2), "   Schreib die Meldung wörtlich ab – mit Zeilennummer."]
         own, origin = search_start(traceback_frames(traceback_text), is_own)
-        if own is None:
+        self._last_own_line = own[1] if own else None
+        if own is not None:
+            tab = self._run_tab()
+            code_lines = tab.editor.get_text().split("\n") if tab else []
+            code_line = code_lines[own[1] - 1].strip() if 0 < own[1] <= len(code_lines) else ""
+            lines.append(f"   📍 Hier beginnt deine Suche: Zeile {own[1]} in deiner Datei"
+                         + (f":   {code_line}" if code_line else ""))
+            if origin:
+                name = os.path.basename(origin[0])
+                lib = (name.startswith("nitbw_") or "site-packages" in origin[0]
+                       or "/lib/" in origin[0].replace("\\", "/")
+                       or not os.path.isfile(self._resolve_traceback_file(origin[0]) or ""))
+                art = "Bibliothek – dort nichts ändern" if lib else "andere Datei"
+                lines.append(f"      Die Meldung entsteht in {name}, Zeile {origin[1]} ({art}).")
+        kp = self._checkpoint_line(error=True)
+        if kp:
+            lines.append("   " + kp)
+        self._console.append_hint("\n".join(lines) + "\n")
+
+    def _append_console_links(self, links: list[tuple[str, str]]):
+        """Klickbare Schritte unter einer Konsolenmeldung."""
+        if not links:
             return
-        tab = self._run_tab()
-        lines = tab.editor.get_text().split("\n") if tab else []
-        code_line = lines[own[1] - 1].strip() if 0 < own[1] <= len(lines) else ""
-        msg = f"📍  Hier beginnt deine Suche: Zeile {own[1]} in deiner Datei"
-        if code_line:
-            msg += f":   {code_line}"
-        if origin:
-            name = os.path.basename(origin[0])
-            lib = (name.startswith("nitbw_") or "site-packages" in origin[0]
-                   or "/lib/" in origin[0].replace("\\", "/")
-                   or not os.path.isfile(self._resolve_traceback_file(origin[0]) or ""))
-            art = "Bibliothek – dort nichts ändern" if lib else "andere Datei"
-            msg += f"\n   Die Meldung entsteht in {name}, Zeile {origin[1]} ({art})."
-        self._console.append_hint(msg + "\n")
+        self._console.append_info("   ")
+        for label, action in links:
+            self._console.append_action_link(label, action)
+        self._console.append_info("\n")
 
     def _show_hint_stage(self, stage: int, with_links: bool = True):
-        """Eine Hilfestufe anzeigen: 1 Ebene, 2 Karte, 3 Verdächtige + erster Test."""
+        """Eine Hilfestufe von Schritt 3 anzeigen: 1 Fall, 2 Wo suche ich?, 3 Verdächtige + Test."""
         hint = self._last_hint
         if hint is None or stage != self._hint_stage + 1:
             return
@@ -2329,18 +2355,15 @@ class MainWindow(QMainWindow):
             return
         links: list[tuple[str, str]] = []
         if self._settings_debug_stepped and stage == 1:
-            links.append(("▸ Stufe 2: Welche Karte?", "hint2"))
+            links.append(("▸ Wo suche ich?", "hint2"))
         elif self._settings_debug_stepped and stage == 2:
-            links.append(("▸ Stufe 3: Verdächtige & erster Test", "hint3"))
+            links.append(("▸ Verdächtige & erster Test", "hint3"))
         if stage == 3 and hint.aktion == "i2c_scan" and self._mode == "micropython":
             links.append(("🔍 I2C-Scan starten", "i2c_scan"))
-        if stage in (1, 3):
-            links.append(("📝 Ins Fehlerprotokoll", "protokoll"))
-        if links:
-            self._console.append_info("   ")
-            for label, action in links:
-                self._console.append_action_link(label, action)
-            self._console.append_info("\n")
+        # Ist schon eine Runde offen, geht es dort weiter (Schritt 4 bis 6) – kein neuer Eintrag.
+        if stage in (1, 3) and self._debug_log_panel.open_round() is None:
+            links.append(("📝 Neue Runde im Protokoll", "protokoll"))
+        self._append_console_links(links)
 
     def _on_console_action(self, action: str):
         if action == "hint2":
@@ -2351,11 +2374,20 @@ class MainWindow(QMainWindow):
             self._open_i2c_scan()
         elif action == "protokoll":
             lines = [ln for ln in self._last_error_traceback.strip().splitlines() if ln.strip()]
+            ist = lines[-1].strip() if lines else ""
+            if ist and self._last_own_line:
+                ist += f", Zeile {self._last_own_line}"
             self._open_debug_log()
-            self._debug_log_panel.new_entry(ist=lines[-1].strip() if lines else "")
+            self._debug_log_panel.new_round(ist=ist)
+        elif action == "ergebnis":
+            self._open_debug_log()
+            self._debug_log_panel.focus_result()
+        elif action == "zurueck":
+            self._restore_last_good()
 
     def _debug_after_run(self, code: int):
-        """Ergebnis am Lauf-Stand eintragen, Lauf im Fehlerprotokoll vermerken."""
+        """Ergebnis am Lauf-Stand eintragen, Lauf im Fehlerprotokoll vermerken und
+        bei offener Runde Schritt 6 („Geklappt?“) anstoßen."""
         self._flush_kp_partial()
         if self._user_stopped:
             ergebnis = "stopped"
@@ -2371,9 +2403,21 @@ class MainWindow(QMainWindow):
             except OSError:
                 pass
         self._sync_debug_log()
-        self._debug_log_panel.record_run(ergebnis, self._run_change_text)
+        panel = self._debug_log_panel
+        panel.record_run(ergebnis, self._run_change_text,
+                         kp=self._kp_reached[-1] if self._kp_reached else None)
         if ergebnis == "ok":
-            self._report_checkpoints(error=False)
+            kp = self._checkpoint_line(error=False)
+            if kp:
+                self._console.append_hint(kp + "\n")
+        if ergebnis in ("ok", "error") and panel.open_round() is not None:
+            from . import debug_guide as guide
+            ok = ergebnis == "ok"
+            self._console.append_info(guide.step6_text(ok, panel.failed_in_a_row() >= 3))
+            links = [("📝 Ergebnis eintragen", "ergebnis")]
+            if not ok:
+                links.insert(0, ("⏪ Zurück zum letzten funktionierenden Stand", "zurueck"))
+            self._append_console_links(links)
 
     # ── Fehlerprotokoll-Panel ──────────────────────────────────────────────
     def _open_debug_log(self):
@@ -2523,7 +2567,14 @@ class MainWindow(QMainWindow):
                             self._acquire_port, self._release_port)
         dlg.insert_script.connect(self._insert_scan_script)
         dlg.result_text.connect(self._console.append_info)
+        dlg.fact_text.connect(self._on_scan_fact)
         dlg.exec()
+
+    def _on_scan_fact(self, text: str):
+        """Scan-Ergebnis als Fakt bei „Eingrenzen“ der offenen Runde eintragen."""
+        self._open_debug_log()
+        self._debug_log_panel.add_eingrenzen_fact(text)
+        self.statusBar().showMessage("📝 Scan-Ergebnis bei „Eingrenzen“ eingetragen.", 4000)
 
     def _insert_scan_script(self, code: str):
         tab = self._new_tab()
@@ -3997,6 +4048,8 @@ class MainWindow(QMainWindow):
             self._settings_debug_stepped = dlg.debug_stepped
             self._settings_debug_change_hint = dlg.debug_change_hint
             self._debug_log_panel.set_level(self._settings_debug_level)
+            if getattr(self, "_debug_map_dlg", None) is not None:
+                self._debug_map_dlg.set_level(self._settings_debug_level)
             ui_font_changed = dlg.ui_font_pt != self._settings_ui_font_pt
             self._settings_ui_font_pt = dlg.ui_font_pt
             self._settings_font_size = dlg.font_size

@@ -368,15 +368,15 @@ class SettingsDialog(QDialog):
 
         self._combo_dbg_level = QComboBox()
         self._combo_dbg_level.setFixedWidth(220)
-        self._combo_dbg_level.addItem("Klasse 8/9 (Kurzform)", "kl89")
-        self._combo_dbg_level.addItem("Klasse 10/KS (Vollform)", "kl10")
+        self._combo_dbg_level.addItem("Klasse 8/9", "kl89")
+        self._combo_dbg_level.addItem("Klasse 10/KS", "kl10")
         self._combo_dbg_level.setCurrentIndex(max(0, self._combo_dbg_level.findData(dbg_level)))
         self._combo_dbg_level.setToolTip(
-            "Begriffe wie auf der Debugging-Landkarte der Stufe: Fehlerebenen, Karten "
-            "und Form des Fehlerprotokolls.")
-        form_dbg.addRow("Debugging-Landkarte:", self._combo_dbg_level)
+            "Welches Cheatsheet „Fehler finden: Schritt für Schritt“ gilt: Fälle in Schritt 3, "
+            "Hilfetexte in der Konsole und Fall-Auswahl im Fehlerprotokoll.")
+        form_dbg.addRow("Fehler finden (Cheatsheet):", self._combo_dbg_level)
 
-        self._chk_dbg_stepped = QCheckBox("  Fehlerhilfe in Stufen (Ebene → Karte → Verdächtige)")
+        self._chk_dbg_stepped = QCheckBox("  Fehlerhilfe in Stufen (Fall → Wo suche ich? → Verdächtige)")
         self._chk_dbg_stepped.setChecked(dbg_stepped)
         form_dbg.addRow("", self._chk_dbg_stepped)
 

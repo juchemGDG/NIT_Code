@@ -1,8 +1,10 @@
-"""I2C-Scan für die Debugging-Landkarte (IBD-Karte, Ebene 1b).
+"""I2C-Scan für „Fehler finden“ (Schritt 3, Fall „Meldung zur Hardware“: `i2c.scan()`).
 
-Zeigt, welche Adressen am Bus antworten, und stellt sie neben die Adresse aus
-dem eigenen Code – ohne Urteil. Den Schluss ziehen die SuS. „Als Skript
-einfügen“ öffnet genau die Vorlage, die auch auf dem Arbeitsblatt steht.
+Zeigt, welche Adressen am Bus antworten – so, wie `i2c.scan()` sie liefert (dezimal,
+z. B. [119]) und dazu als Hex (0x77) –, und stellt sie neben die Adresse aus dem
+eigenen Code, ohne Urteil. Den Schluss ziehen die SuS. „Als Skript einfügen“ öffnet
+die Vorlage fürs Arbeitsblatt, „In Protokoll übernehmen“ trägt das Ergebnis als Fakt
+bei „Eingrenzen“ ein.
 """
 import re
 import subprocess
@@ -14,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import THEME, tool_command
-from .error_hints import lesetabelle
+from .error_hints import detect_busy, lesetabelle
 
 SCAN_TIMEOUT = 12   # Sekunden – ohne Pull-ups kann der Bus hängen
 
@@ -25,7 +27,8 @@ def scan_script(bus: int, sda: int, scl: int) -> str:
         "from machine import I2C, Pin\n"
         f"i2c = I2C({bus}, sda=Pin({sda}), scl=Pin({scl}))\n"
         "geraete = i2c.scan()\n"
-        'print("Gefundene Adressen:", [hex(a) for a in geraete])\n'
+        'print("i2c.scan() liefert:", geraete)\n'
+        'print("als Hex:", [hex(a) for a in geraete])\n'
     )
 
 
@@ -60,11 +63,19 @@ def addresses_from_code(code: str) -> list[str]:
 
 
 def parse_addresses(output: str) -> list[str] | None:
-    """Adressen aus der Skriptausgabe oder None, wenn die Zeile fehlt."""
-    m = re.search(r"Gefundene Adressen:\s*\[(.*?)\]", output or "")
+    """Adressen (als Hex-Text) aus der Skriptausgabe oder None, wenn die Zeile fehlt."""
+    m = re.search(r"i2c\.scan\(\) liefert:\s*\[(.*?)\]", output or "")
     if not m:
         return None
-    return [f"0x{int(a, 16):02x}" for a in re.findall(r"0x[0-9a-fA-F]+", m.group(1))]
+    return [f"0x{int(a):02x}" for a in re.findall(r"\d+", m.group(1))]
+
+
+def fact_text(found: list[str]) -> str:
+    """Kurzer Fakt fürs Protokoll, z. B. „i2c.scan() → [119] = 0x77“."""
+    if not found:
+        return "i2c.scan() → [] (kein Gerät antwortet)"
+    dec = ", ".join(str(int(a, 16)) for a in found)
+    return f"i2c.scan() → [{dec}] = {', '.join(found)}"
 
 
 def describe_address(addr: str) -> str:
@@ -94,6 +105,7 @@ class I2CScanDialog(QDialog):
 
     insert_script = pyqtSignal(str)
     result_text = pyqtSignal(str)      # Zusammenfassung für die Konsole
+    fact_text = pyqtSignal(str)        # Fakt fürs Fehlerprotokoll (Eingrenzen)
 
     def __init__(self, parent, port: str, code: str, acquire, release):
         super().__init__(parent)
@@ -135,10 +147,13 @@ class I2CScanDialog(QDialog):
         self._btn_chip = QPushButton("Chip-ID lesen")
         self._btn_chip.setToolTip("Liest Register 0xD0: 0x60 = BME280, 0x58 = BMP280")
         self._btn_chip.setEnabled(False)
+        self._btn_fact = QPushButton("📝  In Protokoll übernehmen")
+        self._btn_fact.setToolTip("Trägt das Scan-Ergebnis bei „Eingrenzen“ der offenen Runde ein")
+        self._btn_fact.setEnabled(False)
         btn_insert = QPushButton("Als Skript einfügen")
         btn_insert.setToolTip("Öffnet die Scan-Vorlage vom Arbeitsblatt in einem neuen Tab")
         btn_close = QPushButton("Schließen")
-        for b in (self._btn_scan, self._btn_chip, btn_insert):
+        for b in (self._btn_scan, self._btn_chip, self._btn_fact, btn_insert):
             row.addWidget(b)
         row.addStretch()
         row.addWidget(btn_close)
@@ -146,6 +161,8 @@ class I2CScanDialog(QDialog):
 
         self._btn_scan.clicked.connect(self._scan)
         self._btn_chip.clicked.connect(self._read_chip)
+        self._btn_fact.clicked.connect(lambda: self.fact_text.emit(fact_text(self._found)))
+        self._scanned = False
         btn_insert.clicked.connect(lambda: self.insert_script.emit(
             scan_script(self._bus.value(), self._sda.value(), self._scl.value())))
         btn_close.clicked.connect(self.reject)
@@ -179,6 +196,7 @@ class I2CScanDialog(QDialog):
         self._release()
         self._btn_scan.setEnabled(True)
         self._btn_chip.setEnabled(any(a in ("0x76", "0x77") for a in self._found))
+        self._btn_fact.setEnabled(self._scanned)
 
     def _log(self, html: str):
         self._out.append(html)
@@ -199,19 +217,28 @@ class I2CScanDialog(QDialog):
         else:
             found = parse_addresses(out)
             if found is None:
-                last = (err or out).strip().splitlines()[-1:] or ["keine Antwort vom Controller"]
+                text = (err or out)
+                last = text.strip().splitlines()[-1:] or ["keine Antwort vom Controller"]
                 lines.append(f"   Scan nicht möglich: {last[0]}")
-            elif not found:
-                lines.append("   Kein Gerät antwortet. Verdächtige: Versorgung (3V3, GND), "
-                             "SDA/SCL-Leitung, Pins im Scan.")
+                if detect_busy(text):
+                    lines.append("   Schritt 1 · Läuft schon was? Dann läuft ein altes Programm "
+                                 "(main.py): Stopp-Knopf oder Strg+C in der Konsole; hilft das "
+                                 "nicht, Reset-Taster am Board und sofort Strg+C.")
             else:
                 self._found = found
+                self._scanned = True
+                dec = ", ".join(str(int(a, 16)) for a in found)
+                lines.append(f"   i2c.scan() liefert: [{dec}]")
+                if not found:
+                    lines.append("   Kein Gerät antwortet. Verdächtige: Versorgung (3V3, GND), "
+                                 "SDA/SCL-Leitung, Pins im Scan.")
                 for a in found:
                     name = describe_address(a)
-                    lines.append(f"   Gefunden: {a}" + (f"   (bekannt als: {name})" if name else ""))
+                    lines.append(f"   {int(a, 16)} = {a}" + (f"   (bekannt als: {name})" if name else ""))
         in_code = addresses_from_code(self._code)
         if in_code:
-            lines.append(f"   In deinem Code steht die Adresse: {', '.join(in_code)}")
+            lines.append("   In deinem Code steht die Adresse: "
+                         + ", ".join(f"{a} (= {int(a, 16)})" for a in in_code))
         else:
             lines.append("   In deinem Code steht keine Adresse (die Bibliothek nimmt dann "
                          "ihre Standardadresse).")

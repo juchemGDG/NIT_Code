@@ -5,20 +5,20 @@ Exception-Typ herausgelesen und – falls bekannt – eine kurze, schülergerech
 Erklärung samt Prüf-Tipps zurückgegeben. Ergänzt wird das durch einen optionalen
 KI-Prompt für den Tutor "Infi" (siehe :func:`build_infi_error_prompt`).
 
-Debugging-Landkarte: :func:`analyze` ordnet einen Fehler einer Fehlerebene
-(0, 1a, 1b, 2, 3) und einer Karte (PAP, IBD, Checkliste) zu und liefert eine
+Fehler finden (Cheatsheet V2): :func:`analyze` ordnet einen Fehler einem Fall aus
+Schritt 3 zu (Meldung zum Code, Meldung zur Hardware, …) und liefert eine
 Verdächtigenliste – nie die fertige Lösung. Hardware-Meldungen (ENODEV,
 ETIMEDOUT …) stehen als austauschbare Daten in ``assets/debug/lesetabelle.json``.
-Die Begriffe folgen den Postern für Klasse 8/9 (``kl89``) und 10/KS (``kl10``).
+Die Wörter kommen aus :mod:`debug_guide`, damit sie zum Cheatsheet passen.
 """
 import json
 import re
 from dataclasses import dataclass, field
 
-_EXC_RE = re.compile(r"^([A-Za-z_][\w.]*)\s*(?::\s*(.*))?$")
+from . import debug_guide as guide
+from .debug_guide import LEVEL_KL10, LEVEL_KL89  # noqa: F401  (von anderen Modulen mitgenutzt)
 
-LEVEL_KL89 = "kl89"
-LEVEL_KL10 = "kl10"
+_EXC_RE = re.compile(r"^([A-Za-z_][\w.]*)\s*(?::\s*(.*))?$")
 
 # Exception-Typ → mehrzeilige Erklärung (1. Zeile: was es bedeutet, dann Prüf-Tipps).
 _HINTS: dict[str, str] = {
@@ -134,47 +134,15 @@ def explain(traceback_text: str) -> str | None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Debugging-Landkarte: Fehlerebenen, Karten, Lesetabelle
+# Fehler finden: Fälle (Schritt 3), Lesetabelle
 # ──────────────────────────────────────────────────────────────────────────────
-EBENEN: dict[str, dict[str, str]] = {
-    "0":  {LEVEL_KL10: "Gefahr", LEVEL_KL89: "Gefahr"},
-    "1a": {LEVEL_KL10: "Meldung des Interpreters", LEVEL_KL89: "Meldung"},
-    "1b": {LEVEL_KL10: "Meldung der Hardware", LEVEL_KL89: "Meldung"},
-    "2":  {LEVEL_KL10: "Läuft, aber falsch", LEVEL_KL89: "Läuft, aber falsch"},
-    "3":  {LEVEL_KL10: "Hardware ohne Meldung", LEVEL_KL89: "Hardware ohne Meldung"},
-}
-
-# Welche Ebenen und Karten die jeweilige Stufe kennt (für Auswahllisten).
-EBENEN_JE_STUFE = {
-    LEVEL_KL89: ["0", "1a", "2", "3"],
-    LEVEL_KL10: ["0", "1a", "1b", "2", "3"],
-}
-KARTEN_JE_STUFE = {
-    LEVEL_KL89: ["STOPP", "PAP", "Checkliste"],
-    LEVEL_KL10: ["STOPP", "PAP", "IBD", "PAP + IBD"],
-}
-
-_KARTEN_HINWEIS: dict[tuple[str, str], str] = {
-    ("PAP", LEVEL_KL10): "Bis zu welchem Kästchen läuft dein Programm wie geplant? "
-                         "Traceback von UNTEN lesen, Zeile prüfen. Sonst Kontrollpunkte "
-                         "K1, K2 … mit print(\"K3\") setzen und den Suchraum halbieren.",
-    ("PAP", LEVEL_KL89): "Meldung von UNTEN lesen, Zeile prüfen, Tippfehler? "
-                         "Sonst print(\"K3\") an Kontrollpunkte setzen: "
-                         "Erscheint K3, liegt der Fehler dahinter.",
-    ("IBD", LEVEL_KL10): "An welchem Übergang (P1, P2 …) der Informationskette stimmt "
-                         "die Erwartung zum ersten Mal NICHT? Glied für Glied von einem "
-                         "Ende her prüfen.",
-    ("Checkliste", LEVEL_KL89): "① Pin  ② Richtung  ③ GND  ④ Wackler – eins nach dem anderen.",
-}
-
-
 # Fehler, die Python schon beim Einlesen der Datei findet – vor der ersten Zeile.
 # Kontrollpunkte können hier nichts zeigen, weil keine Zeile ausgeführt wird.
 COMPILE_ERRORS = {"SyntaxError", "IndentationError", "TabError"}
 
 VOR_START_HINWEIS = ("Bei diesem Fehler läuft das Programm gar nicht erst los – Python liest "
                      "zuerst die ganze Datei und stolpert dabei. Kontrollpunkte helfen hier "
-                     "nicht. Geh zur genannten Zeile und prüfe auch die Zeile darüber.")
+                     "nicht. Prüfe auch die Zeile darüber.")
 
 
 def is_compile_error(traceback_text: str) -> bool:
@@ -183,20 +151,12 @@ def is_compile_error(traceback_text: str) -> bool:
     return etype in COMPILE_ERRORS
 
 
-def karten_hinweis(karte: str, level: str) -> str:
-    """Leitfrage der Karte in der Sprache der Stufe."""
-    return (_KARTEN_HINWEIS.get((karte, level))
-            or _KARTEN_HINWEIS.get((karte, LEVEL_KL10))
-            or _KARTEN_HINWEIS.get((karte, LEVEL_KL89), ""))
-
-
 @dataclass
 class ErrorHint:
     """Strukturierter Hinweis zu einem Fehler (siehe :func:`analyze`)."""
     etype: str
     message: str
-    ebene: str
-    karte: str
+    fall: str                          # Fall aus Schritt 3: code | hardware
     lesart: str
     verdaechtige: list[str] = field(default_factory=list)
     erster_test: str = ""
@@ -210,23 +170,22 @@ class ErrorHint:
         return self.etype in COMPILE_ERRORS
 
     @property
-    def ebene_name(self) -> str:
-        return EBENEN.get(self.ebene, {}).get(self.level, "")
+    def fall_name(self) -> str:
+        return guide.case_label(self.fall, self.level)
 
     def render(self, stage: int) -> str:
-        """Text einer Hilfestufe: 1 = Ebene + Lesart, 2 = Karte, 3 = Verdächtige + Test."""
+        """Text einer Hilfestufe: 1 = Fall + Lesart, 2 = Wo suche ich?, 3 = Verdächtige + Test."""
         if stage == 1:
-            head = f"💡  Ebene {self.ebene} – {self.ebene_name}  ({self.etype}"
-            head += f" {self._kurzmeldung()})" if self._kurzmeldung() else ")"
-            return f"{head}\n   {self.lesart}\n"
+            kurz = self._kurzmeldung()
+            tail = f"   ({self.etype}" + (f" · {kurz})" if kurz else ")")
+            return (f"{guide.step_header(3)} – Fall: {self.fall_name}{tail}\n"
+                    f"   {self.lesart}\n")
         if stage == 2:
-            out = f"🗺   Karte: {self.karte}\n"
-            hinweis = karten_hinweis(self.karte, self.level)
+            c = guide.case(self.fall, self.level)
+            text = guide.plain(c.text) if c else ""
             if self.vor_start:
-                hinweis = VOR_START_HINWEIS
-            if hinweis:
-                out += f"   {hinweis}\n"
-            return out
+                text = (text + " " if text else "") + VOR_START_HINWEIS
+            return "🧭  Wo suche ich?\n   " + text + "\n"
         if stage == 3:
             if self.belegt or self.level == LEVEL_KL89:
                 titel = "🔎  Prüfe nacheinander:"
@@ -236,7 +195,7 @@ class ErrorHint:
             out = titel + "\n" + "".join(f"   • {v}\n" for v in self.verdaechtige)
             if self.erster_test:
                 out += f"🧪  Erster Test: {self.erster_test}\n"
-            return out
+            return out + guide.steps45_text()
         return ""
 
     def _kurzmeldung(self) -> str:
@@ -277,7 +236,7 @@ def _pick(regel: dict, key: str, level: str):
 
 
 def analyze(traceback_text: str, level: str = LEVEL_KL10) -> ErrorHint | None:
-    """Ordnet einen Traceback Ebene und Karte zu – oder None ohne erkennbare Meldung."""
+    """Ordnet einen Traceback einem Fall zu – oder None ohne erkennbare Meldung."""
     etype, message = _extract_exception(traceback_text)
     if not etype or etype == "KeyboardInterrupt":
         return None
@@ -286,8 +245,7 @@ def analyze(traceback_text: str, level: str = LEVEL_KL10) -> ErrorHint | None:
     if regel:
         return ErrorHint(
             etype=etype, message=message, level=level,
-            ebene=_pick(regel, "ebene", level) or "1a",
-            karte=_pick(regel, "karte", level) or "PAP",
+            fall=regel.get("fall", "code"),
             lesart=regel.get("lesart", ""),
             verdaechtige=list(_pick(regel, "verdaechtige", level) or []),
             erster_test=_pick(regel, "erster_test", level) or "",
@@ -302,8 +260,8 @@ def analyze(traceback_text: str, level: str = LEVEL_KL10) -> ErrorHint | None:
         lesart = "Lies die letzte Zeile der Meldung genau – sie nennt Fehlerart und Ursache."
         tipps = ["Welche Zeile deiner Datei nennt der Traceback?",
                  "Was steht in dieser Zeile, was in der Zeile davor?"]
-    return ErrorHint(etype=etype, message=message, level=level, ebene="1a",
-                     karte="PAP", lesart=lesart, verdaechtige=tipps)
+    return ErrorHint(etype=etype, message=message, level=level, fall="code",
+                     lesart=lesart, verdaechtige=tipps)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -328,7 +286,7 @@ def search_start(frames: list[tuple[str, int]], is_own) -> tuple[tuple | None, t
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Ebene 0: Anzeichen, die zu Kurzschluss/Spannungseinbruch passen
+# Schritt 0 und 1: Anzeichen aus der Ausgabe
 # ──────────────────────────────────────────────────────────────────────────────
 _DANGER_PATTERNS = [
     ("brownout", re.compile(r"Brownout detector was triggered", re.I)),
@@ -336,31 +294,34 @@ _DANGER_PATTERNS = [
     ("usb",      re.compile(r"Verbindung zum Controller (verloren|unterbrochen)")),
 ]
 
+# Das Board antwortet nicht auf den Programmstart: meist läuft noch ein altes Programm.
+_BUSY_PATTERNS = re.compile(
+    r"nicht best[aä]tigt|could not enter raw repl|device or resource busy|"
+    r"resource busy|\bbusy\b|Port wird gerade verwendet", re.I)
+
 
 def detect_danger(text: str) -> str | None:
-    """'brownout' | 'reset' | 'usb' | None."""
+    """Schritt 0: 'brownout' | 'reset' | 'usb' | None."""
     for kind, rx in _DANGER_PATTERNS:
         if rx.search(text or ""):
             return kind
     return None
 
 
+def detect_busy(text: str) -> bool:
+    """Schritt 1: Hinweise darauf, dass auf dem Board noch ein altes Programm läuft."""
+    return bool(_BUSY_PATTERNS.search(text or ""))
+
+
 def danger_text(kind: str) -> str:
-    """Schritt-0-Kasten (gleicher Wortlaut wie das Poster)."""
+    """Schritt-0-Kasten (Wortlaut wie auf dem Cheatsheet)."""
     grund = {
-        "brownout": "Der Controller meldet einen Spannungseinbruch (Brownout). "
-                    "Das passt zu einem Kurzschluss oder einer überlasteten Versorgung.",
+        "brownout": "Der Controller meldet einen Spannungseinbruch (Brownout) – das passt zu "
+                    "einem Kurzschluss oder einer überlasteten Versorgung.",
         "reset":    "Der Controller ist während des Programms neu gestartet.",
         "usb":      "Die USB-Verbindung zum Controller ist abgebrochen.",
     }.get(kind, "")
-    return (
-        "\n⚠  SCHRITT 0 · STOPP – erst sichern, dann suchen\n"
-        f"   {grund}\n"
-        "   1. USB-Kabel trennen.\n"
-        "   2. Nicht anfassen, wenn etwas warm oder heiß ist oder riecht. Lehrkraft rufen.\n"
-        "   3. Sichtprüfung: Berühren sich Leitungen? Sitzt der Sensor richtig? Polung?\n"
-        "   Es kann auch ein Wackelkontakt sein – geprüft wird trotzdem zuerst.\n"
-    )
+    return guide.step0_text(grund)
 
 
 def build_infi_error_prompt(code: str, traceback_text: str,
@@ -371,15 +332,16 @@ def build_infi_error_prompt(code: str, traceback_text: str,
     if len(code) > 4000:
         code = code[:4000] + "\n# … (gekürzt)"
     zyklus = (
-        "Antworte im Debugging-Zyklus: Nenne die Fehlerebene (1a = Meldung des "
-        "Interpreters, 1b = Meldung der Hardware), welche Karte hilft (PAP für den "
-        "Ablauf, IBD für die Informationskette Sensor → Bus → Pin → Variable → Ausgabe), "
-        "höchstens drei Verdächtige und EINEN Test, der sie unterscheidet. "
-        "Gib keine fertige Lösung und keinen korrigierten Code.\n\n"
+        "Wir arbeiten nach dem Cheatsheet „Fehler finden: Schritt für Schritt“. Hilf bei "
+        "Schritt 3 (Eingrenzen): Nenne den Fall (Meldung zum Code oder zur Hardware), wo "
+        "ich suchen soll (PAP, Kontrollpunkte, bei Hardware die IBD von P1 an), höchstens "
+        "drei Verdächtige und EINEN Test, der sie unterscheidet. Die Vermutung (Schritt 4: "
+        "„Ich vermute …, weil …“) formuliere ich selbst. Gib keine fertige Lösung und "
+        "keinen korrigierten Code.\n\n"
     )
     kontext = ""
     if hint is not None:
-        kontext = f"--- Einordnung von NIT_Code ---\nEbene {hint.ebene}, Karte {hint.karte}\n"
+        kontext = f"--- Einordnung von NIT_Code ---\nFall: {hint.fall_name}\n"
         if hint.verdaechtige:
             kontext += "Verdächtige: " + "; ".join(hint.verdaechtige) + "\n"
         kontext += "\n"
