@@ -1,4 +1,8 @@
 """AIS-Chat-Panel – eingebettete Web-Ansicht von app.ais-chat.schule."""
+import time
+
+from PyQt6.QtCore import QTimer
+
 try:
     from PyQt6.QtCore import QUrl
     from PyQt6.QtWebEngineCore import (
@@ -17,7 +21,7 @@ _MOBILE_UA = (
     "Version/17.0 Mobile/15E148 Safari/604.1"
 )
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from .config import AIS_CHAT_URL, THEME
 
@@ -27,6 +31,18 @@ PANEL_DEFAULT_WIDTH = 400
 PANEL_MAX_WIDTH = 600
 _VIEWPORT_WIDTH = 390   # Smartphone-Breite, auf die der Inhalt rendert
 PANEL_ZOOM = 0.9
+
+# Nach der VIDIS-Anmeldung landet man manchmal nicht im Chat, sondern auf der
+# Dienste-Übersicht von SCHULE@BW („… was möchten Sie heute tun?“). Die
+# Anmeldung ist dann aber bereits erfolgt – „Zurück“ führt in den Chat. Diese
+# Seite erkennen wir am Text und springen automatisch zurück.
+_PORTAL_CHECK_JS = (
+    "(function(){var b=document.body; if(!b) return false;"
+    " return /SCHULE@BW bereitgestellt|möchten Sie heute tun/i.test(b.innerText||'');})()"
+)
+_PORTAL_POLL_MS = 600
+_PORTAL_POLL_SECONDS = 20     # so lange nach einem Seitenwechsel prüfen
+_PORTAL_MAX_BACK = 4          # danach statt „Zurück“ die Chat-Startseite laden
 
 
 class AisChatPanel(QWidget):
@@ -51,6 +67,13 @@ class AisChatPanel(QWidget):
         hlay.setContentsMargins(10, 0, 10, 0)
         self._title_lbl = QLabel("🏫  AIS-Chat")
         hlay.addWidget(self._title_lbl)
+        hlay.addStretch()
+        self._home_btn = QToolButton()
+        self._home_btn.setText("⌂")
+        self._home_btn.setToolTip("Zur AIS-Chat-Startseite")
+        self._home_btn.setAutoRaise(True)
+        self._home_btn.clicked.connect(self.go_home)
+        hlay.addWidget(self._home_btn)
         layout.addWidget(self._header)
 
         if _WEBENGINE_AVAILABLE:
@@ -73,6 +96,13 @@ class AisChatPanel(QWidget):
             )
             self._view.setPage(page)
             self._view.loadFinished.connect(self._inject_viewport)
+            self._view.urlChanged.connect(self._on_url_changed)
+            self._portal_timer = QTimer(self)
+            self._portal_timer.setInterval(_PORTAL_POLL_MS)
+            self._portal_timer.timeout.connect(self._check_portal)
+            self._portal_deadline = 0.0
+            self._portal_cooldown = 0.0
+            self._portal_backs = 0
             self._view.setUrl(QUrl(AIS_CHAT_URL))
             layout.addWidget(self._view, stretch=1)
         else:
@@ -97,6 +127,56 @@ class AisChatPanel(QWidget):
         self._title_lbl.setStyleSheet(
             f"color:{THEME['text']}; font-weight:bold; font-size:13px;"
         )
+        self._home_btn.setStyleSheet(
+            f"color:{THEME['text']}; font-size:16px; border:none; padding:0 4px;"
+        )
+
+    def go_home(self):
+        if self._view is not None:
+            self._view.setUrl(QUrl(AIS_CHAT_URL))
+
+    # ------------------------------------------------------------------
+    # Umleitung auf die SCHULE@BW-Dienste-Übersicht abfangen
+    # ------------------------------------------------------------------
+    def _on_url_changed(self, url):
+        if url.host() == QUrl(AIS_CHAT_URL).host():
+            # Im Chat angekommen – nichts mehr zu prüfen
+            self._portal_backs = 0
+            self._portal_timer.stop()
+            return
+        # Fremde Seite (VIDIS, Schul-Login, Portal …): eine Weile beobachten.
+        # Die Übersicht ist eine Single-Page-App, ihr Text erscheint erst
+        # nach dem Laden – deshalb wiederholt prüfen statt nur bei loadFinished.
+        self._portal_deadline = time.monotonic() + _PORTAL_POLL_SECONDS
+        if not self._portal_timer.isActive():
+            self._portal_timer.start()
+
+    def _check_portal(self):
+        if self._view is None or time.monotonic() > self._portal_deadline:
+            self._portal_timer.stop()
+            return
+        if time.monotonic() < self._portal_cooldown:
+            return
+        self._view.page().runJavaScript(_PORTAL_CHECK_JS, self._on_portal_checked)
+
+    def _on_portal_checked(self, is_portal):
+        if not is_portal or self._view is None:
+            return
+        if time.monotonic() < self._portal_cooldown:
+            return
+        # Kurze Pause, damit dieselbe Seite nicht doppelt behandelt wird,
+        # während die nächste Navigation noch läuft.
+        self._portal_cooldown = time.monotonic() + 2.0
+        history = self._view.history()
+        if self._portal_backs < _PORTAL_MAX_BACK and history.canGoBack():
+            # Genau das, was „Zurück“ von Hand macht: der vorherige Schritt
+            # der Anmeldung wird erneut aufgerufen und leitet – jetzt mit
+            # bestehender Anmeldung – direkt in den Chat weiter.
+            self._portal_backs += 1
+            self._view.back()
+        else:
+            self._portal_backs = 0
+            self.go_home()
 
     def _inject_viewport(self, *_):
         if self._view is None:

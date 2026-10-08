@@ -43,6 +43,12 @@ class CodeEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Hinweisleiste für Dateien, die direkt auf dem Controller liegen
+        # (standardmäßig ausgeblendet, siehe set_device_banner)
+        self._device_banner = QLabel(self)
+        self._device_banner.setVisible(False)
+        layout.addWidget(self._device_banner)
+
         # Tab-Leiste (Datei-Tabs) wird von MainWindow verwaltet
         if HAS_QSCI:
             self.sci = QsciScintilla(self)
@@ -373,6 +379,7 @@ class CodeEditor(QWidget):
     def refresh_theme(self):
         """Farben nach Theme-Wechsel neu anwenden (ohne Margins neu zu definieren)."""
         self._find_bar.apply_theme()
+        self._style_device_banner()
         if not HAS_QSCI:
             return
         t = THEME
@@ -391,6 +398,19 @@ class CodeEditor(QWidget):
     def set_filepath(self, path: str | None):
         """Aktuellen Dateipfad setzen – verbessert jedi-Projekterkennung."""
         self._filepath = path
+
+    def set_device_banner(self, text: str | None):
+        """Farbige Leiste über dem Code – markiert Dateien vom Controller."""
+        self._device_banner.setText(text or "")
+        self._device_banner.setVisible(bool(text))
+        self._style_device_banner()
+
+    def _style_device_banner(self):
+        t = THEME
+        self._device_banner.setStyleSheet(
+            f"background:{t['warning']}; color:{t['bg_editor']};"
+            " font-weight:bold; padding:4px 10px;"
+        )
 
     def set_extra_completion_paths(self, paths: list[str]):
         """Zusätzliche Suchpfade für jedi (z. B. MicroPython-Stubs)."""

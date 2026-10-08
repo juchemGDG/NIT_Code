@@ -400,7 +400,9 @@ class DeviceFilePanel(QWidget):
     """Zeigt Dateien auf dem angeschlossenen MicroPython-Controller."""
 
     file_open_requested = pyqtSignal(str)
-    refresh_started     = pyqtSignal()
+    # (lokale Arbeitskopie, Port, Pfad auf dem Controller) – zum direkten Bearbeiten
+    device_file_open_requested = pyqtSignal(str, str, str)
+    refresh_started    = pyqtSignal()
     refresh_done        = pyqtSignal()
     firmware_info       = pyqtSignal(str)   # Firmware-Version an main_window weiterleiten
 
@@ -689,17 +691,23 @@ class DeviceFilePanel(QWidget):
     def _open_file(self, name: str):
         if not self._port or not name:
             return
-        tmp_path = os.path.join(_download_dir(), os.path.basename(name))
+        remote = self._remote_path(name)
+        port = self._port
+        # Ordnerstruktur des Controllers nachbilden, damit gleichnamige Dateien
+        # aus verschiedenen Ordnern (z. B. main.py und lib/main.py) sich nicht
+        # gegenseitig überschreiben.
+        tmp_path = os.path.join(_download_dir(), *remote.split("/"))
+        os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
 
         def _done(ok: bool, err: str):
             if ok:
-                self.file_open_requested.emit(tmp_path)
+                self.device_file_open_requested.emit(tmp_path, port, remote)
             else:
                 QMessageBox.critical(self, "Fehler", err or "Download fehlgeschlagen")
 
         self._run_device_cmd(
             [*tool_command("mpremote"), "connect", self._port,
-             "cp", f":{self._remote_path(name)}", tmp_path],
+             "cp", f":{remote}", tmp_path],
             _done, timeout=15,
         )
 

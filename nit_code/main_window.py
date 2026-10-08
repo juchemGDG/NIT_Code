@@ -797,6 +797,12 @@ class EditorTab:
         self.filepath: str | None = filepath
         self.editor = CodeEditor()
         self.modified = False
+        # Datei liegt auf dem Controller: filepath ist dann nur die lokale
+        # Arbeitskopie, Strg+S schreibt zusätzlich nach device_path zurück.
+        self.device_port: str | None = None
+        self.device_path: str | None = None
+        # Lokal gespeichert, aber noch nicht auf den Controller übertragen
+        self.device_dirty = False
 
     @property
     def display_name(self) -> str:
@@ -1229,6 +1235,7 @@ class MainWindow(QMainWindow):
 
         self._device_panel = DeviceFilePanel()
         self._device_panel.file_open_requested.connect(self._open_file_path)
+        self._device_panel.device_file_open_requested.connect(self._open_device_file)
         self._device_panel.setVisible(False)
         self._left_splitter.addWidget(self._device_panel)
         # FilePanel wächst mit, DeviceFilePanel bleibt kompakt
@@ -1376,10 +1383,11 @@ class MainWindow(QMainWindow):
 
     def _close_tab(self, index: int):
         tab = self._tabs[index]
-        if tab.editor.is_modified():
+        if tab.editor.is_modified() or tab.device_dirty:
+            ort = " auf dem Controller" if tab.device_path else ""
             reply = QMessageBox.question(
                 self, "Ungespeicherte Änderungen",
-                f'"{tab.display_name}" hat ungespeicherte Änderungen.\nTrotzdem schließen?',
+                f'"{tab.display_name}" hat{ort} ungespeicherte Änderungen.\nTrotzdem schließen?',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -1398,13 +1406,30 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index: int):
         tab = self._tabs[index] if 0 <= index < len(self._tabs) else None
         if tab:
-            name = tab.filepath or tab.display_name
-            self._status_file.setText(name)
+            self._status_file.setText(self._tab_location(tab))
+
+    def _tab_location(self, tab: EditorTab) -> str:
+        """Pfad für die Statusleiste – bei Controller-Dateien der Pfad dort."""
+        if tab.device_path:
+            return f"📟  Controller ({tab.device_port}): /{tab.device_path}"
+        return tab.filepath or tab.display_name
 
     def _update_tab_title(self, tab: EditorTab):
         idx = self._tabs.index(tab)
-        title = ("● " if tab.editor.is_modified() else "") + tab.display_name
+        dirty = tab.editor.is_modified() or tab.device_dirty
+        prefix = "📟 " if tab.device_path else ""
+        title = ("● " if dirty else "") + prefix + tab.display_name
         self._tab_widget.setTabText(idx, title)
+        bar = self._tab_widget.tabBar()
+        if tab.device_path:
+            bar.setTabTextColor(idx, QColor(THEME["warning"]))
+            bar.setTabToolTip(
+                idx, f"Datei auf dem Controller ({tab.device_port}): /{tab.device_path}\n"
+                     "Strg+S speichert direkt auf den Controller."
+            )
+        else:
+            bar.setTabTextColor(idx, QColor())
+            bar.setTabToolTip(idx, tab.filepath or "")
 
     # ──────────────────────────────────────────────────────────────────────
     # Dateioperationen
@@ -1426,14 +1451,91 @@ class MainWindow(QMainWindow):
                 return
         self._new_tab(path)
 
+    def _open_device_file(self, local_path: str, port: str, remote_path: str):
+        """Öffnet eine vom Controller geladene Datei zum direkten Bearbeiten."""
+        for i, tab in enumerate(self._tabs):
+            if tab.filepath == local_path:
+                # Erneut geöffnet: unveränderten Tab mit dem frischen Stand
+                # vom Controller aktualisieren, Änderungen aber nie verwerfen.
+                if not tab.editor.is_modified() and not tab.device_dirty:
+                    try:
+                        with open(local_path, encoding="utf-8") as f:
+                            tab.editor.set_text(f.read())
+                        if hasattr(tab.editor, "sci"):
+                            tab.editor.sci.setModified(False)
+                    except Exception as e:
+                        self._console.append_error(f"Datei konnte nicht geladen werden: {e}\n")
+                tab.device_port = port
+                self._tab_widget.setCurrentIndex(i)
+                return
+        tab = self._new_tab(local_path)
+        if hasattr(tab.editor, "sci"):
+            tab.editor.sci.setModified(False)   # frisch geladen = unverändert
+        self._mark_device_tab(tab, port, remote_path)
+
+    def _mark_device_tab(self, tab: EditorTab, port: str | None, remote_path: str | None):
+        """Kennzeichnet einen Tab als Controller-Datei (oder hebt das auf)."""
+        tab.device_port = port if remote_path else None
+        tab.device_path = remote_path
+        tab.device_dirty = False
+        tab.editor.set_device_banner(
+            f"📟  Datei auf dem Controller ({port}): /{remote_path}"
+            "  –  Strg+S speichert direkt auf den Controller"
+            if remote_path else None
+        )
+        self._update_tab_title(tab)
+        if tab is self._current_tab():
+            self._status_file.setText(self._tab_location(tab))
+
     def _save_file(self):
         tab = self._current_tab()
         if not tab:
             return
         if tab.filepath:
-            self._do_save(tab, tab.filepath)
+            if tab.device_path:
+                self._do_save(tab, tab.filepath, silent=True)
+                self._save_tab_to_device(tab)
+            else:
+                self._do_save(tab, tab.filepath)
         else:
             self._save_file_as()
+
+    def _save_tab_to_device(self, tab: EditorTab):
+        """Schreibt die lokale Arbeitskopie zurück auf den Controller."""
+        if not self._acquire_port():
+            return
+        port, remote = tab.device_port, tab.device_path
+        self._console.append_info(f"↑  Speichere /{remote} auf dem Controller ({port}) …\n")
+        cmd = [*tool_command("mpremote"), "connect", port,
+               "cp", tab.filepath, f":{remote}"]
+        proc = ProcessRunner(cmd)
+
+        def _done(rc: int):
+            self._release_port()
+            if tab not in self._tabs:
+                return
+            if rc == 0:
+                # Nur als übertragen markieren, wenn seither nichts mehr
+                # lokal gespeichert wurde – sonst bleibt der Punkt stehen.
+                if not tab.editor.is_modified():
+                    tab.device_dirty = False
+                self._console.append_success(f"✓  Auf dem Controller gespeichert: /{remote}\n")
+                self._status_file.setText(f"💾  Auf dem Controller gespeichert: /{remote}")
+            else:
+                tab.device_dirty = True
+                self._console.append_error(
+                    "✗  Speichern auf dem Controller fehlgeschlagen – ist er noch "
+                    "angeschlossen und läuft gerade kein Programm?\n"
+                )
+            self._update_tab_title(tab)
+
+        proc.output.connect(
+            lambda text, kind: self._console.append_error(text) if kind != "stdout" else None
+        )
+        proc.finished_run.connect(_done)
+        self._retire_process()
+        proc.start()
+        self._process = proc
 
     def _save_file_as(self):
         tab = self._current_tab()
@@ -1469,6 +1571,10 @@ class MainWindow(QMainWindow):
                     return
             tab.filepath = path
             tab.editor.set_filepath(path)
+            # „Speichern als“ legt eine Datei auf dem Rechner an – der Tab
+            # gehört ab jetzt nicht mehr zum Controller.
+            if tab.device_path:
+                self._mark_device_tab(tab, None, None)
             self._do_save(tab, path)
             self._update_tab_title(tab)
 
@@ -1480,6 +1586,10 @@ class MainWindow(QMainWindow):
                 f.write(tab.editor.get_text())
             if hasattr(tab.editor, "sci"):
                 tab.editor.sci.setModified(False)
+            if tab.device_path:
+                # Nur die lokale Arbeitskopie ist aktuell; _save_tab_to_device
+                # setzt das nach erfolgreicher Übertragung wieder zurück.
+                tab.device_dirty = True
             self._update_tab_title(tab)
             self._status_file.setText(f"💾  Gespeichert: {os.path.basename(path)}")
             # Statusmeldung nach 3 Sekunden zurücksetzen
@@ -3801,7 +3911,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         for tab in self._tabs:
-            if tab.editor.is_modified():
+            if tab.editor.is_modified() or tab.device_dirty:
                 reply = QMessageBox.question(
                     self, "Ungespeicherte Änderungen",
                     "Es gibt ungespeicherte Änderungen.\nTrotzdem beenden?",
