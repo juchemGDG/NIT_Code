@@ -2150,9 +2150,17 @@ class MainWindow(QMainWindow):
         self._last_error_traceback = traceback_text
         self._sync_debug_log()      # offene Runde gehört zur gerade gelaufenen Datei
         self._console.flush_now()   # Traceback steht sicher vor den Hinweisen
-        self._show_observation(traceback_text)
-        from .error_hints import analyze
+        from .error_hints import analyze, detect_busy, traceback_frames
         hint = analyze(traceback_text, self._settings_debug_level)
+        if hint is None and not traceback_frames(traceback_text):
+            # Keine Python-Meldung, sondern ein Problem mit dem Board selbst (Start nicht
+            # bestätigt, Verbindung weg): Schritt 0 bzw. 1 sagen schon, was zu tun ist.
+            # Ein „Schritt 2 · Beobachten“ ohne Meldung wäre verwirrend.
+            if self._mode == "micropython" and detect_busy(traceback_text) and not self._busy_shown:
+                self._busy_shown = True
+                self._show_busy()
+            return
+        self._show_observation(traceback_text)
         self._last_hint = hint
         self._hint_stage = 0
         if hint:
@@ -2247,11 +2255,6 @@ class MainWindow(QMainWindow):
             if danger:
                 self._danger_shown = True
                 QTimer.singleShot(0, lambda d=danger: self._show_danger(d))
-        if self._mode == "micropython" and kind == "stderr" and not self._busy_shown:
-            from .error_hints import detect_busy
-            if detect_busy(text):
-                self._busy_shown = True
-                QTimer.singleShot(0, self._show_busy)
         if kind == "stdout":
             parts = (self._kp_partial + text).split("\n")
             self._kp_partial = parts.pop()[-200:]

@@ -111,6 +111,26 @@
       "belegt": true
     },
     {
+      "id": "invalid_pin",
+      "typ": "ValueError",
+      "meldung": [
+        "invalid pin"
+      ],
+      "fall": "hardware",
+      "lesart": "MicroPython kennt diese Pin-Nummer auf diesem Board nicht – oder sie lässt sich hier nicht so verwenden.",
+      "verdaechtige": [
+        "Pin-Nummer im Code (gibt es sie auf deinem Board?)",
+        "SDA und SCL im Code vertauscht",
+        "Pin ist schon anders belegt"
+      ],
+      "verdaechtige_kl89": [
+        "① Pin: Passt die Nummer im Code zu einem Pin, den es auf dem Board gibt?",
+        "② Sind die Pins im Code vertauscht?"
+      ],
+      "erster_test": "Pin-Nummern im Code mit dem Pinbelegungsplan deines Boards vergleichen.",
+      "belegt": false
+    },
+    {
       "id": "oserror_allgemein",
       "typ": "OSError",
       "meldung": [],
