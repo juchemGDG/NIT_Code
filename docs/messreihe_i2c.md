@@ -45,13 +45,67 @@ print(sensor.read_all())
 - Zwei Varianten je nach Ort im Traceback (siehe 4); ohne erkennbaren Ort gilt der allgemeine Text.
 - `ETIMEDOUT` und `EIO` bleiben als Arbeitshypothese gekennzeichnet.
 
-## Offen: ETIMEDOUT finden
+## ETIMEDOUT: nur mit SoftI2C und festgehaltener SCL (2026-10-09)
 
-Vorschlag für weitere Einzelfälle (nur bei getrenntem USB umstecken, nie VCC und GND vertauschen, kein Kurzschluss):
+**Hardware-I2C (`I2C(0, …)`) liefert in allen weiteren Versuchen `ENODEV`:**
 
-| Nr. | Sabotage |
+| Versuch | Meldung |
 |---|---|
-| 7 | nur **SDA** abgezogen, SCL steckt |
-| 8 | nur **SCL** abgezogen, SDA steckt |
-| 9 | **GND** des Sensors abgezogen |
-| 10 | Wackler: Messschleife laufen lassen und eine Datenleitung ein paar Mal kurz lösen und wieder einstecken |
+| alle Pins einzeln ausgesteckt | `ENODEV` |
+| SCL gezielt auf GND | `ENODEV` |
+| SDA gezielt auf GND | `ENODEV` |
+| `freq` geändert | `ENODEV` |
+
+**`ETIMEDOUT` tritt mit `SoftI2C` auf, wenn ein anderer Teilnehmer SCL auf LOW hält** (Clock Stretching ohne Ende). Aufbau: Ein freier GPIO (`TEST_PIN = 2`) ist extern mit SCL verbunden und als Open-Drain konfiguriert. Er kann die Leitung nur nach LOW ziehen oder loslassen und erzeugt daher keinen Kurzschluss.
+
+| Zustand | Ausgabe |
+|---|---|
+| SCL festgehalten | `scan: []` und `OSError: [Errno 116] ETIMEDOUT` bei `writeto` |
+| nach dem Loslassen | `scan: [118]` |
+
+Das passt zur MicroPython-Dokumentation (für `SoftI2C` ist `ETIMEDOUT` das Zeichen, dass ein Gerät SCL zu lange festhält). Im Unterricht, mit `I2C(0, …)`, ist `ETIMEDOUT` daher **nicht zu erwarten**. Er bleibt als Arbeitshypothese in der Lesetabelle, weil nur die Ursache „SCL wird festgehalten“ gemessen ist.
+
+**Hinweis zur Sicherheit:** Eine Datenleitung gezielt an GND zu legen gehört nicht in die Sabotageliste für SuS. Die Open-Drain-Variante oben ist für die Lehrkraft die harmlose Form.
+
+## Testskript: ETIMEDOUT mit der Bibliothek
+
+Ein Skript, mit dem sich Bus (SoftI2C oder Hardware) und Zeitpunkt (Start oder im Betrieb) umschalten lassen. Der Fehler bleibt **ungefangen**, damit NIT_Code seine Hinweise zeigt; `finally` gibt den Bus danach wieder frei.
+
+```python
+from machine import Pin, SoftI2C, I2C
+import time
+from nitbw_bme280 import BME280
+
+SDA_PIN, SCL_PIN, TEST_PIN = 3, 4, 2   # TEST_PIN: freier GPIO, extern mit SCL verbinden
+DEVICE_ADDR = 0x76
+BUS = "soft"        # "soft" = SoftI2C, "hardware" = I2C(0, ...)
+MODUS = "start"     # "start": SCL schon beim Erzeugen festhalten, "betrieb": erst nach 3 Messungen
+
+if BUS == "soft":
+    i2c = SoftI2C(sda=Pin(SDA_PIN), scl=Pin(SCL_PIN), freq=100_000, timeout=20_000)
+else:
+    i2c = I2C(0, sda=Pin(SDA_PIN), scl=Pin(SCL_PIN), freq=100_000)
+
+blocker = Pin(TEST_PIN, Pin.OPEN_DRAIN, value=1)   # 1 = hochohmig, lässt SCL frei
+
+try:
+    if MODUS == "start":
+        blocker.value(0)                           # SCL nach LOW ziehen
+    sensor = BME280(i2c, addr=DEVICE_ADDR)
+    for n in range(1, 6):
+        if MODUS == "betrieb" and n == 4:
+            blocker.value(0)
+        print(n, sensor.read_all())
+        time.sleep(0.5)
+finally:
+    blocker.value(1)                               # Bus wieder freigeben
+```
+
+Erwartung (noch zu bestätigen):
+
+| BUS | MODUS | Erwartet |
+|---|---|---|
+| `soft` | `start` | `ETIMEDOUT` über `__init__` → `_read_u8` |
+| `soft` | `betrieb` | 3 Messungen, dann `ETIMEDOUT` über `read_all` |
+| `hardware` | `start` | `ENODEV` (wie bisher) |
+| `hardware` | `betrieb` | offen |

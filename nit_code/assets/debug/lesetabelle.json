@@ -94,22 +94,22 @@
         "^116$"
       ],
       "fall": "hardware",
-      "lesart": "Die Übertragung auf dem I2C-Bus wurde nicht rechtzeitig fertig – der Bus antwortet nicht oder hängt.",
+      "lesart": "Die Übertragung wurde nicht rechtzeitig fertig – der Bus wird festgehalten oder hängt: Eine Leitung (meist SCL) liegt auf LOW, und das Programm wartet vergeblich.",
       "verdaechtige": [
+        "SCL (oder SDA) wird festgehalten – ein Gerät oder eine Leitung hält sie auf LOW",
         "Wackelkontakt an SDA oder SCL",
         "Leitung auf falschem Pegel (z. B. an GND oder 3V3 statt am Pin)",
-        "fehlende Pull-up-Widerstände",
-        "ein Gerät hält SCL fest"
+        "fehlende Pull-up-Widerstände"
       ],
       "verdaechtige_kl89": [
         "④ Wackler: Sitzen alle Kabel fest?",
         "① Pin: Stecken SDA und SCL an den richtigen Pins?",
         "③ GND: Ist der Stromkreis geschlossen?"
       ],
-      "erster_test": "USB trennen, Verkabelung prüfen, danach I2C-Scan.",
+      "erster_test": "USB trennen und die Verkabelung ansehen: Hängt eine Leitung an GND oder an einem anderen Gerät? Danach i2c.scan(): Findet es den Sensor wieder, wurde der Bus nur festgehalten.",
       "aktion": "i2c_scan",
       "belegt": false,
-      "_notiz": "In der Messreihe (ESP32-C3, Hardware-I2C) nicht aufgetreten – Lesart bleibt Arbeitshypothese."
+      "_notiz": "Gemessen mit SoftI2C (timeout=20000 µs): SCL über einen Open-Drain-GPIO auf LOW gehalten → i2c.scan() liefert [], writeto() wirft [Errno 116] ETIMEDOUT; nach dem Loslassen scan [118]. Mit Hardware-I2C (I2C(0, …)) dagegen in allen Fällen ENODEV (Pins einzeln ab, SCL/SDA auf GND, freq geändert). Nur der Verdacht „festgehalten“ ist gemessen, daher belegt: false."
     },
     {
       "id": "eio",
