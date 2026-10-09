@@ -681,11 +681,14 @@ class ShellWidget(QWidget):
 
     def _append(self, text: str, color: str):
         """Thread-sicher: aus Hintergrund-Thread aufrufbar."""
-        self._text_ready.emit(text, color)
+        try:
+            self._text_ready.emit(text, color)
+        except RuntimeError:
+            pass   # Widget beim Beenden schon zerstört – Lesethread läuft noch kurz weiter
 
     def _bridge_append(self, text: str, color: str):
         """Alias für _append (Kompatibilität)."""
-        self._text_ready.emit(text, color)
+        self._append(text, color)
 
     def _do_append(self, text: str, color: str):
         cursor = self.output.textCursor()

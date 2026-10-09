@@ -2,6 +2,64 @@
   "_info": "Lesetabelle für Fehlermeldungen (Cheatsheet „Fehler finden“). Die erste passende Regel gewinnt. 'fall' = Fall aus Schritt 3: code | hardware | wert | nichts (Bezeichnung je Stufe steht in debug_guide.py). 'belegt': false = Arbeitshypothese, bis die Messreihe am eigenen Gerät vorliegt. Felder mit Endung _kl89 ersetzen das Feld für Klasse 8/9.",
   "regeln": [
     {
+      "id": "enodev_start",
+      "typ": "OSError",
+      "meldung": [
+        "ENODEV",
+        "Errno 19\\b",
+        "^19$"
+      ],
+      "fall": "hardware",
+      "lesart": "Schon beim Start hat unter der angesprochenen I2C-Adresse kein Gerät geantwortet – der Sensor war von Anfang an nicht erreichbar.",
+      "verdaechtige": [
+        "Adresse im Code",
+        "SDA/SCL: Leitung, Vertauschung im Code oder am Kabel",
+        "Versorgung des Sensors (3V3, GND)",
+        "Sensor nicht angeschlossen"
+      ],
+      "verdaechtige_kl89": [
+        "① Pin: Passen die Pin-Nummern im Code zu den Kabeln?",
+        "② Adresse: Stimmt die Adresse im Code?",
+        "③ GND und Strom am Sensor?",
+        "④ Wackler: Sitzen alle Kabel fest?"
+      ],
+      "erster_test": "i2c.scan() ausführen. Liefert es [] (leere Liste): Pins im Code, Kabel und Versorgung prüfen. Liefert es eine Zahl, z. B. [118] (= 0x76): mit der Adresse im Code vergleichen.",
+      "aktion": "i2c_scan",
+      "belegt": true,
+      "traceback": [
+        "in __init__"
+      ]
+    },
+    {
+      "id": "enodev_lauf",
+      "typ": "OSError",
+      "meldung": [
+        "ENODEV",
+        "Errno 19\\b",
+        "^19$"
+      ],
+      "traceback": [
+        "nitbw_\\w+\\.py\", line \\d+, in (?!__init__)"
+      ],
+      "fall": "hardware",
+      "lesart": "Der Sensor hat zuerst geantwortet und dann nicht mehr – die Verbindung ist während des Betriebs weggefallen.",
+      "verdaechtige": [
+        "Wackelkontakt oder gelöstes Kabel (SDA, SCL)",
+        "Versorgung des Sensors wackelt (3V3, GND)",
+        "Steckverbindung am Sensor oder Steckbrett locker"
+      ],
+      "verdaechtige_kl89": [
+        "④ Wackler: Sitzen alle Kabel fest?",
+        "③ GND und Strom am Sensor?"
+      ],
+      "erster_test": "Bei getrenntem USB alle Steckverbindungen ansehen und leicht bewegen, danach neu starten. Tritt es nur manchmal auf, ist es meist ein Wackler.",
+      "aktion": "i2c_scan",
+      "belegt": true,
+      "traceback_nicht": [
+        "in __init__"
+      ]
+    },
+    {
       "id": "enodev",
       "typ": "OSError",
       "meldung": [
@@ -23,9 +81,9 @@
         "③ GND und Strom am Sensor?",
         "④ Wackler: Sitzen alle Kabel fest?"
       ],
-      "erster_test": "I2C-Scan: Liste leer → Bus oder Versorgung prüfen; andere Adresse → Adresse im Code vergleichen.",
+      "erster_test": "i2c.scan() ausführen. Liefert es [] (leere Liste): Pins im Code, Kabel und Versorgung prüfen. Liefert es eine Zahl, z. B. [118] (= 0x76): mit der Adresse im Code vergleichen.",
       "aktion": "i2c_scan",
-      "belegt": false
+      "belegt": true
     },
     {
       "id": "etimedout",
@@ -50,7 +108,8 @@
       ],
       "erster_test": "USB trennen, Verkabelung prüfen, danach I2C-Scan.",
       "aktion": "i2c_scan",
-      "belegt": false
+      "belegt": false,
+      "_notiz": "In der Messreihe (ESP32-C3, Hardware-I2C) nicht aufgetreten – Lesart bleibt Arbeitshypothese."
     },
     {
       "id": "eio",
@@ -120,12 +179,10 @@
       "lesart": "MicroPython kennt diese Pin-Nummer auf diesem Board nicht – oder sie lässt sich hier nicht so verwenden.",
       "verdaechtige": [
         "Pin-Nummer im Code (gibt es sie auf deinem Board?)",
-        "SDA und SCL im Code vertauscht",
         "Pin ist schon anders belegt"
       ],
       "verdaechtige_kl89": [
-        "① Pin: Passt die Nummer im Code zu einem Pin, den es auf dem Board gibt?",
-        "② Sind die Pins im Code vertauscht?"
+        "① Pin: Passt die Nummer im Code zu einem Pin, den es auf dem Board gibt?"
       ],
       "erster_test": "Pin-Nummern im Code mit dem Pinbelegungsplan deines Boards vergleichen.",
       "belegt": false

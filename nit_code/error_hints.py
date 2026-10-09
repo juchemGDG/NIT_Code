@@ -219,13 +219,22 @@ def lesetabelle() -> dict:
     return _LESETABELLE
 
 
-def _find_rule(etype: str, message: str) -> dict | None:
+def _find_rule(etype: str, message: str, traceback_text: str = "") -> dict | None:
+    """Erste passende Regel. Neben Typ und Meldung kann eine Regel den Traceback prüfen:
+    ``traceback`` (mindestens ein Muster kommt vor) und ``traceback_nicht`` (keines kommt
+    vor). So unterscheidet NIT_Code z. B. ENODEV beim Start (``__init__``) von ENODEV
+    mitten im Betrieb."""
     for regel in lesetabelle().get("regeln", []):
         if regel.get("typ") != etype:
             continue
         muster = regel.get("meldung") or []
-        if not muster or any(re.search(m, message) for m in muster):
-            return regel
+        if muster and not any(re.search(m, message) for m in muster):
+            continue
+        if regel.get("traceback") and not any(re.search(m, traceback_text) for m in regel["traceback"]):
+            continue
+        if any(re.search(m, traceback_text) for m in regel.get("traceback_nicht", [])):
+            continue
+        return regel
     return None
 
 
@@ -241,7 +250,7 @@ def analyze(traceback_text: str, level: str = LEVEL_KL10) -> ErrorHint | None:
     if not etype or etype == "KeyboardInterrupt":
         return None
     message = message or ""
-    regel = _find_rule(etype, message)
+    regel = _find_rule(etype, message, traceback_text)
     if regel:
         return ErrorHint(
             etype=etype, message=message, level=level,
