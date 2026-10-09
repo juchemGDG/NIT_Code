@@ -1049,6 +1049,7 @@ class MainWindow(QMainWindow):
         self._add_action(m_help, "🤖  NiT_Coder (ais.chat) …", self._show_ais_prompt)
         m_help.addSeparator()
         self._add_action(m_help, "🐞  Fehler melden …", self._report_bug)
+        self._add_action(m_help, "🧯  Absturzprotokoll anzeigen …", self._show_crash_log)
         m_help.addSeparator()
         self._add_action(m_help, f"Über {APP_NAME}", self._show_about)
 
@@ -3967,6 +3968,10 @@ class MainWindow(QMainWindow):
             )
         return port
 
+    def _show_crash_log(self):
+        from . import crash_log
+        crash_log.show_dialog(self)
+
     def _report_bug(self):
         """Öffnet den Fehlerbericht-Dialog (Code + letzte Konsolenausgabe werden angehängt)."""
         from .bug_report import BugReportDialog
@@ -3985,6 +3990,12 @@ class MainWindow(QMainWindow):
         # Nur die letzten ~4000 Zeichen – der letzte Fehler steht meist am Ende.
         if len(console) > 4000:
             console = "… (gekürzt) …\n" + console[-4000:]
+        # Die letzten Einträge des Absturzprotokolls gehören zum Bericht (sichtbar in der Vorschau,
+        # nur mit gesetztem Haken „Code und Konsole anhängen“).
+        from . import crash_log
+        crash = crash_log.read_tail(3000).strip()
+        if crash:
+            console += "\n\n--- Absturzprotokoll (Ende) ---\n" + crash
         dlg = BugReportDialog(code=code, console=console, parent=self)
         dlg.exec()
 

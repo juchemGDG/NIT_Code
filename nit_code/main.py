@@ -3,9 +3,10 @@ import os
 import sys
 import traceback
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtCore import Qt, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 
+from . import crash_log
 from .main_window import MainWindow, build_global_style
 from .qt_utils import find_logo, install_ui_scale, UI_FONT_PT_DEFAULT
 
@@ -66,6 +67,7 @@ def _install_exception_hook():
             sys.stderr.write(msg)
         except Exception:
             pass
+        crash_log.log_exception(msg)   # auch in die Datei (Hilfe → Absturzprotokoll)
         # Für den Nutzer sichtbar machen, ohne die App zu beenden. Das Signal
         # sorgt dafür, dass der Dialog auch bei Ausnahmen in Worker-Threads
         # sicher im GUI-Thread erscheint.
@@ -86,12 +88,7 @@ def _install_exception_hook():
     except Exception:
         pass
 
-    # Echte C-Level-Abstürze (Segfaults) zumindest auf stderr protokollieren.
-    try:
-        import faulthandler
-        faulthandler.enable()
-    except Exception:
-        pass
+    # Echte C-Level-Abstürze (Segfaults) protokolliert crash_log.start() in die Datei.
 
 
 def _is_windows_remote_session() -> bool:
@@ -219,6 +216,7 @@ def _suppress_child_consoles():
 
 
 def main():
+    previous_crashed = crash_log.start()   # zuerst: hält auch frühe Abstürze fest
     _install_truststore()
     _suppress_child_consoles()
     _configure_webengine()
@@ -265,6 +263,9 @@ def main():
 
     window = MainWindow(initial_file=initial_file)
     window.showMaximized()
+    if previous_crashed:
+        # nach dem Aufbau des Fensters, damit der Hinweis nicht den Start blockiert
+        QTimer.singleShot(1200, lambda: crash_log.announce_previous_crash(window))
     sys.exit(app.exec())
 
 
