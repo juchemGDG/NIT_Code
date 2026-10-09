@@ -91,9 +91,9 @@ CASES: dict[str, tuple[Case, ...]] = {
              "Zeile ansehen, Fehler liegt dort oder knapp davor. "
              "Tippfehler? Doppelpunkt? Einrückung?"),
         Case("wert", "Keine Meldung, Ergebnis falsch", "",
-             "An jeden Kontrollpunkt (K) im PAP ein `print(\"K1\")` usw. setzen. "
-             "Vorher überlegen: Was erwarte ich dort? Wo es zum ersten Mal nicht stimmt: "
-             "diesen Abschnitt **Kasten für Kasten** mit dem Code vergleichen."),
+             "Im **Code** an den Stellen der Kontrollpunkte (K) im PAP ein `print(\"K1\")` usw. "
+             "setzen. Vorher überlegen: Was erwarte ich dort laut PAP? Wo es zum ersten Mal "
+             "nicht stimmt: diesen Abschnitt **Zeile für Zeile** im Code prüfen."),
         Case("nichts", "Nichts reagiert", "", _KL9_NICHTS),
         # Hardware-Meldung (z. B. OSError) – in Klasse 8/9 kein eigener Fall, hier gilt die Checkliste.
         Case("hardware", "Meldung", "", _KL9_NICHTS, visible=False),
@@ -104,17 +104,16 @@ CASES: dict[str, tuple[Case, ...]] = {
         Case("hardware", "Meldung zur Hardware", "(OSError: ENODEV, ETIMEDOUT)",
              "IBD ab **P1** prüfen. `i2c.scan()`: Antwortet ein Gerät?"),
         Case("wert", "Wert falsch", "(z. B. 250 °C)",
-             "`print()` an die Kontrollpunkte im PAP und an P2/P3 der IBD, mit Erwartung "
-             "vergleichen. Wo es nicht stimmt: PAP und Code **Kasten für Kasten** vergleichen."),
+             "Im **Code** `print()` an den Stellen der PAP-Kontrollpunkte und an P2/P3 der IBD "
+             "setzen, mit der Erwartung vergleichen. Wo es nicht stimmt: diesen Abschnitt "
+             "Zeile für Zeile im Code prüfen."),
         Case("nichts", "Nichts reagiert", "",
              "IBD **Glied für Glied**. Umstecken nur bei getrenntem USB."),
     ),
 }
 
 IBD_NOTE = "Wo stimmt die Erwartung zum ersten Mal nicht? Dort liegt der Fehler."
-# Allgemeine Informationskette (ohne konkretes Beispiel)
-IBD_CHAIN = ("Quelle (z. B. Sensor)", "P1", "Auslesen im Code", "P2", "Variable",
-             "P3", "`print()`", "P4", "Konsole")
+IBD_IMAGE = "IBD_BME280.svg"      # liegt in assets/debug/, P1 bis P4 wie im Cheatsheet
 
 
 def cases(level: str, visible_only: bool = True) -> tuple[Case, ...]:
@@ -206,9 +205,8 @@ td.body code, code {{ background:#eef1f7; padding:0 3px; border-radius:3px;
            font-family:'JetBrains Mono', Consolas, Menlo, monospace; font-size:12px; }}
 ul.cases {{ margin:6px 0 0 0; padding-left:0; list-style:none; }}
 ul.cases li {{ margin:5px 0; }}
-.chain {{ margin-top:8px; padding:6px 8px; background:#f3f5fa; border-radius:6px; }}
-.chain .p {{ display:inline-block; background:{YELLOW}; color:#16213a; font-weight:bold;
-             border-radius:10px; padding:0 6px; font-size:11px; }}
+.ibd {{ margin-top:8px; }}
+.ibd img {{ max-width:100%; height:auto; }}
 .note {{ color:#5b6478; font-size:12px; margin-top:4px; }}
 .ja {{ color:{GREEN}; font-weight:bold; }}
 .nein {{ color:{RED}; font-weight:bold; }}
@@ -230,10 +228,8 @@ def _step_body_html(step: Step, level: str) -> str:
             items.append(f"<li>▸ <b>{html.escape(c.label)}</b>{zusatz}: {inline_html(c.text)}</li>")
         out = f"<div class='lead'>{html.escape(step.lead)}</div><ul class='cases'>{''.join(items)}</ul>"
         if level == LEVEL_KL10:
-            chain = " ".join(
-                f"<span class='p'>{html.escape(x)}</span>" if re.fullmatch(r"P\d", x)
-                else inline_html(x) for x in IBD_CHAIN)
-            out += f"<div class='chain'>{chain}</div><div class='note'>{html.escape(IBD_NOTE)}</div>"
+            out += (f"<div class='ibd'><img src='{IBD_IMAGE}' width='330' alt='IBD mit P1 bis P4'></div>"
+                    f"<div class='note'>{html.escape(IBD_NOTE)}</div>")
         return out
     if step.nr == 6:
         return (f"<div><span class='ja'>Ja:</span> {html.escape(STEP6_JA)}<br>"

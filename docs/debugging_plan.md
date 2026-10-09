@@ -400,3 +400,5 @@ Auslöser: zweite Fassung des Cheatsheets (je ein Blatt für Klasse 9 und Klasse
 - Der I2C-Scan zeigt `i2c.scan()` so, wie es auf dem Blatt steht (dezimal, z. B. `[119]`), und daneben Hex (`0x77`).
 - Protokolle aus Beta 1/2 (Ebene, Karte, Hypothese, Test) werden beim Laden übernommen.
 - Die Lesetabelle (`assets/debug/lesetabelle.json`) führt statt Ebene/Karte nur noch den Fall (`code`, `hardware`).
+
+**Abgleich mit den überarbeiteten Cheatsheets (2026-10-09):** Schritt 3 „Wert falsch“ / „Keine Meldung, Ergebnis falsch“ lautet jetzt „Im **Code** … an den Stellen der Kontrollpunkte … Zeile für Zeile im Code prüfen“ (statt „Kasten für Kasten“). Die Anleitungsseite zeigt in Klasse 10 das IBD-Bild (`assets/debug/IBD_BME280.svg`, P1 bis P4) statt der allgemeinen Kette. Das Beispiel bleibt in der Anleitungsseite weggelassen.
